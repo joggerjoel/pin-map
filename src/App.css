@@ -56,6 +56,38 @@ body {
   font-size: 0.8rem;
 }
 
+.app__sign-out {
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.login-form__hint {
+  font-size: 0.85rem;
+  color: #9ca3af;
+}
+
+.login-form__error {
+  color: #f87171;
+  font-size: 0.85rem;
+}
+
+.login-form__back {
+  background: none;
+  border: none;
+  color: #60a5fa;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0;
+}
+
 .app__map {
   position: relative;
 }

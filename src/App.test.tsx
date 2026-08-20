@@ -2,6 +2,24 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import * as supabaseModule from "./lib/supabaseClient";
+import type { Session } from "@supabase/supabase-js";
+
+vi.mock("./lib/supabaseClient", () => ({
+  supabase: {
+    auth: {
+      getSession: vi.fn().mockResolvedValue({
+        data: { session: { user: { email: "owner@example.com" } } },
+      }),
+      onAuthStateChange: vi.fn().mockReturnValue({
+        data: { subscription: { unsubscribe: vi.fn() } },
+      }),
+      signInWithOtp: vi.fn().mockResolvedValue({ error: null }),
+      verifyOtp: vi.fn().mockResolvedValue({ error: null }),
+      signOut: vi.fn().mockResolvedValue({ error: null }),
+    },
+  },
+}));
 
 const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
   vi.hoisted(() => {
@@ -123,6 +141,32 @@ vi.mock("mapbox-gl", () => ({
 beforeEach(() => {
   window.localStorage.clear();
   instances.length = 0;
+  vi.clearAllMocks();
+  vi.mocked(supabaseModule.supabase.auth.getSession).mockResolvedValue({
+    data: { session: { user: { email: "owner@example.com" } } },
+  } as unknown as Awaited<
+    ReturnType<typeof supabaseModule.supabase.auth.getSession>
+  >);
+  vi.mocked(supabaseModule.supabase.auth.onAuthStateChange).mockReturnValue({
+    data: { subscription: { unsubscribe: vi.fn() } },
+  } as unknown as ReturnType<
+    typeof supabaseModule.supabase.auth.onAuthStateChange
+  >);
+  vi.mocked(supabaseModule.supabase.auth.signInWithOtp).mockResolvedValue({
+    error: null,
+  } as unknown as Awaited<
+    ReturnType<typeof supabaseModule.supabase.auth.signInWithOtp>
+  >);
+  vi.mocked(supabaseModule.supabase.auth.verifyOtp).mockResolvedValue({
+    error: null,
+  } as unknown as Awaited<
+    ReturnType<typeof supabaseModule.supabase.auth.verifyOtp>
+  >);
+  vi.mocked(supabaseModule.supabase.auth.signOut).mockResolvedValue({
+    error: null,
+  } as unknown as Awaited<
+    ReturnType<typeof supabaseModule.supabase.auth.signOut>
+  >);
 });
 
 afterEach(() => {
@@ -357,5 +401,85 @@ describe("App", () => {
       name: "Resize sidebar",
     });
     expect(splitter).toBeInTheDocument();
+  });
+});
+
+describe("App auth gating", () => {
+  it("shows the login form instead of the editing UI when signed out", async () => {
+    vi.mocked(supabaseModule.supabase.auth.getSession).mockResolvedValueOnce({
+      data: { session: null },
+    } as unknown as Awaited<
+      ReturnType<typeof supabaseModule.supabase.auth.getSession>
+    >);
+    window.localStorage.setItem("pin-map:mapbox-token", "pk.stored-token");
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("Email")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Add a pin")).not.toBeInTheDocument();
+  });
+
+  it("shows the full editing sidebar after signing in", async () => {
+    vi.mocked(supabaseModule.supabase.auth.getSession).mockResolvedValueOnce({
+      data: { session: null },
+    } as unknown as Awaited<
+      ReturnType<typeof supabaseModule.supabase.auth.getSession>
+    >);
+    let capturedCallback:
+      ((event: string, session: Session | null) => void) | undefined;
+    vi.mocked(
+      supabaseModule.supabase.auth.onAuthStateChange,
+    ).mockImplementationOnce((callback) => {
+      capturedCallback = callback as (
+        event: string,
+        session: Session | null,
+      ) => void;
+      return {
+        data: { subscription: { unsubscribe: vi.fn() } },
+      } as unknown as ReturnType<
+        typeof supabaseModule.supabase.auth.onAuthStateChange
+      >;
+    });
+    window.localStorage.setItem("pin-map:mapbox-token", "pk.stored-token");
+
+    render(<App />);
+
+    await screen.findByLabelText("Email");
+
+    capturedCallback?.("SIGNED_IN", {
+      user: { email: "new@example.com" },
+    } as unknown as Session);
+
+    expect(await screen.findByLabelText("Add a pin")).toBeInTheDocument();
+  });
+
+  it("hides the Sign out button when signed out", async () => {
+    vi.mocked(supabaseModule.supabase.auth.getSession).mockResolvedValueOnce({
+      data: { session: null },
+    } as unknown as Awaited<
+      ReturnType<typeof supabaseModule.supabase.auth.getSession>
+    >);
+    window.localStorage.setItem("pin-map:mapbox-token", "pk.stored-token");
+
+    render(<App />);
+
+    await screen.findByLabelText("Email");
+    expect(
+      screen.queryByRole("button", { name: /Sign out/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("calls supabase.auth.signOut when Sign out is clicked while signed in", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("pin-map:mapbox-token", "pk.stored-token");
+
+    render(<App />);
+
+    const signOutButton = await screen.findByRole("button", {
+      name: /Sign out/,
+    });
+    await user.click(signOutButton);
+
+    expect(supabaseModule.supabase.auth.signOut).toHaveBeenCalled();
   });
 });

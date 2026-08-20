@@ -9,6 +9,8 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     env: {
       VITE_MAPBOX_TOKEN: "",
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+      VITE_SUPABASE_ANON_KEY: "test-anon-key",
     },
   },
 });

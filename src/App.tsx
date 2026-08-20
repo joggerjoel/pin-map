@@ -6,7 +6,9 @@ import {
 } from "./lib/mapboxToken";
 import { useGeocoder } from "./hooks/useGeocoder";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
+import { useAuth } from "./hooks/useAuth";
 import { TokenSetup } from "./components/TokenSetup";
+import { LoginForm } from "./components/LoginForm";
 import { AddPin } from "./components/AddPin";
 import { PlaceInput } from "./components/PlaceInput";
 import { PlaceList } from "./components/PlaceList";
@@ -50,6 +52,7 @@ export function App() {
   const removalNonce = useRef(0);
   const geocoder = useGeocoder(token ?? "");
   const sidebarLayout = useSidebarLayout();
+  const auth = useAuth();
 
   function handleCreateCustomTag(
     label: string,
@@ -130,6 +133,17 @@ export function App() {
           >
             {declutterEnabled ? "Spider: On" : "Spider: Off"}
           </button>
+          {auth.status === "signed-in" && (
+            <button
+              type="button"
+              className="app__sign-out"
+              onClick={() => {
+                void auth.signOut();
+              }}
+            >
+              Sign out{auth.email ? ` (${auth.email})` : ""}
+            </button>
+          )}
           <button
             type="button"
             className="app__change-token"
@@ -141,52 +155,60 @@ export function App() {
             Change token
           </button>
         </div>
-        <AddPin
-          onAdd={(city, tag) =>
-            geocoder.pinPlace(
-              city,
-              tag.kind === "category"
-                ? { category: tag.value }
-                : tag.kind === "icon"
-                  ? { icon: tag.value }
-                  : { customTag: tag.value },
-            )
-          }
-          isLoading={geocoder.isLoading}
-          customTags={customTags}
-          onCreateCustomTag={handleCreateCustomTag}
-          builtinAppearance={builtinAppearance}
-          onEditBuiltinTag={handleEditBuiltinTag}
-          onEditCustomTag={handleEditCustomTag}
-        />
-        <PlaceInput
-          onSubmit={geocoder.pinPlaces}
-          isLoading={geocoder.isLoading}
-          removedPlace={lastRemoval}
-        />
-        {geocoder.error !== null && (
-          <ErrorBanner message={geocoder.error} onRetry={geocoder.retry} />
+        {auth.status === "loading" && <p>Loading…</p>}
+        {auth.status === "signed-out" && (
+          <LoginForm onSendOtp={auth.sendOtp} onVerifyOtp={auth.verifyOtp} />
         )}
-        <PlaceList
-          pinnedPlaces={geocoder.pinnedPlaces}
-          failedLines={geocoder.failedLines}
-          onSelect={handleSelect}
-          onRemove={(query) => {
-            geocoder.removePlace(query);
-            removalNonce.current += 1;
-            setLastRemoval({ query, nonce: removalNonce.current });
-          }}
-          onChangeTag={geocoder.changeTag}
-          highlightedQuery={highlightedQuery}
-          customTags={customTags}
-          onCreateCustomTag={handleCreateCustomTag}
-          onReorder={geocoder.reorderPlaces}
-          onRelocate={geocoder.relocatePlace}
-          onSetLocation={geocoder.setLocation}
-          builtinAppearance={builtinAppearance}
-          onEditBuiltinTag={handleEditBuiltinTag}
-          onEditCustomTag={handleEditCustomTag}
-        />
+        {auth.status === "signed-in" && (
+          <>
+            <AddPin
+              onAdd={(city, tag) =>
+                geocoder.pinPlace(
+                  city,
+                  tag.kind === "category"
+                    ? { category: tag.value }
+                    : tag.kind === "icon"
+                      ? { icon: tag.value }
+                      : { customTag: tag.value },
+                )
+              }
+              isLoading={geocoder.isLoading}
+              customTags={customTags}
+              onCreateCustomTag={handleCreateCustomTag}
+              builtinAppearance={builtinAppearance}
+              onEditBuiltinTag={handleEditBuiltinTag}
+              onEditCustomTag={handleEditCustomTag}
+            />
+            <PlaceInput
+              onSubmit={geocoder.pinPlaces}
+              isLoading={geocoder.isLoading}
+              removedPlace={lastRemoval}
+            />
+            {geocoder.error !== null && (
+              <ErrorBanner message={geocoder.error} onRetry={geocoder.retry} />
+            )}
+            <PlaceList
+              pinnedPlaces={geocoder.pinnedPlaces}
+              failedLines={geocoder.failedLines}
+              onSelect={handleSelect}
+              onRemove={(query) => {
+                geocoder.removePlace(query);
+                removalNonce.current += 1;
+                setLastRemoval({ query, nonce: removalNonce.current });
+              }}
+              onChangeTag={geocoder.changeTag}
+              highlightedQuery={highlightedQuery}
+              customTags={customTags}
+              onCreateCustomTag={handleCreateCustomTag}
+              onReorder={geocoder.reorderPlaces}
+              onRelocate={geocoder.relocatePlace}
+              onSetLocation={geocoder.setLocation}
+              builtinAppearance={builtinAppearance}
+              onEditBuiltinTag={handleEditBuiltinTag}
+              onEditCustomTag={handleEditCustomTag}
+            />
+          </>
+        )}
       </aside>
       <div
         className="app__splitter"
