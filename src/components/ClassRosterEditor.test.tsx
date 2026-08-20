@@ -81,8 +81,6 @@ describe("ClassRosterEditor", () => {
     expect(screen.getByLabelText("Current location")).toHaveValue(
       "Chicago, Illinois",
     );
-    expect(screen.getByLabelText("Image URL")).toHaveValue(jane.imageUrl);
-    expect(screen.getByLabelText("Image URL")).toHaveAttribute("readonly");
   });
 
   it("editing one name field does not change the other", async () => {

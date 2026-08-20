@@ -176,10 +176,6 @@ export function ClassRosterEditor({
               }
             />
           </label>
-          <label>
-            Image URL
-            <input type="text" value={selected.imageUrl} readOnly />
-          </label>
           <button type="button" onClick={() => void handleSave()}>
             Save
           </button>
