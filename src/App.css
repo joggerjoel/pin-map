@@ -484,13 +484,15 @@ body {
 .class-roster {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
   background: #111827;
   color: #f9fafb;
 }
 
 .class-roster__grid-area {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 1rem;
 }
