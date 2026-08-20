@@ -144,6 +144,9 @@ function createPopupContent(
       const img = document.createElement("img");
       img.src = photo.url;
       img.alt = `Photo of ${place.name}`;
+      img.addEventListener("click", () => {
+        img.classList.toggle("map-popup__photo--expanded");
+      });
       gallery.appendChild(img);
     }
     container.appendChild(gallery);

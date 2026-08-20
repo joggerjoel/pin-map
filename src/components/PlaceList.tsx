@@ -66,6 +66,17 @@ export function PlaceList({
 }: PlaceListProps) {
   const itemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null);
+  const [expandedPhotoId, setExpandedPhotoId] = useState<string | null>(null);
+
+  function togglePhotoExpanded(photoId: string) {
+    setExpandedPhotoId((prev) => (prev === photoId ? null : photoId));
+  }
+
+  function photoThumbClassName(photoId: string): string {
+    return expandedPhotoId === photoId
+      ? "place-list__photo-thumb place-list__photo-thumb--expanded"
+      : "place-list__photo-thumb";
+  }
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [filterText, setFilterText] = useState("");
   // Drag-and-drop handlers fire in rapid succession (dragstart then drop)
@@ -182,7 +193,8 @@ export function PlaceList({
                     key={photo.id}
                     src={photo.url}
                     alt={`Photo of ${place.name}`}
-                    className="place-list__photo-thumb"
+                    className={photoThumbClassName(photo.id)}
+                    onClick={() => togglePhotoExpanded(photo.id)}
                   />
                 ))}
               </div>
@@ -249,7 +261,12 @@ export function PlaceList({
                     key={photo.id}
                     className="place-list__photo-manage-item"
                   >
-                    <img src={photo.url} alt={`Photo of ${place.name}`} />
+                    <img
+                      src={photo.url}
+                      alt={`Photo of ${place.name}`}
+                      className={photoThumbClassName(photo.id)}
+                      onClick={() => togglePhotoExpanded(photo.id)}
+                    />
                     <button
                       type="button"
                       aria-label={`Remove photo of ${place.name}`}

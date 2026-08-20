@@ -861,4 +861,35 @@ describe("PlaceList photos", () => {
 
     expect(onRemovePhoto).toHaveBeenCalledWith(parisPhoto);
   });
+
+  it("expands a thumbnail on click and shrinks it back on a second click", async () => {
+    const user = userEvent.setup();
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        photosByQuery={{ Paris: [parisPhoto] }}
+      />,
+    );
+    const thumb = screen.getByAltText("Photo of Paris, France");
+    expect(thumb.className).not.toContain("--expanded");
+
+    await user.click(thumb);
+    expect(thumb.className).toContain("--expanded");
+
+    await user.click(thumb);
+    expect(thumb.className).not.toContain("--expanded");
+  });
 });

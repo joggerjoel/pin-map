@@ -940,6 +940,43 @@ describe("MapView", () => {
     expect(images?.[0].alt).toBe("Photo of Paris, France");
   });
 
+  it("toggles a popup photo's expanded class on click and back on a second click", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+        canEdit={false}
+        photosByQuery={{
+          paris: [
+            {
+              id: "photo-1",
+              placeQuery: "paris",
+              storagePath: "user-1/photo-1.jpg",
+              url: "https://cdn.example.com/photo-1.jpg",
+            },
+          ],
+        }}
+      />,
+    );
+    const marker = markerInstances[0];
+    const domContent = marker?.popup?.domContent as HTMLDivElement | undefined;
+    const img = domContent?.querySelector("img") as HTMLImageElement;
+
+    expect(img.classList.contains("map-popup__photo--expanded")).toBe(false);
+
+    img.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(img.classList.contains("map-popup__photo--expanded")).toBe(true);
+
+    img.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(img.classList.contains("map-popup__photo--expanded")).toBe(false);
+  });
+
   it("shows no photo gallery in the popup for a place with no photos", () => {
     render(
       <MapView
