@@ -5,6 +5,11 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PlaceCategory } from "../lib/checklist";
 import { toGeoJsonStateName } from "../lib/stateNames";
+import {
+  HOUSE_ICON_PATH,
+  TRIATHLETE_ICON_BODY_PATH,
+  TRIATHLETE_ICON_HEAD,
+} from "../lib/iconShapes";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -15,17 +20,14 @@ function createTriathleteIconSvg(): SVGSVGElement {
   svg.setAttribute("height", "18");
 
   const head = document.createElementNS(SVG_NS, "circle");
-  head.setAttribute("cx", "14.5");
-  head.setAttribute("cy", "4");
-  head.setAttribute("r", "2.1");
+  head.setAttribute("cx", String(TRIATHLETE_ICON_HEAD.cx));
+  head.setAttribute("cy", String(TRIATHLETE_ICON_HEAD.cy));
+  head.setAttribute("r", String(TRIATHLETE_ICON_HEAD.r));
   head.setAttribute("fill", "#ffffff");
   head.setAttribute("fill-opacity", "1");
 
   const body = document.createElementNS(SVG_NS, "path");
-  body.setAttribute(
-    "d",
-    "M13.6 7.4 L9.6 9.2 L10.4 13.2 L7.2 19.6 L9.4 20.6 L12.6 14.6 L14.4 16.4 L15.8 20.6 L18 19.8 L15.8 13.6 L16.6 9.4 Z",
-  );
+  body.setAttribute("d", TRIATHLETE_ICON_BODY_PATH);
   body.setAttribute("fill", "#ffffff");
   body.setAttribute("fill-opacity", "1");
 
@@ -41,7 +43,7 @@ function createHouseIconSvg(): SVGSVGElement {
   svg.setAttribute("height", "16");
 
   const path = document.createElementNS(SVG_NS, "path");
-  path.setAttribute("d", "M12 3 L22 12 L19 12 L19 21 L5 21 L5 12 L2 12 Z");
+  path.setAttribute("d", HOUSE_ICON_PATH);
   path.setAttribute("fill", "#ffffff");
   path.setAttribute("fill-opacity", "1");
 

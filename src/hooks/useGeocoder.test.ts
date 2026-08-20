@@ -335,3 +335,83 @@ describe("useGeocoder in checklist mode", () => {
     });
   });
 });
+
+describe("pinPlace", () => {
+  it("geocodes a single query and pins it with the given category", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+
+    expect(result.current.pinnedPlaces).toEqual([
+      {
+        query: "Paris",
+        name: "Paris, France",
+        lng: 2.35,
+        lat: 48.86,
+        category: "visited",
+      },
+    ]);
+  });
+
+  it("geocodes a single query and pins it with the given icon", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Kailua-Kona",
+      name: "Kailua-Kona, Hawaii, USA",
+      lng: -155.99,
+      lat: 19.64,
+    });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlace("Kailua-Kona", { icon: "triathlete" });
+    });
+
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      icon: "triathlete",
+    });
+  });
+
+  it("skips a query that's already pinned", async () => {
+    const lineSpy = vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "lived" });
+    });
+
+    expect(lineSpy).toHaveBeenCalledTimes(1);
+    expect(result.current.pinnedPlaces).toHaveLength(1);
+  });
+
+  it("adds the query to failedLines when geocoding finds nothing", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue(null);
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlace("Nowhereville", { category: "visited" });
+    });
+
+    expect(result.current.failedLines).toEqual(["Nowhereville"]);
+    expect(result.current.pinnedPlaces).toEqual([]);
+  });
+});

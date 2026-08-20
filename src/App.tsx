@@ -6,6 +6,7 @@ import {
 } from "./lib/mapboxToken";
 import { useGeocoder } from "./hooks/useGeocoder";
 import { TokenSetup } from "./components/TokenSetup";
+import { AddPin } from "./components/AddPin";
 import { PlaceInput } from "./components/PlaceInput";
 import { PlaceList } from "./components/PlaceList";
 import { ErrorBanner } from "./components/ErrorBanner";
@@ -60,6 +61,17 @@ export function App() {
             Change token
           </button>
         </div>
+        <AddPin
+          onAdd={(city, tag) =>
+            geocoder.pinPlace(
+              city,
+              tag.kind === "category"
+                ? { category: tag.value }
+                : { icon: tag.value },
+            )
+          }
+          isLoading={geocoder.isLoading}
+        />
         <PlaceInput
           onSubmit={geocoder.pinPlaces}
           isLoading={geocoder.isLoading}

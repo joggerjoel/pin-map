@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   GeocodeAllFailedError,
   geocodeBatch,
+  geocodeLine,
   parseLines,
 } from "../lib/geocoder";
 import type { GeocodeQuery, GeocodeResult } from "../lib/geocoder";
@@ -27,6 +28,10 @@ export interface UseGeocoderResult {
     raw: string,
     checklistMode?: boolean,
     continent?: Continent | null,
+  ) => Promise<void>;
+  pinPlace: (
+    query: string,
+    tag: { category?: PlaceCategory; icon?: PlaceIcon },
   ) => Promise<void>;
   removePlace: (query: string) => void;
   retry: () => void;
@@ -148,6 +153,53 @@ export function useGeocoder(token: string): UseGeocoderResult {
     [runPinPlaces],
   );
 
+  const pinPlace = useCallback(
+    async (
+      query: string,
+      tag: { category?: PlaceCategory; icon?: PlaceIcon },
+    ) => {
+      const trimmed = query.trim();
+      if (trimmed === "") {
+        return;
+      }
+      const key = trimmed.toLowerCase();
+      if (
+        pinnedPlacesRef.current.some(
+          (place) => place.query.toLowerCase() === key,
+        )
+      ) {
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const result = await geocodeLine(trimmed, token);
+        if (result === null) {
+          setFailedLines((prev) =>
+            prev.some((line) => line.toLowerCase() === key)
+              ? prev
+              : [...prev, trimmed],
+          );
+          return;
+        }
+        setPinnedPlaces((prev) => [...prev, { ...result, ...tag }]);
+      } catch (err) {
+        if (err instanceof GeocodeAllFailedError && err.isAuthError) {
+          setError("That Mapbox token was rejected — check it and try again.");
+        } else {
+          setError(
+            "Couldn't reach Mapbox. Check your connection and try again.",
+          );
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [token],
+  );
+
   const removePlace = useCallback((query: string) => {
     setPinnedPlaces((prev) => prev.filter((place) => place.query !== query));
   }, []);
@@ -167,6 +219,7 @@ export function useGeocoder(token: string): UseGeocoderResult {
     isLoading,
     error,
     pinPlaces,
+    pinPlace,
     removePlace,
     retry,
   };
