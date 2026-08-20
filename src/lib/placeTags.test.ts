@@ -51,6 +51,13 @@ describe("extractPlaceIcon", () => {
     });
   });
 
+  it("extracts the lived tag as an alias for live", () => {
+    expect(extractPlaceIcon("Chicago, Illinois (lived)")).toEqual({
+      query: "Chicago, Illinois",
+      icon: "house-live",
+    });
+  });
+
   it("extracts the air tag and strips it from the query", () => {
     expect(
       extractPlaceIcon("Newark Liberty International Airport, USA (air)"),

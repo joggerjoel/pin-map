@@ -4,6 +4,7 @@ const TAG_ICONS: Record<string, PlaceIcon> = {
   ironman: "triathlete",
   home: "house-home",
   live: "house-live",
+  lived: "house-live",
   air: "airplane",
 };
 
