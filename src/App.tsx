@@ -16,7 +16,12 @@ export function App() {
   const [token, setToken] = useState<string | null>(() => getMapboxToken());
   const [selection, setSelection] = useState<MapSelection | null>(null);
   const [highlightedQuery, setHighlightedQuery] = useState<string | null>(null);
+  const [lastRemoval, setLastRemoval] = useState<{
+    query: string;
+    nonce: number;
+  } | null>(null);
   const selectionNonceRef = useRef(0);
+  const removalNonce = useRef(0);
   const geocoder = useGeocoder(token ?? "");
 
   // Selecting a place is modeled as a one-shot event (a nonce, not just the
@@ -58,6 +63,7 @@ export function App() {
         <PlaceInput
           onSubmit={geocoder.pinPlaces}
           isLoading={geocoder.isLoading}
+          removedPlace={lastRemoval}
         />
         {geocoder.error !== null && (
           <ErrorBanner message={geocoder.error} onRetry={geocoder.retry} />
@@ -66,7 +72,11 @@ export function App() {
           pinnedPlaces={geocoder.pinnedPlaces}
           failedLines={geocoder.failedLines}
           onSelect={handleSelect}
-          onRemove={geocoder.removePlace}
+          onRemove={(query) => {
+            geocoder.removePlace(query);
+            removalNonce.current += 1;
+            setLastRemoval({ query, nonce: removalNonce.current });
+          }}
           highlightedQuery={highlightedQuery}
         />
       </aside>
