@@ -17,7 +17,19 @@ export function PersonPhotoModal({
   onClose,
 }: PersonPhotoModalProps) {
   const [yearText, setYearText] = useState("");
+  const [isHoveringAvatar, setIsHoveringAvatar] = useState(false);
   const name = displayName(person);
+
+  // A photo uploaded with no year attached represents "how they look now" —
+  // hovering the original yearbook portrait swaps to that photo (and their
+  // current name), then swaps back on mouse-out. No recent photo yet means
+  // there's nothing to reveal, so hovering has no effect.
+  const recentPhoto = photos.find((photo) => photo.year === null) ?? null;
+  const showCurrent = isHoveringAvatar && recentPhoto !== null;
+  const avatarSrc = showCurrent ? recentPhoto.url : person.imageUrl;
+  const avatarCaption = showCurrent
+    ? person.currentName.trim() || "Current photo"
+    : person.highSchoolName.trim() || "High school photo";
 
   useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
@@ -50,10 +62,12 @@ export function PersonPhotoModal({
         </button>
         <img
           className="person-photo-modal__avatar"
-          src={person.imageUrl}
-          alt={name}
+          src={avatarSrc}
+          alt={avatarCaption}
+          onMouseEnter={() => setIsHoveringAvatar(true)}
+          onMouseLeave={() => setIsHoveringAvatar(false)}
         />
-        <h2>{name}</h2>
+        <p className="person-photo-modal__avatar-caption">{avatarCaption}</p>
         {photos.length > 0 && (
           <ul className="person-photo-modal__gallery">
             {photos.map((photo) => (

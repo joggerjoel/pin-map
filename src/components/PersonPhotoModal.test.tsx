@@ -39,15 +39,71 @@ describe("PersonPhotoModal", () => {
     expect(
       screen.getByRole("dialog", { name: "Photos of Jane Smith Johnson" }),
     ).toBeInTheDocument();
-    expect(screen.getByAltText("Jane Smith Johnson")).toHaveAttribute(
+    // The original portrait shows the high school name by default — the
+    // current name/photo only appears on hover (see the hover tests below).
+    expect(screen.getByAltText("Jane Smith")).toHaveAttribute(
       "src",
       jane.imageUrl,
     );
+    expect(screen.getByText("Jane Smith")).toBeInTheDocument();
     expect(screen.getByAltText("Jane Smith Johnson, 1995")).toHaveAttribute(
       "src",
       photo.url,
     );
     expect(screen.getByText("1995")).toBeInTheDocument();
+  });
+
+  it("swaps to the current photo and name on hover when a recent (undated) photo exists", async () => {
+    const recentPhoto: RosterPersonPhoto = {
+      id: "photo-2",
+      personId: 1,
+      storagePath: "user-1/class-roster/belding1989/1/b.jpg",
+      year: null,
+      url: "https://cdn.example.com/user-1/class-roster/belding1989/1/b.jpg",
+    };
+    const user = userEvent.setup();
+    render(
+      <PersonPhotoModal
+        person={jane}
+        photos={[recentPhoto]}
+        onAddPhoto={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const avatar = document.querySelector(".person-photo-modal__avatar");
+    expect(avatar).toHaveAttribute("src", jane.imageUrl);
+
+    await user.hover(avatar as Element);
+
+    expect(avatar).toHaveAttribute("src", recentPhoto.url);
+    expect(avatar).toHaveAttribute("alt", "Jane Smith Johnson");
+    expect(screen.getByText("Jane Smith Johnson")).toBeInTheDocument();
+
+    await user.unhover(avatar as Element);
+
+    expect(avatar).toHaveAttribute("src", jane.imageUrl);
+    expect(avatar).toHaveAttribute("alt", "Jane Smith");
+  });
+
+  it("does nothing on hover when there is no recent (undated) photo yet", async () => {
+    const datedOnly: RosterPersonPhoto = { ...photo };
+    const user = userEvent.setup();
+    render(
+      <PersonPhotoModal
+        person={jane}
+        photos={[datedOnly]}
+        onAddPhoto={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const avatar = screen.getByAltText("Jane Smith");
+
+    await user.hover(avatar);
+
+    expect(screen.getByAltText("Jane Smith")).toHaveAttribute(
+      "src",
+      jane.imageUrl,
+    );
   });
 
   it("calls onAddPhoto with a null year for a recent-photo upload", async () => {
@@ -116,7 +172,7 @@ describe("PersonPhotoModal", () => {
       />,
     );
 
-    await user.click(screen.getByText("Jane Smith Johnson"));
+    await user.click(screen.getByText("Jane Smith"));
     expect(onClose).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("dialog"));

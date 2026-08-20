@@ -68,7 +68,9 @@ describe("ClassRosterEditor", () => {
       await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
     );
 
-    expect(screen.getByLabelText("High school name")).toHaveValue("Jane Smith");
+    expect(await screen.findByLabelText("High school name")).toHaveValue(
+      "Jane Smith",
+    );
     expect(screen.getByLabelText("Current name")).toHaveValue(
       "Jane Smith Johnson",
     );
@@ -90,7 +92,7 @@ describe("ClassRosterEditor", () => {
     await user.click(
       await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
     );
-    await user.clear(screen.getByLabelText("Current name"));
+    await user.clear(await screen.findByLabelText("Current name"));
     await user.type(screen.getByLabelText("Current name"), "Jane Doe");
 
     expect(screen.getByLabelText("Current name")).toHaveValue("Jane Doe");
@@ -107,7 +109,10 @@ describe("ClassRosterEditor", () => {
     await user.click(
       await screen.findByRole("button", { name: "Select Bob Lee" }),
     );
-    await user.type(screen.getByLabelText("Current name"), "  Bob Leeson  ");
+    await user.type(
+      await screen.findByLabelText("Current name"),
+      "  Bob Leeson  ",
+    );
     await user.type(screen.getByLabelText("Living"), "  Detroit  ");
     await user.type(screen.getByLabelText("Current location"), "  Chicago  ");
     await user.click(screen.getByRole("button", { name: "Save" }));
@@ -138,7 +143,7 @@ describe("ClassRosterEditor", () => {
     await user.click(
       await screen.findByRole("button", { name: "Select Bob Lee" }),
     );
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(await screen.findByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't save");
   });
@@ -151,10 +156,12 @@ describe("ClassRosterEditor", () => {
     await user.click(
       await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
     );
-    await user.type(screen.getByLabelText("Current name"), "x");
+    await user.type(await screen.findByLabelText("Current name"), "x");
     await user.click(screen.getByRole("button", { name: "Select Bob Lee" }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalled();
+    });
     // Declining the confirm keeps the original selection's edited value.
     expect(screen.getByLabelText("Current name")).toHaveValue(
       "Jane Smith Johnsonx",
@@ -169,10 +176,13 @@ describe("ClassRosterEditor", () => {
     await user.click(
       await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
     );
+    await screen.findByLabelText("High school name");
     await user.click(screen.getByRole("button", { name: "Select Bob Lee" }));
 
+    await waitFor(() => {
+      expect(screen.getByLabelText("High school name")).toHaveValue("Bob Lee");
+    });
     expect(confirmSpy).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("High school name")).toHaveValue("Bob Lee");
   });
 
   it("filters the grid by search text across both names", async () => {
@@ -204,5 +214,36 @@ describe("ClassRosterEditor", () => {
     expect(
       screen.getByRole("button", { name: "Select Jane Smith Johnson" }),
     ).toHaveTextContent("J");
+  });
+
+  it("opens the photo modal on double-click even with unsaved edits pending, without prompting to discard them", async () => {
+    // Regression: a plain single-click select can trigger a blocking
+    // window.confirm() (the unsaved-edit guard below). If that fired
+    // synchronously on the first click of a double-click, the native
+    // dialog would interrupt the browser mid-gesture and onDoubleClick
+    // would never fire at all — this is what "double click doesn't work
+    // in edit roster" turned out to be.
+    const confirmSpy = vi.spyOn(window, "confirm");
+    const user = userEvent.setup();
+    render(<ClassRosterEditor classSlug="belding1989" />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
+    );
+    await user.type(await screen.findByLabelText("Current name"), "x");
+
+    await user.dblClick(
+      screen.getByRole("button", { name: "Select Jane Smith Johnson" }),
+    );
+
+    // The dialog reflects the roster's saved data — "x" is still an
+    // unsaved draft in the panel's form, not yet persisted to the person
+    // record the grid (and modal) render from.
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Photos of Jane Smith Johnson",
+      }),
+    ).toBeInTheDocument();
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 });

@@ -89,6 +89,7 @@ describe("ClassMeetupBoard", () => {
     await user.click(
       await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
     );
+    await screen.findByText("Met Jane Smith Johnson");
     await user.click(screen.getByRole("button", { name: "Log meetup" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Enter a city.");
@@ -116,6 +117,7 @@ describe("ClassMeetupBoard", () => {
     await user.click(
       await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
     );
+    await screen.findByText("Met Jane Smith Johnson");
     await user.type(screen.getByLabelText("City"), "Chicago");
     await user.type(screen.getByLabelText("Date (MM/YYYY)"), "06/1995");
     await user.click(screen.getByRole("button", { name: "Log meetup" }));
@@ -154,6 +156,7 @@ describe("ClassMeetupBoard", () => {
     await user.click(
       await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
     );
+    await screen.findByText("Met Jane Smith Johnson");
     await user.type(screen.getByLabelText("City"), "Nowhereville");
     await user.click(screen.getByRole("button", { name: "Log meetup" }));
 
@@ -179,6 +182,8 @@ describe("ClassMeetupBoard", () => {
       await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
     );
 
-    expect(screen.getByText("Met Jane Smith Johnson")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Met Jane Smith Johnson"),
+    ).toBeInTheDocument();
   });
 });

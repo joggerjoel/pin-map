@@ -46,7 +46,12 @@ describe("RosterGrid", () => {
       screen.getByRole("button", { name: "Select Jane Smith Johnson" }),
     );
 
-    expect(onSelect).toHaveBeenCalledWith(jane);
+    // onSelect is deferred past the double-click threshold so a genuine
+    // double-click never fires it (see RosterGrid's handleClick) — a plain
+    // single click still resolves it, just not synchronously.
+    await waitFor(() => {
+      expect(onSelect).toHaveBeenCalledWith(jane);
+    });
   });
 
   it("marks the selected person's button", () => {
@@ -162,6 +167,12 @@ describe("RosterGrid", () => {
     expect(
       screen.getByRole("dialog", { name: "Photos of Jane Smith Johnson" }),
     ).toBeInTheDocument();
+
+    // Wait past the debounce window a genuine single click would resolve
+    // after, to confirm the double-click actually canceled it rather than
+    // merely not having fired yet.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it("passes that person's photos and forwards onAddPhoto with the person attached", async () => {

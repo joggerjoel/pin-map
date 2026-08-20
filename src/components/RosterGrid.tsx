@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RosterPerson } from "../lib/classRosterRepository";
 import type { RosterPersonPhoto } from "../lib/classRosterPhotosRepository";
 import { displayName, isDeceased, matchesSearch } from "../lib/rosterName";
@@ -36,6 +36,41 @@ export function RosterGrid({
   );
   const modalPerson = people.find((p) => p.id === modalPersonId) ?? null;
 
+  // onSelect can trigger a blocking window.confirm() (unsaved-edit guard,
+  // see ClassRosterEditor) — if that fired synchronously on the first click
+  // of a double-click, the native dialog interrupts the browser's ability
+  // to ever register the second click as a double-click, so onDoubleClick
+  // would just never fire. Deferring the single-click action past the
+  // double-click threshold, and canceling it outright on an actual
+  // double-click, keeps the two gestures from fighting each other.
+  const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimeoutRef.current !== null) {
+        clearTimeout(clickTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  function handleClick(person: RosterPerson) {
+    if (clickTimeoutRef.current !== null) {
+      clearTimeout(clickTimeoutRef.current);
+    }
+    clickTimeoutRef.current = setTimeout(() => {
+      clickTimeoutRef.current = null;
+      onSelect(person);
+    }, 220);
+  }
+
+  function handleDoubleClick(person: RosterPerson) {
+    if (clickTimeoutRef.current !== null) {
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+    }
+    setModalPersonId(person.id);
+  }
+
   return (
     <div className="class-roster__grid-area">
       <input
@@ -62,8 +97,8 @@ export function RosterGrid({
                 .filter(Boolean)
                 .join(" ")}
               aria-label={`Select ${displayName(person)}`}
-              onClick={() => onSelect(person)}
-              onDoubleClick={() => setModalPersonId(person.id)}
+              onClick={() => handleClick(person)}
+              onDoubleClick={() => handleDoubleClick(person)}
             >
               {brokenImageIds.has(person.id) ? (
                 <span className="class-roster__portrait-placeholder">
