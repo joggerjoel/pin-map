@@ -166,6 +166,7 @@ function resolveBuiltinKey(place: PinnedPlace): BuiltinTagKey | undefined {
   if (place.icon === "triathlete") return "ironman";
   if (place.icon === "house-home") return "hometown";
   if (place.icon === "house-live") return "lived";
+  if (place.icon === "house-current") return "current";
   if (place.icon === "airplane") return "airport";
   if (place.category) return place.category;
   return undefined;

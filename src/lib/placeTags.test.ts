@@ -73,4 +73,11 @@ describe("extractPlaceIcon", () => {
       icon: "airplane",
     });
   });
+
+  it("extracts the current tag and strips it from the query", () => {
+    expect(extractPlaceIcon("Miami, Florida (current)")).toEqual({
+      query: "Miami, Florida",
+      icon: "house-current",
+    });
+  });
 });

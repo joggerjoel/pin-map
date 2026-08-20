@@ -6,7 +6,7 @@ export interface TagAppearance {
 }
 
 export type BuiltinTagKey =
-  "visited" | "lived" | "hometown" | "ironman" | "airport";
+  "visited" | "lived" | "hometown" | "ironman" | "airport" | "current";
 
 export const BUILTIN_TAG_KEYS: BuiltinTagKey[] = [
   "visited",
@@ -14,6 +14,7 @@ export const BUILTIN_TAG_KEYS: BuiltinTagKey[] = [
   "hometown",
   "ironman",
   "airport",
+  "current",
 ];
 
 export const BUILTIN_TAG_LABELS: Record<BuiltinTagKey, string> = {
@@ -22,6 +23,7 @@ export const BUILTIN_TAG_LABELS: Record<BuiltinTagKey, string> = {
   hometown: "Hometown",
   ironman: "Ironman",
   airport: "Airport",
+  current: "Current",
 };
 
 export const BUILTIN_APPEARANCE_DEFAULTS: Record<BuiltinTagKey, TagAppearance> =
@@ -31,6 +33,7 @@ export const BUILTIN_APPEARANCE_DEFAULTS: Record<BuiltinTagKey, TagAppearance> =
     hometown: { color: "#eab308", iconShape: "house" },
     ironman: { color: "#dc2626", iconShape: "triathlete" },
     airport: { color: "#0891b2", iconShape: "airplane" },
+    current: { color: "#16a34a", iconShape: "house" },
   };
 
 const STORAGE_KEY = "pin-map:tag-appearance-overrides";

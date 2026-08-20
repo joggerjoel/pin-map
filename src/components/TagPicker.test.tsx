@@ -435,13 +435,14 @@ describe("TagPicker reordering", () => {
     // Dragging "visited" (index 0) and dropping on "hometown" (index 2)
     // removes "visited" first, then re-inserts it at index 2 of the
     // now-shorter array — landing it directly after "hometown", ahead of
-    // "ironman"/"airport". "lived" (untouched) stays in front.
+    // "ironman"/"airport"/"current". "lived" (untouched) stays in front.
     expect(getTagOrder()).toEqual([
       "category:lived",
       "category:hometown",
       "category:visited",
       "icon:triathlete",
       "icon:airplane",
+      "icon:house-current",
     ]);
   });
 

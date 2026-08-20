@@ -32,6 +32,7 @@ const BUILTIN_TAGS: Record<BuiltinTagKey, PinTag> = {
   hometown: { kind: "category", value: "hometown" },
   ironman: { kind: "icon", value: "triathlete" },
   airport: { kind: "icon", value: "airplane" },
+  current: { kind: "icon", value: "house-current" },
 };
 
 export const DEFAULT_TAG: PinTag = BUILTIN_TAGS.visited;
