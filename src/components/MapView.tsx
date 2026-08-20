@@ -6,6 +6,22 @@ import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PlaceCategory } from "../lib/checklist";
 import { toGeoJsonStateName } from "../lib/stateNames";
 
+function createTriathleteMarkerElement(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.style.width = "32px";
+  el.style.height = "32px";
+  el.style.borderRadius = "50%";
+  el.style.background = "#dc2626";
+  el.style.display = "flex";
+  el.style.alignItems = "center";
+  el.style.justifyContent = "center";
+  el.style.fontSize = "18px";
+  el.style.border = "2px solid white";
+  el.style.boxShadow = "0 1px 4px rgba(0, 0, 0, 0.3)";
+  el.textContent = "🏊";
+  return el;
+}
+
 /**
  * A one-shot request to fly the map to a place. `nonce` must change on every
  * selection (even reselecting the same query) so the fly-to effect below can
@@ -134,9 +150,15 @@ export function MapView({
     markersRef.current.clear();
 
     places.forEach((place) => {
-      const marker = new mapboxgl.Marker(
-        place.category ? { color: CATEGORY_COLORS[place.category] } : undefined,
-      )
+      const marker =
+        place.icon === "triathlete"
+          ? new mapboxgl.Marker({ element: createTriathleteMarkerElement() })
+          : new mapboxgl.Marker(
+              place.category
+                ? { color: CATEGORY_COLORS[place.category] }
+                : undefined,
+            );
+      marker
         .setLngLat([place.lng, place.lat])
         .setPopup(new mapboxgl.Popup().setText(place.name))
         .addTo(map);

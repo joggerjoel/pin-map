@@ -10,9 +10,12 @@ import type { PlaceCategory } from "../lib/checklist";
 import { getContinentBbox } from "../lib/continents";
 import type { Continent } from "../lib/continents";
 import { detectCountryFromLine } from "../lib/countryNames";
+import { extractPlaceIcon } from "../lib/placeTags";
+import type { PlaceIcon } from "../lib/placeTags";
 
 export interface PinnedPlace extends GeocodeResult {
   category?: PlaceCategory;
+  icon?: PlaceIcon;
 }
 
 export interface UseGeocoderResult {
@@ -59,9 +62,12 @@ export function useGeocoder(token: string): UseGeocoderResult {
       lastContinent.current = continent;
 
       const checklistEntries = checklistMode ? parseChecklist(raw) : [];
+      const taggedLines = checklistMode
+        ? []
+        : parseLines(raw).map((line) => extractPlaceIcon(line));
       const lines = checklistMode
         ? checklistEntries.map((entry) => entry.name)
-        : parseLines(raw);
+        : taggedLines.map((tagged) => tagged.query);
 
       const pinnedKeys = new Set(
         pinnedPlacesRef.current.map((place) => place.query.toLowerCase()),
@@ -101,7 +107,13 @@ export function useGeocoder(token: string): UseGeocoderResult {
               );
               return entry ? { ...place, category: entry.category } : place;
             })
-          : batch.pinned;
+          : batch.pinned.map((place) => {
+              const tagged = taggedLines.find(
+                (candidate) =>
+                  candidate.query.toLowerCase() === place.query.toLowerCase(),
+              );
+              return tagged?.icon ? { ...place, icon: tagged.icon } : place;
+            });
         setPinnedPlaces((prev) => [...prev, ...newlyPinned]);
         setFailedLines((prev) => {
           const survivors = prev.filter(

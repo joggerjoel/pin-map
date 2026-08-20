@@ -1,0 +1,39 @@
+import { describe, expect, it } from "vitest";
+import { extractPlaceIcon } from "./placeTags";
+
+describe("extractPlaceIcon", () => {
+  it("extracts the ironman tag and strips it from the query", () => {
+    expect(extractPlaceIcon("Kailua-Kona, Hawaii (ironman)")).toEqual({
+      query: "Kailua-Kona, Hawaii",
+      icon: "triathlete",
+    });
+  });
+
+  it("is case-insensitive on the tag name", () => {
+    expect(extractPlaceIcon("Nice, France (Ironman)")).toEqual({
+      query: "Nice, France",
+      icon: "triathlete",
+    });
+  });
+
+  it("returns the line unchanged with no icon when there's no parenthetical", () => {
+    expect(extractPlaceIcon("Dublin, Ireland")).toEqual({
+      query: "Dublin, Ireland",
+      icon: undefined,
+    });
+  });
+
+  it("returns the line unchanged with no icon when the parenthetical isn't a recognized tag", () => {
+    expect(extractPlaceIcon("Paris, France (favorite)")).toEqual({
+      query: "Paris, France (favorite)",
+      icon: undefined,
+    });
+  });
+
+  it("trims whitespace left behind after stripping the tag", () => {
+    expect(extractPlaceIcon("  Nice, France (ironman)  ")).toEqual({
+      query: "Nice, France",
+      icon: "triathlete",
+    });
+  });
+});

@@ -161,6 +161,38 @@ describe("useGeocoder", () => {
     ]);
   });
 
+  it("extracts an ironman tag, strips it from the geocoded query, and attaches the icon", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({
+        pinned: [
+          {
+            query: "Kailua-Kona, Hawaii",
+            name: "Kailua-Kona, Hawaii, USA",
+            lng: -155.99,
+            lat: 19.64,
+          },
+        ],
+        failed: [],
+      });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("Kailua-Kona, Hawaii (ironman)", false);
+    });
+
+    expect(batchSpy).toHaveBeenCalledWith(
+      [{ query: "Kailua-Kona, Hawaii", country: undefined }],
+      "pk.test",
+      undefined,
+    );
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      query: "Kailua-Kona, Hawaii",
+      icon: "triathlete",
+    });
+  });
+
   it("retry re-runs pinPlaces with the last raw input", async () => {
     const batchSpy = vi
       .spyOn(geocoderModule, "geocodeBatch")

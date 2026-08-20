@@ -62,7 +62,7 @@ const {
   }
 
   class MockMarker {
-    options: unknown;
+    options: { color?: string; element?: HTMLElement } | undefined;
     clickHandler: (() => void) | null = null;
     element = {
       addEventListener: (event: string, handler: () => void) => {
@@ -70,7 +70,7 @@ const {
       },
     };
 
-    constructor(options?: unknown) {
+    constructor(options?: { color?: string; element?: HTMLElement }) {
       this.options = options;
       markerInstances.push(this);
     }
@@ -259,6 +259,21 @@ describe("MapView", () => {
       />,
     );
     expect(markerInstances[0]?.options).toEqual({ color: "#3b82f6" });
+  });
+
+  it("renders a custom triathlete marker element for a place tagged with the ironman icon", () => {
+    const tagged = { ...paris, icon: "triathlete" as const };
+    render(
+      <MapView
+        token="pk.test"
+        places={[tagged]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
+    const marker = markerInstances[0];
+    expect(marker?.options?.element).toBeInstanceOf(HTMLElement);
+    expect(marker?.options?.color).toBeUndefined();
   });
 
   it("shows a legend only for categories actually present", () => {
