@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { deletePhoto, fetchPhotos, uploadPhoto } from "../lib/photosRepository";
 import type { PlacePhoto } from "../lib/photosRepository";
 
@@ -54,10 +54,18 @@ export function usePhotos(
     [userId],
   );
 
-  const photosByQuery: Record<string, PlacePhoto[]> = {};
-  for (const photo of photos) {
-    (photosByQuery[photo.placeQuery] ??= []).push(photo);
-  }
+  // Memoized so the returned object keeps a stable identity across renders
+  // that don't actually change `photos` — MapView's marker-rebuild effect
+  // depends on this reference, and an identity change on every render
+  // (regardless of content) would tear down and recreate every marker on
+  // every App re-render, including mid-click while a popup is opening.
+  const photosByQuery = useMemo(() => {
+    const result: Record<string, PlacePhoto[]> = {};
+    for (const photo of photos) {
+      (result[photo.placeQuery] ??= []).push(photo);
+    }
+    return result;
+  }, [photos]);
 
   return { photosByQuery, addPhoto, removePhoto };
 }

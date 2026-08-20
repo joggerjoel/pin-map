@@ -112,4 +112,27 @@ describe("usePhotos", () => {
       parisPhoto,
     );
   });
+
+  it("keeps photosByQuery's identity stable across a re-render that doesn't change photos", async () => {
+    // MapView's marker-rebuild effect depends on this object's reference —
+    // a fresh object on every render (even an unrelated one, e.g. a marker
+    // click updating other state) would tear down and recreate every
+    // marker on every render, sometimes mid-popup-open.
+    vi.mocked(photosRepositoryModule.fetchPhotos).mockResolvedValue([
+      parisPhoto,
+    ]);
+
+    const { result, rerender } = renderHook(
+      ({ userId }) => usePhotos(userId, null),
+      { initialProps: { userId: "user-1" } },
+    );
+    await waitFor(() =>
+      expect(result.current.photosByQuery.Paris).toEqual([parisPhoto]),
+    );
+    const firstReference = result.current.photosByQuery;
+
+    rerender({ userId: "user-1" });
+
+    expect(result.current.photosByQuery).toBe(firstReference);
+  });
 });
