@@ -53,6 +53,25 @@ body {
   border-radius: 4px;
 }
 
+.place-input {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.place-input label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.place-input textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: monospace;
+}
+
 .place-list ul {
   list-style: none;
   padding: 0;
