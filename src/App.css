@@ -19,6 +19,13 @@ body {
   border-right: 1px solid #ccc;
 }
 
+.app__sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .app__map {
   position: relative;
 }

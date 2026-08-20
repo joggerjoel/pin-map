@@ -10,6 +10,9 @@ const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
     class MockMap {
       flyToCalls: unknown[] = [];
       fitBoundsCalls: unknown[] = [];
+      // Combined, ordered log of every camera command issued, so tests can
+      // assert on the LAST command regardless of which method produced it.
+      commands: Array<{ type: "flyTo" | "fitBounds"; opts: unknown }> = [];
 
       constructor(public options: unknown) {
         instances.push(this);
@@ -17,9 +20,11 @@ const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
       remove(): void {}
       flyTo(opts: unknown): void {
         this.flyToCalls.push(opts);
+        this.commands.push({ type: "flyTo", opts });
       }
       fitBounds(bounds: unknown, opts: unknown): void {
         this.fitBoundsCalls.push({ bounds, opts });
+        this.commands.push({ type: "fitBounds", opts: { bounds, opts } });
       }
     }
 
@@ -111,5 +116,86 @@ describe("App", () => {
     expect(window.localStorage.getItem("pin-map:mapbox-token")).toBe(
       "pk.test-token",
     );
+  });
+
+  it("shows the newly pinned place instead of hijacking the camera back to a prior selection", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes("Paris")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              features: [
+                { place_name: "Paris, France", center: [2.35, 48.86] },
+              ],
+            }),
+          } as unknown as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            features: [{ place_name: "Tokyo, Japan", center: [139.69, 35.68] }],
+          }),
+        } as unknown as Response;
+      }),
+    );
+
+    render(<App />);
+
+    await user.type(
+      screen.getByLabelText("Mapbox access token"),
+      "pk.test-token",
+    );
+    await user.click(screen.getByRole("button", { name: "Save token" }));
+
+    // Pin Paris, then select it in the sidebar.
+    await user.type(
+      screen.getByLabelText("Paste places, one per line"),
+      "Paris",
+    );
+    await user.click(screen.getByRole("button", { name: "Pin Places" }));
+    await waitFor(() => {
+      expect(screen.getByText("Paris, France")).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: "Paris, France" }));
+
+    // Pin Tokyo next. This must fit bounds to both places, not fly back to
+    // Paris just because `places` changed underneath the earlier selection.
+    await user.clear(screen.getByLabelText("Paste places, one per line"));
+    await user.type(
+      screen.getByLabelText("Paste places, one per line"),
+      "Tokyo",
+    );
+    await user.click(screen.getByRole("button", { name: "Pin Places" }));
+    await waitFor(() => {
+      expect(screen.getByText("Tokyo, Japan")).toBeInTheDocument();
+    });
+
+    const map = instances[0];
+    expect(map).toBeDefined();
+    const lastCommand = map?.commands[map.commands.length - 1];
+    expect(lastCommand?.type).toBe("fitBounds");
+  });
+
+  it("returns to the token setup screen and clears the stored token when Change token is clicked", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("pin-map:mapbox-token", "pk.stored-token");
+
+    render(<App />);
+
+    expect(
+      screen.queryByText(/Paste a Mapbox access token to get started/),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Change token" }));
+
+    expect(
+      screen.getByText(/Paste a Mapbox access token to get started/),
+    ).toBeInTheDocument();
+    expect(window.localStorage.getItem("pin-map:mapbox-token")).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
-import { cleanup, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { render } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MapView } from "./MapView";
 import type { GeocodeResult } from "../lib/geocoder";
 
@@ -80,18 +80,14 @@ beforeEach(() => {
   instances.length = 0;
 });
 
-afterEach(() => {
-  cleanup();
-});
-
 describe("MapView", () => {
   it("creates a map on mount", () => {
-    render(<MapView token="pk.test" places={[]} selectedQuery={null} />);
+    render(<MapView token="pk.test" places={[]} selection={null} />);
     expect(instances).toHaveLength(1);
   });
 
   it("flies to the single place when there is exactly one", () => {
-    render(<MapView token="pk.test" places={[paris]} selectedQuery={null} />);
+    render(<MapView token="pk.test" places={[paris]} selection={null} />);
     expect(instances[0]?.flyToCalls).toEqual([
       { center: [paris.lng, paris.lat], zoom: 10 },
     ]);
@@ -99,19 +95,69 @@ describe("MapView", () => {
 
   it("fits bounds to all places when there is more than one", () => {
     render(
-      <MapView token="pk.test" places={[paris, tokyo]} selectedQuery={null} />,
+      <MapView token="pk.test" places={[paris, tokyo]} selection={null} />,
     );
     expect(instances[0]?.fitBoundsCalls).toHaveLength(1);
   });
 
   it("flies to the selected place", () => {
     render(
-      <MapView token="pk.test" places={[paris, tokyo]} selectedQuery="tokyo" />,
+      <MapView
+        token="pk.test"
+        places={[paris, tokyo]}
+        selection={{ query: "tokyo", nonce: 1 }}
+      />,
     );
     const flyToCalls = instances[0]?.flyToCalls ?? [];
     expect(flyToCalls[flyToCalls.length - 1]).toEqual({
       center: [tokyo.lng, tokyo.lat],
       zoom: 12,
     });
+  });
+
+  it("flies again when the same place is reselected with a new nonce", () => {
+    const { rerender } = render(
+      <MapView
+        token="pk.test"
+        places={[paris, tokyo]}
+        selection={{ query: "tokyo", nonce: 1 }}
+      />,
+    );
+    const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
+
+    rerender(
+      <MapView
+        token="pk.test"
+        places={[paris, tokyo]}
+        selection={{ query: "tokyo", nonce: 2 }}
+      />,
+    );
+
+    expect(instances[0]?.flyToCalls.length).toBe(flyToCallsBefore + 1);
+  });
+
+  it("does not re-fly to the selection when places changes but the selection doesn't", () => {
+    const selection = { query: "tokyo", nonce: 1 };
+    const { rerender } = render(
+      <MapView token="pk.test" places={[paris, tokyo]} selection={selection} />,
+    );
+    const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
+
+    const mountainView: GeocodeResult = {
+      query: "mountain view",
+      name: "Mountain View, CA",
+      lng: -122.08,
+      lat: 37.42,
+    };
+    rerender(
+      <MapView
+        token="pk.test"
+        places={[paris, tokyo, mountainView]}
+        selection={selection}
+      />,
+    );
+
+    expect(instances[0]?.flyToCalls.length).toBe(flyToCallsBefore);
+    expect(instances[0]?.fitBoundsCalls.length).toBeGreaterThan(0);
   });
 });
