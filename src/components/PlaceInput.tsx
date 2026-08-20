@@ -73,7 +73,7 @@ export function PlaceInput({
             }
           }}
         />
-        Checklist mode (numbered list with X/XX/Y marks)
+        Checklist mode (numbered list with X/(home)/Y marks)
       </label>
       <label>
         Continent (optional)

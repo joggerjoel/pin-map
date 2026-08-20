@@ -20,8 +20,8 @@ describe("parseChecklistLine", () => {
     });
   });
 
-  it("parses a hometown mark (XX)", () => {
-    expect(parseChecklistLine("22 Michigan XX")).toEqual({
+  it("parses a hometown mark ((home))", () => {
+    expect(parseChecklistLine("22 Michigan (home)")).toEqual({
       name: "Michigan",
       category: "hometown",
     });
@@ -35,7 +35,7 @@ describe("parseChecklistLine", () => {
   });
 
   it("is case-insensitive for marks", () => {
-    expect(parseChecklistLine("22 Michigan xx")).toEqual({
+    expect(parseChecklistLine("22 Michigan (HOME)")).toEqual({
       name: "Michigan",
       category: "hometown",
     });
@@ -82,7 +82,7 @@ describe("parseChecklist", () => {
       "2 Alaska x",
       "9 Florida X",
       "10 Georgia X",
-      "22 Michigan XX",
+      "22 Michigan (home)",
     ].join("\n");
 
     expect(parseChecklist(raw)).toEqual([

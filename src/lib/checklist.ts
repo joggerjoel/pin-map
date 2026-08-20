@@ -6,9 +6,9 @@ export interface ChecklistEntry {
 }
 
 const MARK_CATEGORIES: Record<string, PlaceCategory> = {
-  XX: "hometown",
-  Y: "lived",
-  X: "visited",
+  "(home)": "hometown",
+  y: "lived",
+  x: "visited",
 };
 
 export function parseChecklistLine(rawLine: string): ChecklistEntry | null {
@@ -25,7 +25,7 @@ export function parseChecklistLine(rawLine: string): ChecklistEntry | null {
 
   let category: PlaceCategory | undefined;
   while (tokens.length > 0) {
-    const candidate = MARK_CATEGORIES[tokens[tokens.length - 1].toUpperCase()];
+    const candidate = MARK_CATEGORIES[tokens[tokens.length - 1].toLowerCase()];
     if (candidate === undefined) {
       break;
     }

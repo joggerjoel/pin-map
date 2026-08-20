@@ -124,7 +124,7 @@ describe("PlaceInput", () => {
     await user.click(screen.getByLabelText(/Checklist mode/i));
     await user.type(
       screen.getByLabelText("Paste places, one per line"),
-      "9 Florida X{enter}22 Michigan XX",
+      "9 Florida X{enter}22 Michigan (home)",
     );
 
     rerender(
@@ -136,7 +136,7 @@ describe("PlaceInput", () => {
     );
 
     expect(screen.getByLabelText("Paste places, one per line")).toHaveValue(
-      "22 Michigan XX",
+      "22 Michigan (home)",
     );
   });
 
