@@ -165,3 +165,53 @@ describe("geocodeBatch", () => {
     expect((rejection as GeocodeAllFailedError).isAuthError).toBe(false);
   });
 });
+
+describe("geocodeLine with a country filter", () => {
+  it("includes the country param in the request URL when provided", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        features: [
+          { place_name: "Florida, United States", center: [-81.5, 27.7] },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await geocodeLine("Florida", "pk.test", "us");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("country=us"),
+    );
+  });
+
+  it("omits the country param when not provided", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ features: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await geocodeLine("Paris", "pk.test");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.not.stringContaining("country="),
+    );
+  });
+});
+
+describe("geocodeBatch with a country filter", () => {
+  it("passes the country filter through to every request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        features: [
+          { place_name: "Florida, United States", center: [-81.5, 27.7] },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await geocodeBatch(["Florida", "Georgia"], "pk.test", "us");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      expect(call[0]).toContain("country=us");
+    }
+  });
+});

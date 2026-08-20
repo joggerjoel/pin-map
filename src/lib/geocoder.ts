@@ -52,10 +52,18 @@ export function parseLines(raw: string): string[] {
 export async function geocodeLine(
   query: string,
   token: string,
+  country?: string,
 ): Promise<GeocodeResult | null> {
+  const params = new URLSearchParams({
+    access_token: token,
+    limit: "1",
+  });
+  if (country) {
+    params.set("country", country);
+  }
   const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
     query,
-  )}.json?access_token=${encodeURIComponent(token)}&limit=1`;
+  )}.json?${params.toString()}`;
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -82,9 +90,10 @@ export async function geocodeLine(
 export async function geocodeBatch(
   queries: string[],
   token: string,
+  country?: string,
 ): Promise<GeocodeBatchResult> {
   const settled = await Promise.allSettled(
-    queries.map((query) => geocodeLine(query, token)),
+    queries.map((query) => geocodeLine(query, token, country)),
   );
 
   const pinned: GeocodeResult[] = [];
