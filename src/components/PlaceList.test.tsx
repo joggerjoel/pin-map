@@ -2,9 +2,9 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { PlaceList } from "./PlaceList";
-import type { GeocodeResult } from "../lib/geocoder";
+import type { PinnedPlace } from "../hooks/useGeocoder";
 
-const paris: GeocodeResult = {
+const paris: PinnedPlace = {
   query: "Paris",
   name: "Paris, France",
   lng: 2.35,
@@ -19,6 +19,7 @@ describe("PlaceList", () => {
         failedLines={[]}
         onSelect={vi.fn()}
         onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
         highlightedQuery={null}
       />,
     );
@@ -34,6 +35,7 @@ describe("PlaceList", () => {
         failedLines={[]}
         onSelect={onSelect}
         onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
         highlightedQuery={null}
       />,
     );
@@ -52,6 +54,7 @@ describe("PlaceList", () => {
         failedLines={[]}
         onSelect={vi.fn()}
         onRemove={onRemove}
+        onChangeTag={vi.fn()}
         highlightedQuery={null}
       />,
     );
@@ -68,6 +71,7 @@ describe("PlaceList", () => {
         failedLines={[]}
         onSelect={vi.fn()}
         onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
         highlightedQuery={null}
       />,
     );
@@ -79,6 +83,7 @@ describe("PlaceList", () => {
         failedLines={["Nowhereville"]}
         onSelect={vi.fn()}
         onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
         highlightedQuery={null}
       />,
     );
@@ -93,6 +98,7 @@ describe("PlaceList", () => {
         failedLines={[]}
         onSelect={vi.fn()}
         onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
         highlightedQuery="Paris"
       />,
     );
@@ -107,10 +113,78 @@ describe("PlaceList", () => {
         failedLines={[]}
         onSelect={vi.fn()}
         onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
         highlightedQuery={null}
       />,
     );
     const item = screen.getByText("Paris, France").closest("li");
     expect(item).not.toHaveClass("place-list__item--highlighted");
+  });
+
+  it("expands a tag picker when a place name is clicked", async () => {
+    const user = userEvent.setup();
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Visited" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByText("Paris, France"));
+
+    expect(screen.getByRole("button", { name: "Visited" })).toBeInTheDocument();
+  });
+
+  it("collapses the tag picker when the same place is clicked again", async () => {
+    const user = userEvent.setup();
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+      />,
+    );
+
+    await user.click(screen.getByText("Paris, France"));
+    expect(screen.getByRole("button", { name: "Visited" })).toBeInTheDocument();
+
+    await user.click(screen.getByText("Paris, France"));
+    expect(
+      screen.queryByRole("button", { name: "Visited" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("calls onChangeTag with the picked tag and collapses the picker", async () => {
+    const onChangeTag = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={onChangeTag}
+        highlightedQuery={null}
+      />,
+    );
+
+    await user.click(screen.getByText("Paris, France"));
+    await user.click(screen.getByRole("button", { name: "Hometown" }));
+
+    expect(onChangeTag).toHaveBeenCalledWith("Paris", { category: "hometown" });
+    expect(
+      screen.queryByRole("button", { name: "Hometown" }),
+    ).not.toBeInTheDocument();
   });
 });

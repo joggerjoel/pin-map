@@ -1,11 +1,18 @@
-import { useEffect, useRef } from "react";
-import type { GeocodeResult } from "../lib/geocoder";
+import { useEffect, useRef, useState } from "react";
+import type { PinnedPlace } from "../hooks/useGeocoder";
+import type { PlaceCategory } from "../lib/checklist";
+import type { PlaceIcon } from "../lib/placeTags";
+import { TagPicker } from "./TagPicker";
 
 export interface PlaceListProps {
-  pinnedPlaces: GeocodeResult[];
+  pinnedPlaces: PinnedPlace[];
   failedLines: string[];
   onSelect: (query: string) => void;
   onRemove: (query: string) => void;
+  onChangeTag: (
+    query: string,
+    tag: { category?: PlaceCategory; icon?: PlaceIcon },
+  ) => void;
   highlightedQuery: string | null;
 }
 
@@ -14,9 +21,11 @@ export function PlaceList({
   failedLines,
   onSelect,
   onRemove,
+  onChangeTag,
   highlightedQuery,
 }: PlaceListProps) {
   const itemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
+  const [expandedQuery, setExpandedQuery] = useState<string | null>(null);
 
   useEffect(() => {
     if (highlightedQuery === null) return;
@@ -40,20 +49,47 @@ export function PlaceList({
                 : undefined
             }
           >
-            <button
-              type="button"
-              className="place-list__select"
-              onClick={() => onSelect(place.query)}
-            >
-              {place.name}
-            </button>
-            <button
-              type="button"
-              aria-label={`Remove ${place.name}`}
-              onClick={() => onRemove(place.query)}
-            >
-              ×
-            </button>
+            <div className="place-list__row">
+              <button
+                type="button"
+                className="place-list__select"
+                onClick={() => {
+                  onSelect(place.query);
+                  setExpandedQuery((prev) =>
+                    prev === place.query ? null : place.query,
+                  );
+                }}
+              >
+                {place.name}
+              </button>
+              <button
+                type="button"
+                aria-label={`Remove ${place.name}`}
+                onClick={() => onRemove(place.query)}
+              >
+                ×
+              </button>
+            </div>
+            {expandedQuery === place.query && (
+              <TagPicker
+                selectedTag={
+                  place.category
+                    ? { kind: "category", value: place.category }
+                    : place.icon
+                      ? { kind: "icon", value: place.icon }
+                      : null
+                }
+                onSelect={(tag) => {
+                  onChangeTag(
+                    place.query,
+                    tag.kind === "category"
+                      ? { category: tag.value }
+                      : { icon: tag.value },
+                  );
+                  setExpandedQuery(null);
+                }}
+              />
+            )}
           </li>
         ))}
       </ul>

@@ -415,3 +415,50 @@ describe("pinPlace", () => {
     expect(result.current.pinnedPlaces).toEqual([]);
   });
 });
+
+describe("changeTag", () => {
+  it("replaces a pinned place's category and clears any icon", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+    await act(async () => {
+      await result.current.pinPlace("Paris", { icon: "triathlete" });
+    });
+
+    act(() => {
+      result.current.changeTag("Paris", { category: "hometown" });
+    });
+
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      category: "hometown",
+      icon: undefined,
+    });
+  });
+
+  it("does nothing when the query doesn't match any pinned place", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+
+    act(() => {
+      result.current.changeTag("Nowhereville", { category: "hometown" });
+    });
+
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      category: "visited",
+    });
+  });
+});

@@ -89,6 +89,7 @@ export function App() {
             removalNonce.current += 1;
             setLastRemoval({ query, nonce: removalNonce.current });
           }}
+          onChangeTag={geocoder.changeTag}
           highlightedQuery={highlightedQuery}
         />
       </aside>

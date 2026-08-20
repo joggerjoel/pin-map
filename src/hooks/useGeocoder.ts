@@ -34,6 +34,10 @@ export interface UseGeocoderResult {
     tag: { category?: PlaceCategory; icon?: PlaceIcon },
   ) => Promise<void>;
   removePlace: (query: string) => void;
+  changeTag: (
+    query: string,
+    tag: { category?: PlaceCategory; icon?: PlaceIcon },
+  ) => void;
   retry: () => void;
 }
 
@@ -204,6 +208,19 @@ export function useGeocoder(token: string): UseGeocoderResult {
     setPinnedPlaces((prev) => prev.filter((place) => place.query !== query));
   }, []);
 
+  const changeTag = useCallback(
+    (query: string, tag: { category?: PlaceCategory; icon?: PlaceIcon }) => {
+      setPinnedPlaces((prev) =>
+        prev.map((place) =>
+          place.query === query
+            ? { ...place, category: tag.category, icon: tag.icon }
+            : place,
+        ),
+      );
+    },
+    [],
+  );
+
   const retry = useCallback(() => {
     void runPinPlaces(
       lastRawInput.current,
@@ -221,6 +238,7 @@ export function useGeocoder(token: string): UseGeocoderResult {
     pinPlaces,
     pinPlace,
     removePlace,
+    changeTag,
     retry,
   };
 }

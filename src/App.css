@@ -62,27 +62,6 @@ body {
   border-bottom: 1px solid #444;
 }
 
-.add-pin__icons {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.add-pin__swatch {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-}
-
-.add-pin__swatch--selected {
-  border-color: #ffffff;
-}
-
 .place-input {
   display: flex;
   flex-direction: column;
@@ -107,17 +86,43 @@ body {
   padding: 0;
 }
 
-.place-list li {
+.place-list__row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
 }
 
+.place-list li {
+  padding: 0.25rem 0;
+}
+
 .place-list__item--highlighted {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+.tag-picker {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.tag-picker__swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tag-picker__swatch--selected {
+  border-color: #ffffff;
 }
 
 .mapboxgl-popup-content {
