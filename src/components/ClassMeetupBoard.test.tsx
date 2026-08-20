@@ -33,6 +33,7 @@ const jane: RosterPerson = {
   highSchoolName: "Jane Smith",
   currentName: "Jane Smith Johnson",
   hometown: "Belding, Michigan",
+  living: "",
   currentLocation: "",
 };
 

@@ -12,6 +12,7 @@ const jane: RosterPerson = {
   highSchoolName: "Jane Smith",
   currentName: "Jane Smith Johnson",
   hometown: "Belding, Michigan",
+  living: "Grand Rapids, Michigan",
   currentLocation: "Grand Rapids, Michigan",
 };
 
@@ -23,6 +24,7 @@ const bob: RosterPerson = {
   highSchoolName: "Bob Lee",
   currentName: "",
   hometown: "Belding, Michigan",
+  living: "",
   currentLocation: "",
 };
 
@@ -138,5 +140,105 @@ describe("RosterGrid", () => {
     expect(
       screen.getByRole("button", { name: "Select Jane Smith Johnson" }),
     ).toHaveTextContent("J");
+  });
+
+  it("opens the photo modal on double-click, without calling onSelect", async () => {
+    const onSelect = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <RosterGrid
+        people={[jane, bob]}
+        selectedId={null}
+        searchText=""
+        onSearchChange={vi.fn()}
+        onSelect={onSelect}
+      />,
+    );
+
+    await user.dblClick(
+      screen.getByRole("button", { name: "Select Jane Smith Johnson" }),
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "Photos of Jane Smith Johnson" }),
+    ).toBeInTheDocument();
+  });
+
+  it("passes that person's photos and forwards onAddPhoto with the person attached", async () => {
+    const onAddPhoto = vi.fn();
+    const user = userEvent.setup();
+    const photo = {
+      id: "photo-1",
+      personId: 1,
+      storagePath: "user-1/a.jpg",
+      year: 1995,
+      url: "https://cdn.example.com/user-1/a.jpg",
+    };
+    render(
+      <RosterGrid
+        people={[jane, bob]}
+        selectedId={null}
+        searchText=""
+        onSearchChange={vi.fn()}
+        onSelect={vi.fn()}
+        photosByPersonId={{ 1: [photo] }}
+        onAddPhoto={onAddPhoto}
+      />,
+    );
+
+    await user.dblClick(
+      screen.getByRole("button", { name: "Select Jane Smith Johnson" }),
+    );
+    expect(screen.getByText("1995")).toBeInTheDocument();
+
+    const file = new File(["fake"], "recent.jpg", { type: "image/jpeg" });
+    await user.upload(screen.getByLabelText("Add a recent photo"), file);
+
+    expect(onAddPhoto).toHaveBeenCalledWith(jane, file, null);
+  });
+
+  it("closes the photo modal when its close button is clicked", async () => {
+    const user = userEvent.setup();
+    render(
+      <RosterGrid
+        people={[jane, bob]}
+        selectedId={null}
+        searchText=""
+        onSearchChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    await user.dblClick(
+      screen.getByRole("button", { name: "Select Jane Smith Johnson" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("shows an In Memoriam label for a person whose living field is RIP", () => {
+    const deceased = { ...bob, living: "RIP" };
+    render(
+      <RosterGrid
+        people={[jane, deceased]}
+        selectedId={null}
+        searchText=""
+        onSearchChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const deceasedButton = screen.getByRole("button", {
+      name: "Select Bob Lee",
+    });
+    expect(deceasedButton).toHaveTextContent("In Memoriam");
+    expect(deceasedButton.className).toContain("--deceased");
+
+    const livingButton = screen.getByRole("button", {
+      name: "Select Jane Smith Johnson",
+    });
+    expect(livingButton).not.toHaveTextContent("In Memoriam");
+    expect(livingButton.className).not.toContain("--deceased");
   });
 });

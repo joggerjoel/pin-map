@@ -7,6 +7,7 @@ export interface RosterPerson {
   highSchoolName: string;
   currentName: string;
   hometown: string;
+  living: string;
   currentLocation: string;
 }
 
@@ -17,6 +18,7 @@ interface RosterRow {
   high_school_name: string;
   current_name: string;
   hometown: string;
+  living: string;
   current_location: string;
 }
 
@@ -28,6 +30,7 @@ function toRosterPerson(row: RosterRow): RosterPerson {
     highSchoolName: row.high_school_name,
     currentName: row.current_name,
     hometown: row.hometown,
+    living: row.living,
     currentLocation: row.current_location,
   };
 }
@@ -37,7 +40,7 @@ export async function fetchRoster(classSlug: string): Promise<RosterPerson[]> {
     const { data, error } = await supabase
       .from("pinmap_class_roster")
       .select(
-        "id, filename, image_url, high_school_name, current_name, hometown, current_location",
+        "id, filename, image_url, high_school_name, current_name, hometown, living, current_location",
       )
       .eq("class_slug", classSlug)
       .order("id");
@@ -55,6 +58,7 @@ export interface RosterPersonUpdate {
   highSchoolName: string;
   currentName: string;
   hometown: string;
+  living: string;
   currentLocation: string;
 }
 
@@ -69,6 +73,7 @@ export async function saveRosterPerson(
         high_school_name: update.highSchoolName,
         current_name: update.currentName,
         hometown: update.hometown,
+        living: update.living,
         current_location: update.currentLocation,
       })
       .eq("class_slug", classSlug)

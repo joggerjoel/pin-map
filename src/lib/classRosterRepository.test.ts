@@ -58,7 +58,8 @@ const row = {
   high_school_name: "Jane Smith",
   current_name: "Jane Smith Johnson",
   hometown: "Belding, Michigan",
-  current_location: "Grand Rapids, Michigan",
+  living: "Grand Rapids, Michigan",
+  current_location: "Chicago, Illinois",
 };
 
 describe("fetchRoster", () => {
@@ -82,7 +83,8 @@ describe("fetchRoster", () => {
         highSchoolName: "Jane Smith",
         currentName: "Jane Smith Johnson",
         hometown: "Belding, Michigan",
-        currentLocation: "Grand Rapids, Michigan",
+        living: "Grand Rapids, Michigan",
+        currentLocation: "Chicago, Illinois",
       },
     ]);
   });
@@ -112,7 +114,8 @@ describe("saveRosterPerson", () => {
     highSchoolName: "Jane Smith",
     currentName: "Jane Smith Johnson",
     hometown: "Belding, Michigan",
-    currentLocation: "Grand Rapids, Michigan",
+    living: "Grand Rapids, Michigan",
+    currentLocation: "Chicago, Illinois",
   };
 
   it("calls .update with the mapped fields, scoped by class_slug and id", async () => {
@@ -127,7 +130,8 @@ describe("saveRosterPerson", () => {
       high_school_name: "Jane Smith",
       current_name: "Jane Smith Johnson",
       hometown: "Belding, Michigan",
-      current_location: "Grand Rapids, Michigan",
+      living: "Grand Rapids, Michigan",
+      current_location: "Chicago, Illinois",
     });
     expect(chain.eq).toHaveBeenNthCalledWith(1, "class_slug", "belding1989");
     expect(chain.eq).toHaveBeenNthCalledWith(2, "id", 1);

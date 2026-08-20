@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
 import { fetchRoster, saveRosterPerson } from "../lib/classRosterRepository";
 import type { RosterPerson } from "../lib/classRosterRepository";
+import type { RosterPersonPhoto } from "../lib/classRosterPhotosRepository";
 import { RosterGrid } from "./RosterGrid";
 
 export interface ClassRosterEditorProps {
   classSlug: string;
+  photosByPersonId?: Record<number, RosterPersonPhoto[]>;
+  onAddPhoto?: (personId: number, file: File, year: number | null) => void;
 }
 
 interface FormState {
   highSchoolName: string;
   currentName: string;
   hometown: string;
+  living: string;
   currentLocation: string;
 }
 
@@ -19,6 +23,7 @@ function toFormState(person: RosterPerson): FormState {
     highSchoolName: person.highSchoolName,
     currentName: person.currentName,
     hometown: person.hometown,
+    living: person.living,
     currentLocation: person.currentLocation,
   };
 }
@@ -28,13 +33,18 @@ function isDirty(form: FormState, person: RosterPerson): boolean {
     form.highSchoolName !== person.highSchoolName ||
     form.currentName !== person.currentName ||
     form.hometown !== person.hometown ||
+    form.living !== person.living ||
     form.currentLocation !== person.currentLocation
   );
 }
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
-export function ClassRosterEditor({ classSlug }: ClassRosterEditorProps) {
+export function ClassRosterEditor({
+  classSlug,
+  photosByPersonId,
+  onAddPhoto,
+}: ClassRosterEditorProps) {
   const [people, setPeople] = useState<RosterPerson[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
@@ -81,6 +91,7 @@ export function ClassRosterEditor({ classSlug }: ClassRosterEditorProps) {
       highSchoolName: form.highSchoolName.trim(),
       currentName: form.currentName.trim(),
       hometown: form.hometown.trim(),
+      living: form.living.trim(),
       currentLocation: form.currentLocation.trim(),
     };
     const ok = await saveRosterPerson(classSlug, {
@@ -107,6 +118,11 @@ export function ClassRosterEditor({ classSlug }: ClassRosterEditorProps) {
         onSearchChange={setSearchText}
         onSelect={selectPerson}
         isLoading={isLoading}
+        photosByPersonId={photosByPersonId}
+        onAddPhoto={
+          onAddPhoto &&
+          ((person, file, year) => onAddPhoto(person.id, file, year))
+        }
       />
       {selected !== null && form !== null && (
         <div className="class-roster__panel">
@@ -137,6 +153,16 @@ export function ClassRosterEditor({ classSlug }: ClassRosterEditorProps) {
               value={form.hometown}
               onChange={(event) =>
                 setForm({ ...form, hometown: event.target.value })
+              }
+            />
+          </label>
+          <label>
+            Living
+            <input
+              type="text"
+              value={form.living}
+              onChange={(event) =>
+                setForm({ ...form, living: event.target.value })
               }
             />
           </label>

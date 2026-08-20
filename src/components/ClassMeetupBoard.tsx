@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchRoster } from "../lib/classRosterRepository";
 import type { RosterPerson } from "../lib/classRosterRepository";
+import type { RosterPersonPhoto } from "../lib/classRosterPhotosRepository";
 import { addMeetup, fetchMeetups } from "../lib/classMeetupsRepository";
 import type { ClassMeetup } from "../lib/classMeetupsRepository";
 import { geocodeLine } from "../lib/geocoder";
@@ -8,11 +9,20 @@ import { displayName } from "../lib/rosterName";
 import { ClassMeetupMapView } from "./ClassMeetupMapView";
 import { RosterGrid } from "./RosterGrid";
 
+// Nearly every classmate lives in the US, and city names collide across
+// countries often enough (a plain "Chicago" or "Paris" search can resolve
+// abroad) that biasing toward the US measurably improves match accuracy for
+// this class's actual population, without hard-blocking a genuine
+// non-US entry (the bias narrows ranking, it doesn't filter results out).
+const GEOCODE_COUNTRY_BIAS = "us";
+
 export interface ClassMeetupBoardProps {
   classSlug: string;
   token: string;
   userId: string;
   userEmail: string;
+  photosByPersonId?: Record<number, RosterPersonPhoto[]>;
+  onAddPhoto?: (personId: number, file: File, year: number | null) => void;
 }
 
 export function ClassMeetupBoard({
@@ -20,6 +30,8 @@ export function ClassMeetupBoard({
   token,
   userId,
   userEmail,
+  photosByPersonId,
+  onAddPhoto,
 }: ClassMeetupBoardProps) {
   const [people, setPeople] = useState<RosterPerson[]>([]);
   const [meetups, setMeetups] = useState<ClassMeetup[]>([]);
@@ -58,7 +70,11 @@ export function ClassMeetupBoard({
     }
     setIsSubmitting(true);
     setSubmitError(null);
-    const geocoded = await geocodeLine(trimmedCity, token);
+    const geocoded = await geocodeLine(
+      trimmedCity,
+      token,
+      GEOCODE_COUNTRY_BIAS,
+    );
     if (geocoded === null) {
       setIsSubmitting(false);
       setSubmitError(`Couldn't find "${trimmedCity}".`);
@@ -95,6 +111,11 @@ export function ClassMeetupBoard({
           searchText={searchText}
           onSearchChange={setSearchText}
           onSelect={(person) => setSelectedId(person.id)}
+          photosByPersonId={photosByPersonId}
+          onAddPhoto={
+            onAddPhoto &&
+            ((person, file, year) => onAddPhoto(person.id, file, year))
+          }
         />
         <form
           className="class-meetup-board__form"

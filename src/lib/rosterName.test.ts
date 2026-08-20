@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayName, matchesSearch } from "./rosterName";
+import { displayName, isDeceased, matchesSearch } from "./rosterName";
 import type { RosterPerson } from "./classRosterRepository";
 
 function person(overrides: Partial<RosterPerson> = {}): RosterPerson {
@@ -11,6 +11,7 @@ function person(overrides: Partial<RosterPerson> = {}): RosterPerson {
     highSchoolName: "",
     currentName: "",
     hometown: "",
+    living: "",
     currentLocation: "",
     ...overrides,
   };
@@ -75,5 +76,36 @@ describe("matchesSearch", () => {
         "bob",
       ),
     ).toBe(false);
+  });
+});
+
+describe("isDeceased", () => {
+  it("is true for an exact RIP value", () => {
+    expect(isDeceased(person({ living: "RIP" }))).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isDeceased(person({ living: "rip" }))).toBe(true);
+  });
+
+  it("is true for RIP followed by additional detail", () => {
+    expect(isDeceased(person({ living: "RIP 2015" }))).toBe(true);
+    expect(isDeceased(person({ living: "RIP - cancer" }))).toBe(true);
+  });
+
+  it("tolerates surrounding whitespace", () => {
+    expect(isDeceased(person({ living: "  RIP  " }))).toBe(true);
+  });
+
+  it("is false for a blank living field", () => {
+    expect(isDeceased(person({ living: "" }))).toBe(false);
+  });
+
+  it("is false for a real place name that happens to start with 'rip'", () => {
+    expect(isDeceased(person({ living: "Ripon, Wisconsin" }))).toBe(false);
+  });
+
+  it("is false for an ordinary city", () => {
+    expect(isDeceased(person({ living: "Chicago, Illinois" }))).toBe(false);
   });
 });

@@ -1,6 +1,10 @@
 import { useState } from "react";
 import type { RosterPerson } from "../lib/classRosterRepository";
-import { displayName, matchesSearch } from "../lib/rosterName";
+import type { RosterPersonPhoto } from "../lib/classRosterPhotosRepository";
+import { displayName, isDeceased, matchesSearch } from "../lib/rosterName";
+import { PersonPhotoModal } from "./PersonPhotoModal";
+
+const EMPTY_PHOTOS: RosterPersonPhoto[] = [];
 
 export interface RosterGridProps {
   people: RosterPerson[];
@@ -9,6 +13,8 @@ export interface RosterGridProps {
   onSearchChange: (text: string) => void;
   onSelect: (person: RosterPerson) => void;
   isLoading?: boolean;
+  photosByPersonId?: Record<number, RosterPersonPhoto[]>;
+  onAddPhoto?: (person: RosterPerson, file: File, year: number | null) => void;
 }
 
 export function RosterGrid({
@@ -18,13 +24,17 @@ export function RosterGrid({
   onSearchChange,
   onSelect,
   isLoading = false,
+  photosByPersonId = {},
+  onAddPhoto,
 }: RosterGridProps) {
   const [brokenImageIds, setBrokenImageIds] = useState<Set<number>>(
     () => new Set(),
   );
+  const [modalPersonId, setModalPersonId] = useState<number | null>(null);
   const visiblePeople = people.filter((person) =>
     matchesSearch(person, searchText),
   );
+  const modalPerson = people.find((p) => p.id === modalPersonId) ?? null;
 
   return (
     <div className="class-roster__grid-area">
@@ -42,13 +52,18 @@ export function RosterGrid({
           <li key={person.id}>
             <button
               type="button"
-              className={
+              className={[
+                "class-roster__portrait",
                 person.id === selectedId
-                  ? "class-roster__portrait class-roster__portrait--selected"
-                  : "class-roster__portrait"
-              }
+                  ? "class-roster__portrait--selected"
+                  : null,
+                isDeceased(person) ? "class-roster__portrait--deceased" : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
               aria-label={`Select ${displayName(person)}`}
               onClick={() => onSelect(person)}
+              onDoubleClick={() => setModalPersonId(person.id)}
             >
               {brokenImageIds.has(person.id) ? (
                 <span className="class-roster__portrait-placeholder">
@@ -66,10 +81,21 @@ export function RosterGrid({
               <span className="class-roster__portrait-name">
                 {displayName(person)}
               </span>
+              {isDeceased(person) && (
+                <span className="class-roster__in-memoriam">In Memoriam</span>
+              )}
             </button>
           </li>
         ))}
       </ul>
+      {modalPerson !== null && (
+        <PersonPhotoModal
+          person={modalPerson}
+          photos={photosByPersonId[modalPerson.id] ?? EMPTY_PHOTOS}
+          onAddPhoto={(file, year) => onAddPhoto?.(modalPerson, file, year)}
+          onClose={() => setModalPersonId(null)}
+        />
+      )}
     </div>
   );
 }

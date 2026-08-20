@@ -18,7 +18,8 @@ const jane: RosterPerson = {
   highSchoolName: "Jane Smith",
   currentName: "Jane Smith Johnson",
   hometown: "Belding, Michigan",
-  currentLocation: "Grand Rapids, Michigan",
+  living: "Grand Rapids, Michigan",
+  currentLocation: "Chicago, Illinois",
 };
 
 const bob: RosterPerson = {
@@ -29,6 +30,7 @@ const bob: RosterPerson = {
   highSchoolName: "Bob Lee",
   currentName: "",
   hometown: "Belding, Michigan",
+  living: "",
   currentLocation: "",
 };
 
@@ -71,8 +73,11 @@ describe("ClassRosterEditor", () => {
       "Jane Smith Johnson",
     );
     expect(screen.getByLabelText("Hometown")).toHaveValue("Belding, Michigan");
-    expect(screen.getByLabelText("Current location")).toHaveValue(
+    expect(screen.getByLabelText("Living")).toHaveValue(
       "Grand Rapids, Michigan",
+    );
+    expect(screen.getByLabelText("Current location")).toHaveValue(
+      "Chicago, Illinois",
     );
     expect(screen.getByLabelText("Image URL")).toHaveValue(jane.imageUrl);
     expect(screen.getByLabelText("Image URL")).toHaveAttribute("readonly");
@@ -92,7 +97,7 @@ describe("ClassRosterEditor", () => {
     expect(screen.getByLabelText("High school name")).toHaveValue("Jane Smith");
   });
 
-  it("trims whitespace and saves all four fields on Save", async () => {
+  it("trims whitespace and saves all five fields on Save", async () => {
     vi.mocked(classRosterRepositoryModule.saveRosterPerson).mockResolvedValue(
       true,
     );
@@ -103,6 +108,7 @@ describe("ClassRosterEditor", () => {
       await screen.findByRole("button", { name: "Select Bob Lee" }),
     );
     await user.type(screen.getByLabelText("Current name"), "  Bob Leeson  ");
+    await user.type(screen.getByLabelText("Living"), "  Detroit  ");
     await user.type(screen.getByLabelText("Current location"), "  Chicago  ");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
@@ -114,6 +120,7 @@ describe("ClassRosterEditor", () => {
           highSchoolName: "Bob Lee",
           currentName: "Bob Leeson",
           hometown: "Belding, Michigan",
+          living: "Detroit",
           currentLocation: "Chicago",
         },
       );

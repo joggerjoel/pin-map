@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ClassRosterEditor } from "./ClassRosterEditor";
 import { ClassMeetupBoard } from "./ClassMeetupBoard";
+import { useRosterPhotos } from "../hooks/useRosterPhotos";
 
 export interface ClassReunionAppProps {
   classSlug: string;
@@ -18,6 +19,7 @@ export function ClassReunionApp({
   userEmail,
 }: ClassReunionAppProps) {
   const [tab, setTab] = useState<Tab>("meetups");
+  const rosterPhotos = useRosterPhotos(classSlug, userId);
 
   return (
     <div className="class-reunion">
@@ -44,11 +46,19 @@ export function ClassReunionApp({
             token={token}
             userId={userId}
             userEmail={userEmail}
+            photosByPersonId={rosterPhotos.photosByPersonId}
+            onAddPhoto={rosterPhotos.addPhoto}
           />
         ) : (
           <p>Connect a Mapbox token to use the meetup map.</p>
         ))}
-      {tab === "roster" && <ClassRosterEditor classSlug={classSlug} />}
+      {tab === "roster" && (
+        <ClassRosterEditor
+          classSlug={classSlug}
+          photosByPersonId={rosterPhotos.photosByPersonId}
+          onAddPhoto={rosterPhotos.addPhoto}
+        />
+      )}
     </div>
   );
 }
