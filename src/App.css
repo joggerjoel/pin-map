@@ -235,11 +235,18 @@ body {
   position: relative;
   display: flex;
   align-items: center;
+  gap: 0.5rem;
+}
+
+.tag-picker__label {
+  flex: 1;
+  font-size: 0.85rem;
 }
 
 .tag-picker__edit {
   width: 16px;
   height: 16px;
+  flex-shrink: 0;
   border-radius: 50%;
   border: none;
   background: #444;
@@ -248,7 +255,6 @@ body {
   line-height: 1;
   cursor: pointer;
   padding: 0;
-  margin-left: -6px;
 }
 
 .tag-picker__edit-form {

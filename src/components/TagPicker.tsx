@@ -234,6 +234,7 @@ export function TagPicker({
             >
               {renderIconGlyph(option.iconShape)}
             </button>
+            <span className="tag-picker__label">{option.label}</span>
             <button
               type="button"
               className="tag-picker__edit"
