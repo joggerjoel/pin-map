@@ -149,6 +149,17 @@ body {
   text-decoration: underline;
 }
 
+.place-list__relocate {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.place-list__relocate input {
+  flex: 1;
+  min-width: 0;
+}
+
 .place-list__item--highlighted {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;

@@ -31,6 +31,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(screen.getByText("Paris, France")).toBeInTheDocument();
@@ -50,6 +52,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
 
@@ -72,6 +76,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
 
@@ -92,6 +98,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(screen.queryByText("Couldn't find")).not.toBeInTheDocument();
@@ -107,6 +115,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(screen.getByText("Couldn't find")).toBeInTheDocument();
@@ -125,6 +135,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const item = screen.getByText("Paris, France").closest("li");
@@ -143,6 +155,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(screen.getByRole("button", { name: "Visited" })).toBeInTheDocument();
@@ -160,6 +174,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const item = screen.getByText("Paris, France").closest("li");
@@ -179,6 +195,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
 
@@ -204,6 +222,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
 
@@ -230,6 +250,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
 
@@ -257,6 +279,8 @@ describe("PlaceList", () => {
         customTags={[marathon]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
 
@@ -279,6 +303,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={onReorder}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
 
@@ -306,6 +332,8 @@ describe("PlaceList", () => {
         customTags={[]}
         onCreateCustomTag={vi.fn()}
         onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const link = screen.getByRole("link", {
@@ -316,5 +344,92 @@ describe("PlaceList", () => {
       `https://www.google.com/maps/search/?api=1&query=${paris.lat},${paris.lng}`,
     );
     expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("calls onSetLocation when a Google Maps URL is submitted in the location field", async () => {
+    const onSetLocation = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={onSetLocation}
+      />,
+    );
+
+    await user.click(screen.getByText("Paris, France"));
+    await user.type(
+      screen.getByLabelText("Fix location for Paris, France"),
+      "https://www.google.com/maps/@37.7749,-122.4194,15z",
+    );
+    await user.click(screen.getByRole("button", { name: "Update location" }));
+
+    expect(onSetLocation).toHaveBeenCalledWith("Paris", 37.7749, -122.4194);
+  });
+
+  it("calls onSetLocation when a raw lat,lng pair is submitted", async () => {
+    const onSetLocation = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={onSetLocation}
+      />,
+    );
+
+    await user.click(screen.getByText("Paris, France"));
+    await user.type(
+      screen.getByLabelText("Fix location for Paris, France"),
+      "48.8566, 2.3522",
+    );
+    await user.click(screen.getByRole("button", { name: "Update location" }));
+
+    expect(onSetLocation).toHaveBeenCalledWith("Paris", 48.8566, 2.3522);
+  });
+
+  it("calls onRelocate when free text is submitted", async () => {
+    const onRelocate = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={onRelocate}
+        onSetLocation={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByText("Paris, France"));
+    await user.type(
+      screen.getByLabelText("Fix location for Paris, France"),
+      "Paris, Texas",
+    );
+    await user.click(screen.getByRole("button", { name: "Update location" }));
+
+    expect(onRelocate).toHaveBeenCalledWith("Paris", "Paris, Texas");
   });
 });

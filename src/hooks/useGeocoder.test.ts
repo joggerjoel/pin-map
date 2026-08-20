@@ -543,6 +543,99 @@ describe("changeTag", () => {
   });
 });
 
+describe("setLocation", () => {
+  it("updates a pinned place's coordinates without changing its query or name", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Hong Kong SAR, China",
+      name: "Hongtong Xian, Linfen Shi, Shanxi, China",
+      lng: 111.667,
+      lat: 36.25,
+    });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+    await act(async () => {
+      await result.current.pinPlace("Hong Kong SAR, China", {
+        category: "visited",
+      });
+    });
+
+    act(() => {
+      result.current.setLocation(
+        "Hong Kong SAR, China",
+        22.3193039,
+        114.1693611,
+      );
+    });
+
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      query: "Hong Kong SAR, China",
+      lat: 22.3193039,
+      lng: 114.1693611,
+    });
+  });
+});
+
+describe("relocatePlace", () => {
+  it("re-geocodes new search text and updates name/lat/lng, keeping the original query", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine")
+      .mockResolvedValueOnce({
+        query: "Hong Kong SAR, China",
+        name: "Hongtong Xian, Linfen Shi, Shanxi, China",
+        lng: 111.667,
+        lat: 36.25,
+      })
+      .mockResolvedValueOnce({
+        query: "Hong Kong",
+        name: "Hong Kong",
+        lng: 114.1693611,
+        lat: 22.3193039,
+      });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+    await act(async () => {
+      await result.current.pinPlace("Hong Kong SAR, China", {
+        category: "visited",
+      });
+    });
+
+    await act(async () => {
+      await result.current.relocatePlace("Hong Kong SAR, China", "Hong Kong");
+    });
+
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      query: "Hong Kong SAR, China",
+      name: "Hong Kong",
+      lat: 22.3193039,
+      lng: 114.1693611,
+    });
+  });
+
+  it("sets an error and leaves the place unchanged when the new search finds nothing", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine")
+      .mockResolvedValueOnce({
+        query: "Paris",
+        name: "Paris, France",
+        lng: 2.35,
+        lat: 48.86,
+      })
+      .mockResolvedValueOnce(null);
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+
+    await act(async () => {
+      await result.current.relocatePlace("Paris", "Nowhereville");
+    });
+
+    expect(result.current.error).toContain("Nowhereville");
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      name: "Paris, France",
+    });
+  });
+});
+
 describe("reorderPlaces", () => {
   it("moves a place from one index to another", async () => {
     vi.spyOn(geocoderModule, "geocodeLine")

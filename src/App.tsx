@@ -107,6 +107,8 @@ export function App() {
           customTags={customTags}
           onCreateCustomTag={handleCreateCustomTag}
           onReorder={geocoder.reorderPlaces}
+          onRelocate={geocoder.relocatePlace}
+          onSetLocation={geocoder.setLocation}
         />
       </aside>
       <main className="app__map">

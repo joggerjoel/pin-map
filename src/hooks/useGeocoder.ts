@@ -61,6 +61,8 @@ export interface UseGeocoderResult {
   ) => void;
   reorderPlaces: (fromIndex: number, toIndex: number) => void;
   retry: () => void;
+  relocatePlace: (query: string, searchText: string) => Promise<void>;
+  setLocation: (query: string, lat: number, lng: number) => void;
 }
 
 export function useGeocoder(token: string): UseGeocoderResult {
@@ -268,6 +270,55 @@ export function useGeocoder(token: string): UseGeocoderResult {
     void runPinPlaces(lastRawInput.current, lastContinent.current, true);
   }, [runPinPlaces]);
 
+  const setLocation = useCallback((query: string, lat: number, lng: number) => {
+    setPinnedPlaces((prev) =>
+      prev.map((place) =>
+        place.query === query ? { ...place, lat, lng } : place,
+      ),
+    );
+  }, []);
+
+  const relocatePlace = useCallback(
+    async (query: string, searchText: string) => {
+      const trimmed = searchText.trim();
+      if (trimmed === "") {
+        return;
+      }
+      setIsLoading(true);
+      setError(null);
+      try {
+        const result = await geocodeLine(trimmed, token);
+        if (result === null) {
+          setError(`Couldn't find "${trimmed}".`);
+          return;
+        }
+        setPinnedPlaces((prev) =>
+          prev.map((place) =>
+            place.query === query
+              ? {
+                  ...place,
+                  name: result.name,
+                  lat: result.lat,
+                  lng: result.lng,
+                }
+              : place,
+          ),
+        );
+      } catch (err) {
+        if (err instanceof GeocodeAllFailedError && err.isAuthError) {
+          setError("That Mapbox token was rejected — check it and try again.");
+        } else {
+          setError(
+            "Couldn't reach Mapbox. Check your connection and try again.",
+          );
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [token],
+  );
+
   return {
     pinnedPlaces,
     failedLines,
@@ -279,5 +330,7 @@ export function useGeocoder(token: string): UseGeocoderResult {
     changeTag,
     reorderPlaces,
     retry,
+    relocatePlace,
+    setLocation,
   };
 }
