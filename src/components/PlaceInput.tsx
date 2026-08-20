@@ -2,21 +2,30 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 
 export interface PlaceInputProps {
-  onSubmit: (raw: string) => void;
+  onSubmit: (raw: string, checklistMode: boolean) => void;
   isLoading: boolean;
 }
 
 export function PlaceInput({ onSubmit, isLoading }: PlaceInputProps) {
   const [value, setValue] = useState("");
+  const [checklistMode, setChecklistMode] = useState(false);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (value.trim() === "") return;
-    onSubmit(value);
+    onSubmit(value, checklistMode);
   }
 
   return (
     <form className="place-input" onSubmit={handleSubmit}>
+      <label>
+        <input
+          type="checkbox"
+          checked={checklistMode}
+          onChange={(event) => setChecklistMode(event.target.checked)}
+        />
+        Checklist mode (numbered list with X/XX/Y marks)
+      </label>
       <label htmlFor="places-textarea">Paste places, one per line</label>
       <textarea
         id="places-textarea"
