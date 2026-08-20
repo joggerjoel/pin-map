@@ -27,4 +27,21 @@ describe("TokenSetup", () => {
 
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it("links to Mapbox signup and the access tokens console", () => {
+    render(<TokenSetup onSubmit={vi.fn()} />);
+
+    expect(
+      screen.getByRole("link", { name: "Create a free Mapbox account" }),
+    ).toHaveAttribute(
+      "href",
+      "https://account.mapbox.com/auth/signup/?route-to=https%3A%2F%2Fconsole.mapbox.com%2F%3Fauth%3D1",
+    );
+    expect(
+      screen.getByRole("link", { name: "access tokens page" }),
+    ).toHaveAttribute(
+      "href",
+      "https://console.mapbox.com/account/access-tokens/",
+    );
+  });
 });
