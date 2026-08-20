@@ -117,6 +117,9 @@ function createMarkerOptions(
       ),
     };
   }
+  if (place.customTag) {
+    return { color: place.customTag.color };
+  }
   return place.category
     ? { color: CATEGORY_COLORS[place.category] }
     : undefined;

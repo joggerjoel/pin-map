@@ -461,4 +461,33 @@ describe("changeTag", () => {
       category: "visited",
     });
   });
+
+  it("pins a place with a custom tag and can change it later", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Boston",
+      name: "Boston, Massachusetts, USA",
+      lng: -71.06,
+      lat: 42.36,
+    });
+
+    const marathon = { id: "marathon", label: "Marathon", color: "#8b5cf6" };
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlace("Boston", { customTag: marathon });
+    });
+
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      customTag: marathon,
+    });
+
+    act(() => {
+      result.current.changeTag("Boston", { category: "visited" });
+    });
+
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      category: "visited",
+      customTag: undefined,
+    });
+  });
 });

@@ -1,5 +1,7 @@
+import { useState } from "react";
 import type { PlaceCategory } from "../lib/checklist";
 import type { PlaceIcon } from "../lib/placeTags";
+import type { CustomTag } from "../lib/customTags";
 import {
   HOUSE_ICON_PATH,
   TRIATHLETE_ICON_BODY_PATH,
@@ -8,7 +10,8 @@ import {
 
 export type PinTag =
   | { kind: "category"; value: PlaceCategory }
-  | { kind: "icon"; value: PlaceIcon };
+  | { kind: "icon"; value: PlaceIcon }
+  | { kind: "custom"; value: CustomTag };
 
 interface TagOption {
   tag: PinTag;
@@ -40,15 +43,31 @@ export const TAG_OPTIONS: TagOption[] = [
 ];
 
 function tagsEqual(a: PinTag, b: PinTag): boolean {
-  return a.kind === b.kind && a.value === b.value;
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "custom" && b.kind === "custom") {
+    return a.value.id === b.value.id;
+  }
+  if (a.kind === "custom" || b.kind === "custom") return false;
+  return a.value === b.value;
 }
 
 export interface TagPickerProps {
   selectedTag: PinTag | null;
   onSelect: (tag: PinTag) => void;
+  customTags: CustomTag[];
+  onCreateCustomTag: (label: string, color: string) => void;
 }
 
-export function TagPicker({ selectedTag, onSelect }: TagPickerProps) {
+export function TagPicker({
+  selectedTag,
+  onSelect,
+  customTags,
+  onCreateCustomTag,
+}: TagPickerProps) {
+  const [isCreating, setIsCreating] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newColor, setNewColor] = useState("#8b5cf6");
+
   return (
     <div className="tag-picker" role="radiogroup" aria-label="Pin icon">
       {TAG_OPTIONS.map((option) => {
@@ -89,6 +108,67 @@ export function TagPicker({ selectedTag, onSelect }: TagPickerProps) {
           </button>
         );
       })}
+      {customTags.map((tag) => {
+        const pinTag: PinTag = { kind: "custom", value: tag };
+        const isSelected =
+          selectedTag !== null && tagsEqual(pinTag, selectedTag);
+        return (
+          <button
+            type="button"
+            key={tag.id}
+            aria-label={tag.label}
+            aria-pressed={isSelected}
+            className={
+              isSelected
+                ? "tag-picker__swatch tag-picker__swatch--selected"
+                : "tag-picker__swatch"
+            }
+            style={{ backgroundColor: tag.color }}
+            onClick={() => onSelect(pinTag)}
+          />
+        );
+      })}
+      {!isCreating ? (
+        <button
+          type="button"
+          className="tag-picker__add"
+          aria-label="Create a custom pin type"
+          onClick={() => setIsCreating(true)}
+        >
+          +
+        </button>
+      ) : (
+        <div className="tag-picker__create">
+          <input
+            type="text"
+            value={newLabel}
+            onChange={(event) => setNewLabel(event.target.value)}
+            placeholder="Name"
+            aria-label="New pin type name"
+          />
+          <input
+            type="color"
+            value={newColor}
+            onChange={(event) => setNewColor(event.target.value)}
+            aria-label="New pin type color"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (newLabel.trim() === "") return;
+              onCreateCustomTag(newLabel, newColor);
+              setNewLabel("");
+              setNewColor("#8b5cf6");
+              setIsCreating(false);
+            }}
+          >
+            Create
+          </button>
+          <button type="button" onClick={() => setIsCreating(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
     </div>
   );
 }

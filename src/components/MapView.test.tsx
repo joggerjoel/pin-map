@@ -321,6 +321,22 @@ describe("MapView", () => {
     expect(marker?.options?.color).toBeUndefined();
   });
 
+  it("colors a marker using a custom tag's color", () => {
+    const tagged = {
+      ...paris,
+      customTag: { id: "marathon", label: "Marathon", color: "#8b5cf6" },
+    };
+    render(
+      <MapView
+        token="pk.test"
+        places={[tagged]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
+    expect(markerInstances[0]?.options).toEqual({ color: "#8b5cf6" });
+  });
+
   it("shows a legend only for categories actually present", () => {
     const visited = { ...paris, category: "visited" as const };
     const { container } = render(

@@ -13,10 +13,12 @@ import type { Continent } from "../lib/continents";
 import { detectCountryFromLine } from "../lib/countryNames";
 import { extractPlaceIcon } from "../lib/placeTags";
 import type { PlaceIcon } from "../lib/placeTags";
+import type { CustomTag } from "../lib/customTags";
 
 export interface PinnedPlace extends GeocodeResult {
   category?: PlaceCategory;
   icon?: PlaceIcon;
+  customTag?: CustomTag;
 }
 
 export interface UseGeocoderResult {
@@ -31,12 +33,12 @@ export interface UseGeocoderResult {
   ) => Promise<void>;
   pinPlace: (
     query: string,
-    tag: { category?: PlaceCategory; icon?: PlaceIcon },
+    tag: { category?: PlaceCategory; icon?: PlaceIcon; customTag?: CustomTag },
   ) => Promise<void>;
   removePlace: (query: string) => void;
   changeTag: (
     query: string,
-    tag: { category?: PlaceCategory; icon?: PlaceIcon },
+    tag: { category?: PlaceCategory; icon?: PlaceIcon; customTag?: CustomTag },
   ) => void;
   retry: () => void;
 }
@@ -160,7 +162,11 @@ export function useGeocoder(token: string): UseGeocoderResult {
   const pinPlace = useCallback(
     async (
       query: string,
-      tag: { category?: PlaceCategory; icon?: PlaceIcon },
+      tag: {
+        category?: PlaceCategory;
+        icon?: PlaceIcon;
+        customTag?: CustomTag;
+      },
     ) => {
       const trimmed = query.trim();
       if (trimmed === "") {
@@ -209,11 +215,23 @@ export function useGeocoder(token: string): UseGeocoderResult {
   }, []);
 
   const changeTag = useCallback(
-    (query: string, tag: { category?: PlaceCategory; icon?: PlaceIcon }) => {
+    (
+      query: string,
+      tag: {
+        category?: PlaceCategory;
+        icon?: PlaceIcon;
+        customTag?: CustomTag;
+      },
+    ) => {
       setPinnedPlaces((prev) =>
         prev.map((place) =>
           place.query === query
-            ? { ...place, category: tag.category, icon: tag.icon }
+            ? {
+                ...place,
+                category: tag.category,
+                icon: tag.icon,
+                customTag: tag.customTag,
+              }
             : place,
         ),
       );

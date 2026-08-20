@@ -152,6 +152,28 @@ body {
   border-color: #ffffff;
 }
 
+.tag-picker__add {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px dashed #666;
+  background: none;
+  color: #666;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tag-picker__create {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tag-picker__create input[type="text"] {
+  width: 100px;
+}
+
 .mapboxgl-popup-content {
   color: #1f2937;
 }
