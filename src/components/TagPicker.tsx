@@ -7,6 +7,7 @@ import {
   TRIATHLETE_ICON_BODY_PATH,
   TRIATHLETE_ICON_HEAD,
   AIRPLANE_ICON_PATH,
+  SKI_ICON_PATH,
 } from "../lib/iconShapes";
 import { getTagOrder, saveTagOrder } from "../lib/tagOrder";
 import { BUILTIN_TAG_KEYS, BUILTIN_TAG_LABELS } from "../lib/tagAppearance";
@@ -33,6 +34,7 @@ const BUILTIN_TAGS: Record<BuiltinTagKey, PinTag> = {
   ironman: { kind: "icon", value: "triathlete" },
   airport: { kind: "icon", value: "airplane" },
   current: { kind: "icon", value: "house-current" },
+  ski: { kind: "icon", value: "ski" },
 };
 
 export const DEFAULT_TAG: PinTag = BUILTIN_TAGS.visited;
@@ -105,6 +107,13 @@ function renderIconGlyph(shape: IconShape) {
     return (
       <svg viewBox="0 0 24 24" width="14" height="14">
         <path d={AIRPLANE_ICON_PATH} fill="#ffffff" />
+      </svg>
+    );
+  }
+  if (shape === "ski") {
+    return (
+      <svg viewBox="0 0 24 24" width="14" height="14">
+        <path d={SKI_ICON_PATH} fill="#ffffff" />
       </svg>
     );
   }
@@ -270,6 +279,7 @@ export function TagPicker({
                   <option value="house">House</option>
                   <option value="triathlete">Triathlete</option>
                   <option value="airplane">Airplane</option>
+                  <option value="ski">Ski</option>
                 </select>
                 <button type="button" onClick={() => saveEdit(option)}>
                   Save
@@ -317,6 +327,7 @@ export function TagPicker({
             <option value="house">House</option>
             <option value="triathlete">Triathlete</option>
             <option value="airplane">Airplane</option>
+            <option value="ski">Ski</option>
           </select>
           <button
             type="button"
