@@ -91,6 +91,41 @@ export async function geocodeLine(
   };
 }
 
+export async function searchPlaces(
+  query: string,
+  token: string,
+): Promise<GeocodeResult[]> {
+  const trimmed = query.trim();
+  if (trimmed === "") {
+    return [];
+  }
+
+  const params = new URLSearchParams({
+    access_token: token,
+    autocomplete: "true",
+    limit: "5",
+  });
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
+    trimmed,
+  )}.json?${params.toString()}`;
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new GeocodeRequestError(response.status);
+  }
+
+  const data = (await response.json()) as {
+    features?: Array<{ place_name: string; center: [number, number] }>;
+  };
+
+  return (data.features ?? []).map((feature) => ({
+    query: trimmed,
+    name: feature.place_name,
+    lng: feature.center[0],
+    lat: feature.center[1],
+  }));
+}
+
 export interface GeocodeQuery {
   query: string;
   country?: string;

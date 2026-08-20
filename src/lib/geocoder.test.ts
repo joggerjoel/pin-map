@@ -5,6 +5,7 @@ import {
   geocodeBatch,
   geocodeLine,
   parseLines,
+  searchPlaces,
 } from "./geocoder";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
@@ -287,6 +288,71 @@ describe("geocodeLine with a bbox filter", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.not.stringContaining("bbox="),
+    );
+  });
+});
+
+describe("searchPlaces", () => {
+  it("returns up to 5 suggestions with an autocomplete request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        features: [
+          { place_name: "Paris, France", center: [2.35, 48.86] },
+          {
+            place_name: "Paris, Texas, United States",
+            center: [-95.56, 33.66],
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results = await searchPlaces("Par", "pk.test");
+
+    expect(results).toEqual([
+      { query: "Par", name: "Paris, France", lng: 2.35, lat: 48.86 },
+      {
+        query: "Par",
+        name: "Paris, Texas, United States",
+        lng: -95.56,
+        lat: 33.66,
+      },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("autocomplete=true"),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("limit=5"));
+  });
+
+  it("returns an empty array for a blank query without making a request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results = await searchPlaces("   ", "pk.test");
+
+    expect(results).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty array when there are no features", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ features: [] })),
+    );
+
+    const results = await searchPlaces("Nowhereville", "pk.test");
+
+    expect(results).toEqual([]);
+  });
+
+  it("throws when the response is not ok", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({}, false, 500)),
+    );
+
+    await expect(searchPlaces("Paris", "pk.test")).rejects.toThrow(
+      "Mapbox geocoding request failed: 500",
     );
   });
 });
