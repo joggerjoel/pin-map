@@ -203,7 +203,7 @@ export function MapView({
                 createTriathleteIconSvg(),
               ),
             })
-          : place.category === "hometown"
+          : place.icon === "house" || place.category === "hometown"
             ? new mapboxgl.Marker({
                 element: createIconBadgeElement(
                   CATEGORY_COLORS.hometown,

@@ -36,4 +36,11 @@ describe("extractPlaceIcon", () => {
       icon: "triathlete",
     });
   });
+
+  it("extracts the home tag and strips it from the query", () => {
+    expect(extractPlaceIcon("Belding, Michigan (home)")).toEqual({
+      query: "Belding, Michigan",
+      icon: "house",
+    });
+  });
 });

@@ -276,6 +276,21 @@ describe("MapView", () => {
     expect(marker?.options?.color).toBeUndefined();
   });
 
+  it("renders a custom house marker element for a place tagged with the home icon", () => {
+    const tagged = { ...paris, icon: "house" as const };
+    render(
+      <MapView
+        token="pk.test"
+        places={[tagged]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
+    const marker = markerInstances[0];
+    expect(marker?.options?.element).toBeInstanceOf(HTMLElement);
+    expect(marker?.options?.color).toBeUndefined();
+  });
+
   it("renders a custom house marker element for a hometown place", () => {
     const home = { ...paris, category: "hometown" as const };
     render(
