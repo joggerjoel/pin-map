@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { PlaceCategory } from "../lib/checklist";
 import type { PlaceIcon } from "../lib/placeTags";
 import type { CustomTag } from "../lib/customTags";
@@ -7,6 +7,7 @@ import {
   TRIATHLETE_ICON_BODY_PATH,
   TRIATHLETE_ICON_HEAD,
 } from "../lib/iconShapes";
+import { getTagOrder, saveTagOrder } from "../lib/tagOrder";
 
 export type PinTag =
   | { kind: "category"; value: PlaceCategory }
@@ -51,6 +52,13 @@ function tagsEqual(a: PinTag, b: PinTag): boolean {
   return a.value === b.value;
 }
 
+function tagKey(tag: PinTag): string {
+  if (tag.kind === "custom") {
+    return `custom:${tag.value.id}`;
+  }
+  return `${tag.kind}:${tag.value}`;
+}
+
 export interface TagPickerProps {
   selectedTag: PinTag | null;
   onSelect: (tag: PinTag) => void;
@@ -67,16 +75,65 @@ export function TagPicker({
   const [isCreating, setIsCreating] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [newColor, setNewColor] = useState("#8b5cf6");
+  const [order, setOrder] = useState<string[]>(() => getTagOrder());
+
+  const allOptions = useMemo(() => {
+    const customOptions = customTags.map((tag) => ({
+      tag: { kind: "custom" as const, value: tag },
+      label: tag.label,
+      color: tag.color,
+    }));
+    return [...TAG_OPTIONS, ...customOptions];
+  }, [customTags]);
+
+  const orderedOptions = useMemo(() => {
+    const byKey = new Map(
+      allOptions.map((option) => [tagKey(option.tag), option]),
+    );
+    const ordered = order
+      .map((key) => byKey.get(key))
+      .filter(
+        (option): option is (typeof allOptions)[number] => option !== undefined,
+      );
+    const orderedKeySet = new Set(ordered.map((option) => tagKey(option.tag)));
+    const remaining = allOptions.filter(
+      (option) => !orderedKeySet.has(tagKey(option.tag)),
+    );
+    return [...ordered, ...remaining];
+  }, [allOptions, order]);
+
+  const draggedKeyRef = useRef<string | null>(null);
+
+  function handleDrop(targetKey: string) {
+    const draggedKey = draggedKeyRef.current;
+    draggedKeyRef.current = null;
+    if (draggedKey === null || draggedKey === targetKey) {
+      return;
+    }
+    const currentKeys = orderedOptions.map((option) => tagKey(option.tag));
+    const fromIndex = currentKeys.indexOf(draggedKey);
+    const toIndex = currentKeys.indexOf(targetKey);
+    if (fromIndex === -1 || toIndex === -1) {
+      return;
+    }
+    const newOrder = [...currentKeys];
+    const [moved] = newOrder.splice(fromIndex, 1);
+    newOrder.splice(toIndex, 0, moved);
+    setOrder(newOrder);
+    saveTagOrder(newOrder);
+  }
 
   return (
     <div className="tag-picker" role="radiogroup" aria-label="Pin icon">
-      {TAG_OPTIONS.map((option) => {
+      {orderedOptions.map((option) => {
+        const key = tagKey(option.tag);
         const isSelected =
           selectedTag !== null && tagsEqual(option.tag, selectedTag);
         return (
           <button
             type="button"
-            key={option.label}
+            key={key}
+            draggable
             aria-label={option.label}
             aria-pressed={isSelected}
             className={
@@ -86,6 +143,11 @@ export function TagPicker({
             }
             style={{ backgroundColor: option.color }}
             onClick={() => onSelect(option.tag)}
+            onDragStart={() => {
+              draggedKeyRef.current = key;
+            }}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => handleDrop(key)}
           >
             {option.tag.kind === "icon" &&
               option.tag.value === "triathlete" && (
@@ -106,26 +168,6 @@ export function TagPicker({
                 </svg>
               )}
           </button>
-        );
-      })}
-      {customTags.map((tag) => {
-        const pinTag: PinTag = { kind: "custom", value: tag };
-        const isSelected =
-          selectedTag !== null && tagsEqual(pinTag, selectedTag);
-        return (
-          <button
-            type="button"
-            key={tag.id}
-            aria-label={tag.label}
-            aria-pressed={isSelected}
-            className={
-              isSelected
-                ? "tag-picker__swatch tag-picker__swatch--selected"
-                : "tag-picker__swatch"
-            }
-            style={{ backgroundColor: tag.color }}
-            onClick={() => onSelect(pinTag)}
-          />
         );
       })}
       {!isCreating ? (

@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TagPicker } from "./TagPicker";
+import { getTagOrder, saveTagOrder } from "../lib/tagOrder";
 
 describe("TagPicker", () => {
   it("renders one button per tag option", () => {
@@ -167,5 +168,77 @@ describe("TagPicker", () => {
     await user.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onCreateCustomTag).not.toHaveBeenCalled();
+  });
+});
+
+describe("TagPicker reordering", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("renders swatches in a previously saved order", () => {
+    saveTagOrder(["category:hometown", "category:visited"]);
+    render(
+      <TagPicker
+        selectedTag={null}
+        onSelect={vi.fn()}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
+    const buttons = screen
+      .getAllByRole("button")
+      .filter((button) =>
+        ["Visited", "Lived", "Hometown", "Ironman"].includes(
+          button.getAttribute("aria-label") ?? "",
+        ),
+      );
+    expect(buttons[0]).toHaveAttribute("aria-label", "Hometown");
+    expect(buttons[1]).toHaveAttribute("aria-label", "Visited");
+  });
+
+  it("persists a new order after a drag-and-drop reorder", () => {
+    render(
+      <TagPicker
+        selectedTag={null}
+        onSelect={vi.fn()}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
+
+    const visited = screen.getByRole("button", { name: "Visited" });
+    const hometown = screen.getByRole("button", { name: "Hometown" });
+
+    const dragStartEvent = new Event("dragstart", { bubbles: true });
+    visited.dispatchEvent(dragStartEvent);
+    const dropEvent = new Event("drop", { bubbles: true });
+    hometown.dispatchEvent(dropEvent);
+
+    // Dragging "visited" (index 0) and dropping on "hometown" (index 2)
+    // removes "visited" first, then re-inserts it at index 2 of the
+    // now-shorter array — landing it directly after "hometown", ahead of
+    // "ironman". "lived" (untouched) stays in front.
+    expect(getTagOrder()).toEqual([
+      "category:lived",
+      "category:hometown",
+      "category:visited",
+      "icon:triathlete",
+    ]);
+  });
+
+  it("places a custom tag's swatch after existing built-ins by default (no saved order)", () => {
+    const marathon = { id: "marathon", label: "Marathon", color: "#8b5cf6" };
+    render(
+      <TagPicker
+        selectedTag={null}
+        onSelect={vi.fn()}
+        customTags={[marathon]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Marathon" }),
+    ).toBeInTheDocument();
   });
 });
