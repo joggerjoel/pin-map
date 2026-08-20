@@ -44,6 +44,13 @@ describe("extractPlaceIcon", () => {
     });
   });
 
+  it("extracts the hometown tag as an alias for home", () => {
+    expect(extractPlaceIcon("Belding, Michigan (hometown)")).toEqual({
+      query: "Belding, Michigan",
+      icon: "house-home",
+    });
+  });
+
   it("extracts the live tag and strips it from the query", () => {
     expect(extractPlaceIcon("Chicago, Illinois (live)")).toEqual({
       query: "Chicago, Illinois",
