@@ -107,6 +107,10 @@ const {
     unproject(point: [number, number]): { lng: number; lat: number } {
       return { lng: point[0] / 100, lat: point[1] / -100 };
     }
+    zoom = 10;
+    getZoom(): number {
+      return this.zoom;
+    }
   }
 
   class MockMarker {
@@ -1019,15 +1023,20 @@ describe("MapView declutter", () => {
     const map = instances[0];
     const initial = [markerInstances[0]?.lngLat, markerInstances[1]?.lngLat];
 
+    // jsdom (v25+) provides its own real, timer-based requestAnimationFrame,
+    // so this project's setTimeout-based rAF polyfill never installs — wait
+    // comfortably longer than jsdom's native rAF delay so each triggerMove()
+    // actually gets a chance to recalculate before the next assertion, not
+    // just resolve immediately with nothing having run yet.
     expect(() => map?.triggerMove()).not.toThrow();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 100));
     const afterFirstMove = [
       markerInstances[0]?.lngLat,
       markerInstances[1]?.lngLat,
     ];
 
     expect(() => map?.triggerMove()).not.toThrow();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 100));
     const afterSecondMove = [
       markerInstances[0]?.lngLat,
       markerInstances[1]?.lngLat,
@@ -1035,5 +1044,39 @@ describe("MapView declutter", () => {
 
     expect(afterFirstMove).toEqual(initial);
     expect(afterSecondMove).toEqual(afterFirstMove);
+  });
+
+  it("skips decluttering and resets any nudge below the minimum zoom", async () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[closeA, closeB]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    const map = instances[0];
+    // Confirm the pair actually got nudged at the default (zoomed-in) test
+    // zoom, so the assertions below are a real before/after, not a no-op.
+    expect(markerInstances[0]?.lngLat).not.toEqual([closeA.lng, closeA.lat]);
+
+    if (map) map.zoom = 2;
+    map?.triggerMove();
+    // jsdom (v25+) provides its own real, timer-based requestAnimationFrame
+    // with roughly a display-refresh-rate delay, so this project's
+    // setTimeout-based rAF polyfill (see the top of this file) never
+    // installs — a bare `setTimeout(resolve, 0)` resolves before jsdom's
+    // native rAF callback fires. Wait comfortably longer than that instead.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(markerInstances[0]?.lngLat).toEqual([closeA.lng, closeA.lat]);
+    expect(markerInstances[1]?.lngLat).toEqual([closeB.lng, closeB.lat]);
+    const lineSource = map?.getSource("declutter-lines");
+    const lastCall = lineSource?.dataCalls.at(-1) as
+      { features: unknown[] } | undefined;
+    expect(lastCall?.features).toEqual([]);
   });
 });

@@ -63,6 +63,9 @@ const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
       getSource(): undefined {
         return undefined;
       }
+      getZoom(): number {
+        return 10;
+      }
     }
 
     class MockMarker {
