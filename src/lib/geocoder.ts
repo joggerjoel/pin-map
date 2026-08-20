@@ -91,14 +91,20 @@ export async function geocodeLine(
   };
 }
 
+export interface GeocodeQuery {
+  query: string;
+  country?: string;
+}
+
 export async function geocodeBatch(
-  queries: string[],
+  entries: GeocodeQuery[],
   token: string,
-  country?: string,
   bbox?: [number, number, number, number],
 ): Promise<GeocodeBatchResult> {
   const settled = await Promise.allSettled(
-    queries.map((query) => geocodeLine(query, token, country, bbox)),
+    entries.map((entry) =>
+      geocodeLine(entry.query, token, entry.country, bbox),
+    ),
   );
 
   const pinned: GeocodeResult[] = [];
@@ -106,7 +112,7 @@ export async function geocodeBatch(
   const rejectedReasons: unknown[] = [];
 
   settled.forEach((result, index) => {
-    const query = queries[index];
+    const query = entries[index].query;
     if (result.status === "fulfilled" && result.value !== null) {
       pinned.push(result.value);
       return;
@@ -117,7 +123,7 @@ export async function geocodeBatch(
     }
   });
 
-  if (queries.length > 0 && rejectedReasons.length === queries.length) {
+  if (entries.length > 0 && rejectedReasons.length === entries.length) {
     const isAuthError = rejectedReasons.every(
       (reason) =>
         reason instanceof GeocodeRequestError &&

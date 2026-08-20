@@ -104,7 +104,10 @@ describe("geocodeBatch", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await geocodeBatch(["Paris", "Nowhereville"], "pk.test");
+    const result = await geocodeBatch(
+      [{ query: "Paris" }, { query: "Nowhereville" }],
+      "pk.test",
+    );
 
     expect(result.pinned).toEqual([
       { query: "Paris", name: "Paris, France", lng: 2.35, lat: 48.86 },
@@ -123,7 +126,10 @@ describe("geocodeBatch", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await geocodeBatch(["Paris", "BadLine"], "pk.test");
+    const result = await geocodeBatch(
+      [{ query: "Paris" }, { query: "BadLine" }],
+      "pk.test",
+    );
 
     expect(result.pinned).toEqual([
       { query: "Paris", name: "Paris, France", lng: 2.35, lat: 48.86 },
@@ -136,9 +142,9 @@ describe("geocodeBatch", () => {
       "fetch",
       vi.fn().mockRejectedValue(new Error("network down")),
     );
-    await expect(geocodeBatch(["Paris", "Tokyo"], "pk.test")).rejects.toThrow(
-      "All geocoding requests failed",
-    );
+    await expect(
+      geocodeBatch([{ query: "Paris" }, { query: "Tokyo" }], "pk.test"),
+    ).rejects.toThrow("All geocoding requests failed");
   });
 
   it("flags the failure as an auth error when every line 401s", async () => {
@@ -146,9 +152,10 @@ describe("geocodeBatch", () => {
       "fetch",
       vi.fn().mockResolvedValue(jsonResponse({}, false, 401)),
     );
-    const rejection = await geocodeBatch(["Paris", "Tokyo"], "pk.test").catch(
-      (err: unknown) => err,
-    );
+    const rejection = await geocodeBatch(
+      [{ query: "Paris" }, { query: "Tokyo" }],
+      "pk.test",
+    ).catch((err: unknown) => err);
     expect(rejection).toBeInstanceOf(GeocodeAllFailedError);
     expect((rejection as GeocodeAllFailedError).isAuthError).toBe(true);
   });
@@ -158,9 +165,10 @@ describe("geocodeBatch", () => {
       "fetch",
       vi.fn().mockRejectedValue(new Error("network down")),
     );
-    const rejection = await geocodeBatch(["Paris", "Tokyo"], "pk.test").catch(
-      (err: unknown) => err,
-    );
+    const rejection = await geocodeBatch(
+      [{ query: "Paris" }, { query: "Tokyo" }],
+      "pk.test",
+    ).catch((err: unknown) => err);
     expect(rejection).toBeInstanceOf(GeocodeAllFailedError);
     expect((rejection as GeocodeAllFailedError).isAuthError).toBe(false);
   });
@@ -207,12 +215,51 @@ describe("geocodeBatch with a country filter", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await geocodeBatch(["Florida", "Georgia"], "pk.test", "us");
+    await geocodeBatch(
+      [
+        { query: "Florida", country: "us" },
+        { query: "Georgia", country: "us" },
+      ],
+      "pk.test",
+    );
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     for (const call of fetchMock.mock.calls) {
       expect(call[0]).toContain("country=us");
     }
+  });
+
+  it("applies a different country filter per entry", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes("Dublin")) {
+        return jsonResponse({
+          features: [{ place_name: "Dublin, Ireland", center: [-6.26, 53.35] }],
+        });
+      }
+      return jsonResponse({
+        features: [
+          { place_name: "Portland, Maine, USA", center: [-70.26, 43.66] },
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await geocodeBatch(
+      [
+        { query: "Dublin, Ireland", country: "ie" },
+        { query: "Portland, Maine, USA", country: "us" },
+      ],
+      "pk.test",
+    );
+
+    const dublinCall = fetchMock.mock.calls.find((call) =>
+      String(call[0]).includes("Dublin"),
+    );
+    const portlandCall = fetchMock.mock.calls.find((call) =>
+      String(call[0]).includes("Portland"),
+    );
+    expect(dublinCall?.[0]).toContain("country=ie");
+    expect(portlandCall?.[0]).toContain("country=us");
   });
 });
 
@@ -254,9 +301,8 @@ describe("geocodeBatch with a bbox filter", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await geocodeBatch(
-      ["Paris", "Berlin"],
+      [{ query: "Paris" }, { query: "Berlin" }],
       "pk.test",
-      undefined,
       [-25, 34, 45, 72],
     );
 
