@@ -99,6 +99,9 @@ export function PlaceList({
               >
                 ≡
               </span>
+              {place.date && (
+                <span className="place-list__date">{place.date}</span>
+              )}
               <button
                 type="button"
                 className="place-list__select"

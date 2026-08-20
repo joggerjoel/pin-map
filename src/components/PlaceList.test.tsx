@@ -38,6 +38,53 @@ describe("PlaceList", () => {
     expect(screen.getByText("Paris, France")).toBeInTheDocument();
   });
 
+  it("renders the date next to the place name when present", () => {
+    const dublin: PinnedPlace = {
+      query: "Dublin, Ireland",
+      name: "Dublin, Ireland",
+      lng: -6.26,
+      lat: 53.35,
+      date: "2017",
+    };
+    render(
+      <PlaceList
+        pinnedPlaces={[dublin]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("2017")).toBeInTheDocument();
+  });
+
+  it("does not render a date element when the place has no date", () => {
+    const { container } = render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+      />,
+    );
+    expect(
+      container.querySelector(".place-list__date"),
+    ).not.toBeInTheDocument();
+  });
+
   it("calls onSelect with the query when a place name is clicked", async () => {
     const onSelect = vi.fn();
     const user = userEvent.setup();

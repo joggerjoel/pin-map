@@ -489,6 +489,112 @@ describe("useGeocoder checklist auto-detection", () => {
   });
 });
 
+describe("useGeocoder date prefix", () => {
+  it("extracts a single-year date prefix and strips it before geocoding", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({
+        pinned: [
+          {
+            query: "Dublin, Ireland",
+            name: "Dublin, Ireland",
+            lng: -6.26,
+            lat: 53.35,
+          },
+        ],
+        failed: [],
+      });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("2017 | Dublin, Ireland");
+    });
+
+    expect(batchSpy).toHaveBeenCalledWith(
+      [{ query: "Dublin, Ireland", country: "ie" }],
+      "pk.test",
+      undefined,
+    );
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      date: "2017",
+    });
+  });
+
+  it("extracts a multi-year date prefix alongside a tag suffix", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({
+        pinned: [
+          {
+            query: "Chamonix, France",
+            name: "Chamonix, France",
+            lng: 6.87,
+            lat: 45.92,
+          },
+        ],
+        failed: [],
+      });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("2015, 2016 | Chamonix, France (ironman)");
+    });
+
+    expect(batchSpy).toHaveBeenCalledWith(
+      [{ query: "Chamonix, France", country: "fr" }],
+      "pk.test",
+      undefined,
+    );
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      date: "2015, 2016",
+      icon: "triathlete",
+    });
+  });
+
+  it("resolves a date prefix combined with a tag and explicit coordinates without calling geocodeBatch", async () => {
+    const batchSpy = vi.spyOn(geocoderModule, "geocodeBatch");
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces(
+        "2017 | Hong Kong SAR, China, 25.8144821,-80.176346, (home)",
+      );
+    });
+
+    expect(batchSpy).not.toHaveBeenCalled();
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      date: "2017",
+      icon: "house-home",
+      lat: 25.8144821,
+      lng: -80.176346,
+      query: "Hong Kong SAR, China",
+      name: "Hong Kong SAR, China",
+    });
+  });
+
+  it("sets date to undefined for a plain line with no date prefix", async () => {
+    vi.spyOn(geocoderModule, "geocodeBatch").mockResolvedValue({
+      pinned: [
+        { query: "Tokyo", name: "Tokyo, Japan", lng: 139.69, lat: 35.68 },
+      ],
+      failed: [],
+    });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("Tokyo");
+    });
+
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      date: undefined,
+    });
+  });
+});
+
 describe("pinPlace", () => {
   it("geocodes a single query and pins it with the given category", async () => {
     vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({

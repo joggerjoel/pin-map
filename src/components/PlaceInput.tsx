@@ -3,6 +3,8 @@ import type { FormEvent } from "react";
 import { CONTINENTS } from "../lib/continents";
 import type { Continent } from "../lib/continents";
 import { looksLikeChecklistRow, parseChecklistLine } from "../lib/checklist";
+import { extractDatePrefix } from "../lib/datePrefix";
+import { resolvePlainLineName } from "../lib/plainLineName";
 
 export interface PlaceInputProps {
   onSubmit: (raw: string, continent: Continent | null) => void;
@@ -16,9 +18,11 @@ function removeMatchingLine(raw: string, query: string): string {
   let removed = false;
   const kept = lines.filter((line) => {
     if (removed) return true;
-    const identity = looksLikeChecklistRow(line)
-      ? parseChecklistLine(line)?.name
-      : line.trim();
+    const dateMatch = extractDatePrefix(line);
+    const workingLine = dateMatch ? dateMatch.rest : line;
+    const identity = looksLikeChecklistRow(workingLine)
+      ? parseChecklistLine(workingLine)?.name
+      : resolvePlainLineName(workingLine).name;
     if (identity !== undefined && identity.toLowerCase() === targetKey) {
       removed = true;
       return false;
@@ -77,7 +81,7 @@ export function PlaceInput({
         onChange={(event) => setValue(event.target.value)}
         rows={8}
         placeholder={
-          "Paris, France\nTokyo\n1600 Amphitheatre Pkwy, Mountain View"
+          "2017 | Paris, France\nTokyo\n1600 Amphitheatre Pkwy, Mountain View"
         }
       />
       <button type="submit" disabled={isLoading}>

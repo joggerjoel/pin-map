@@ -120,6 +120,54 @@ describe("PlaceInput", () => {
     );
   });
 
+  it("strips a date-prefixed line from the textarea when a place is removed", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <PlaceInput onSubmit={vi.fn()} isLoading={false} removedPlace={null} />,
+    );
+
+    await user.type(
+      screen.getByLabelText("Paste places, one per line"),
+      "2017 | Dublin, Ireland{enter}Belfast, Ireland",
+    );
+
+    rerender(
+      <PlaceInput
+        onSubmit={vi.fn()}
+        isLoading={false}
+        removedPlace={{ query: "Dublin, Ireland", nonce: 1 }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Paste places, one per line")).toHaveValue(
+      "Belfast, Ireland",
+    );
+  });
+
+  it("strips a date-prefixed, tag-suffixed line from the textarea when a place is removed", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <PlaceInput onSubmit={vi.fn()} isLoading={false} removedPlace={null} />,
+    );
+
+    await user.type(
+      screen.getByLabelText("Paste places, one per line"),
+      "2015, 2016 | Chamonix, France (ironman){enter}Tokyo",
+    );
+
+    rerender(
+      <PlaceInput
+        onSubmit={vi.fn()}
+        isLoading={false}
+        removedPlace={{ query: "Chamonix, France", nonce: 1 }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Paste places, one per line")).toHaveValue(
+      "Tokyo",
+    );
+  });
+
   it("does not change the textarea when removedPlace is null", () => {
     render(
       <PlaceInput onSubmit={vi.fn()} isLoading={false} removedPlace={null} />,

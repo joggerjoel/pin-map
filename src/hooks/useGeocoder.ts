@@ -11,15 +11,16 @@ import type { PlaceCategory } from "../lib/checklist";
 import { getContinentBbox } from "../lib/continents";
 import type { Continent } from "../lib/continents";
 import { detectCountryFromLine } from "../lib/countryNames";
-import { extractPlaceIcon } from "../lib/placeTags";
 import type { PlaceIcon } from "../lib/placeTags";
 import type { CustomTag } from "../lib/customTags";
-import { extractExplicitCoords } from "../lib/explicitCoords";
+import { extractDatePrefix } from "../lib/datePrefix";
+import { resolvePlainLineName } from "../lib/plainLineName";
 
 export interface PinnedPlace extends GeocodeResult {
   category?: PlaceCategory;
   icon?: PlaceIcon;
   customTag?: CustomTag;
+  date?: string;
 }
 
 interface ProcessedLine {
@@ -28,6 +29,7 @@ interface ProcessedLine {
   icon?: PlaceIcon;
   country?: string;
   explicitCoords?: { lat: number; lng: number };
+  date?: string;
 }
 
 // Every pasted line is independently checked for checklist shape ("9 Florida
@@ -35,23 +37,37 @@ interface ProcessedLine {
 // modes — this is what lets a single paste mix state-checklist rows with
 // plain free-form addresses.
 function processLine(line: string): ProcessedLine | null {
-  if (looksLikeChecklistRow(line)) {
-    const parsed = parseChecklistLine(line);
+  const dateMatch = extractDatePrefix(line);
+  const workingLine = dateMatch ? dateMatch.rest : line;
+  const date = dateMatch?.date;
+
+  if (looksLikeChecklistRow(workingLine)) {
+    const parsed = parseChecklistLine(workingLine);
     if (parsed === null) {
       return null; // unmarked checklist row — intentionally skipped
     }
-    return { query: parsed.name, category: parsed.category, country: "us" };
-  }
-  const { query, icon } = extractPlaceIcon(line);
-  const explicit = extractExplicitCoords(query);
-  if (explicit !== null) {
     return {
-      query: explicit.name,
-      icon,
-      explicitCoords: { lat: explicit.lat, lng: explicit.lng },
+      query: parsed.name,
+      category: parsed.category,
+      country: "us",
+      date,
     };
   }
-  return { query, icon, country: detectCountryFromLine(query) };
+  const plain = resolvePlainLineName(workingLine);
+  if (plain.explicitCoords !== undefined) {
+    return {
+      query: plain.name,
+      icon: plain.icon,
+      explicitCoords: plain.explicitCoords,
+      date,
+    };
+  }
+  return {
+    query: plain.name,
+    icon: plain.icon,
+    country: detectCountryFromLine(plain.name),
+    date,
+  };
 }
 
 function hasExplicitCoords(
@@ -139,6 +155,7 @@ export function useGeocoder(token: string): UseGeocoderResult {
             lng: processed.explicitCoords.lng,
             category: processed.category,
             icon: processed.icon,
+            date: processed.date,
           }),
         );
         setPinnedPlaces((prev) => [...prev, ...explicitlyPinned]);
@@ -173,6 +190,7 @@ export function useGeocoder(token: string): UseGeocoderResult {
             ...place,
             category: processed.category,
             icon: processed.icon,
+            date: processed.date,
           };
         });
         setPinnedPlaces((prev) => [...prev, ...newlyPinned]);
