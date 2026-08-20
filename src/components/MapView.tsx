@@ -4,6 +4,7 @@ import type { ExpressionSpecification } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PlaceCategory } from "../lib/checklist";
+import { buildGoogleMapsUrl } from "../lib/googleMaps";
 import { toGeoJsonStateName } from "../lib/stateNames";
 import {
   HOUSE_ICON_PATH,
@@ -49,6 +50,23 @@ function createHouseIconSvg(): SVGSVGElement {
 
   svg.appendChild(path);
   return svg;
+}
+
+function createPopupContent(place: PinnedPlace): HTMLDivElement {
+  const container = document.createElement("div");
+
+  const nameEl = document.createElement("div");
+  nameEl.textContent = place.name;
+  container.appendChild(nameEl);
+
+  const link = document.createElement("a");
+  link.href = buildGoogleMapsUrl(place.lat, place.lng);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = "View on Google Maps";
+  container.appendChild(link);
+
+  return container;
 }
 
 function createIconBadgeElement(
@@ -241,7 +259,7 @@ export function MapView({
       const marker = new mapboxgl.Marker(createMarkerOptions(place));
       marker
         .setLngLat([place.lng, place.lat])
-        .setPopup(new mapboxgl.Popup().setText(place.name))
+        .setPopup(new mapboxgl.Popup().setDOMContent(createPopupContent(place)))
         .addTo(map);
       marker.getElement().addEventListener("click", () => {
         onMarkerClick(place.query);

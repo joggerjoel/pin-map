@@ -64,6 +64,7 @@ const {
   class MockMarker {
     options: { color?: string; element?: HTMLElement } | undefined;
     clickHandler: (() => void) | null = null;
+    popup: MockPopup | undefined;
     element = {
       title: "",
       style: { zIndex: "" },
@@ -79,7 +80,8 @@ const {
     setLngLat(): MockMarker {
       return this;
     }
-    setPopup(): MockMarker {
+    setPopup(popup: MockPopup): MockMarker {
+      this.popup = popup;
       return this;
     }
     addTo(): MockMarker {
@@ -92,7 +94,12 @@ const {
   }
 
   class MockPopup {
+    domContent: unknown;
     setText(): MockPopup {
+      return this;
+    }
+    setDOMContent(content: unknown): MockPopup {
+      this.domContent = content;
       return this;
     }
   }
@@ -514,5 +521,25 @@ describe("MapView", () => {
     );
     expect(markerInstances[0]?.element.style.zIndex).toBe("1");
     expect(markerInstances[1]?.element.style.zIndex).toBe("2");
+  });
+
+  it("builds the popup content with the place name and a Google Maps link", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
+    const marker = markerInstances[0];
+    const domContent = marker?.popup?.domContent as HTMLDivElement | undefined;
+    expect(domContent?.textContent).toContain("Paris, France");
+    const link = domContent?.querySelector("a");
+    expect(link?.href).toBe(
+      `https://www.google.com/maps/search/?api=1&query=${paris.lat},${paris.lng}`,
+    );
+    expect(link?.target).toBe("_blank");
+    expect(link?.textContent).toBe("View on Google Maps");
   });
 });

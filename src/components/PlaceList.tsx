@@ -3,6 +3,7 @@ import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PlaceCategory } from "../lib/checklist";
 import type { PlaceIcon } from "../lib/placeTags";
 import type { CustomTag } from "../lib/customTags";
+import { buildGoogleMapsUrl } from "../lib/googleMaps";
 import { TagPicker } from "./TagPicker";
 
 export interface PlaceListProps {
@@ -111,6 +112,15 @@ export function PlaceList({
               >
                 ×
               </button>
+              <a
+                href={buildGoogleMapsUrl(place.lat, place.lng)}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`View ${place.name} on Google Maps`}
+                className="place-list__map-link"
+              >
+                ↗
+              </a>
             </div>
             {expandedQuery === place.query && (
               <TagPicker

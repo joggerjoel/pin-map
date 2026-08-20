@@ -276,4 +276,28 @@ describe("PlaceList", () => {
 
     expect(onReorder).toHaveBeenCalledWith(0, 1);
   });
+
+  it("renders a Google Maps link with the place's exact coordinates", () => {
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+      />,
+    );
+    const link = screen.getByRole("link", {
+      name: `View ${paris.name} on Google Maps`,
+    });
+    expect(link).toHaveAttribute(
+      "href",
+      `https://www.google.com/maps/search/?api=1&query=${paris.lat},${paris.lng}`,
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+  });
 });

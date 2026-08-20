@@ -76,6 +76,9 @@ const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
       setText(): MockPopup {
         return this;
       }
+      setDOMContent(): MockPopup {
+        return this;
+      }
     }
 
     class MockLngLatBounds {
