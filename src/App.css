@@ -84,6 +84,10 @@ body {
   gap: 0.5rem;
 }
 
+.mapboxgl-popup-content {
+  color: #1f2937;
+}
+
 .map-legend {
   position: absolute;
   top: 1rem;
