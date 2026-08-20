@@ -21,6 +21,8 @@ describe("PlaceList", () => {
         onRemove={vi.fn()}
         onChangeTag={vi.fn()}
         highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
       />,
     );
     expect(screen.getByText("Paris, France")).toBeInTheDocument();
@@ -37,6 +39,8 @@ describe("PlaceList", () => {
         onRemove={vi.fn()}
         onChangeTag={vi.fn()}
         highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
       />,
     );
 
@@ -56,6 +60,8 @@ describe("PlaceList", () => {
         onRemove={onRemove}
         onChangeTag={vi.fn()}
         highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
       />,
     );
 
@@ -73,6 +79,8 @@ describe("PlaceList", () => {
         onRemove={vi.fn()}
         onChangeTag={vi.fn()}
         highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
       />,
     );
     expect(screen.queryByText("Couldn't find")).not.toBeInTheDocument();
@@ -85,6 +93,8 @@ describe("PlaceList", () => {
         onRemove={vi.fn()}
         onChangeTag={vi.fn()}
         highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
       />,
     );
     expect(screen.getByText("Couldn't find")).toBeInTheDocument();
@@ -100,6 +110,8 @@ describe("PlaceList", () => {
         onRemove={vi.fn()}
         onChangeTag={vi.fn()}
         highlightedQuery="Paris"
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
       />,
     );
     const item = screen.getByText("Paris, France").closest("li");
@@ -115,6 +127,8 @@ describe("PlaceList", () => {
         onRemove={vi.fn()}
         onChangeTag={vi.fn()}
         highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
       />,
     );
     const item = screen.getByText("Paris, France").closest("li");
@@ -131,6 +145,8 @@ describe("PlaceList", () => {
         onRemove={vi.fn()}
         onChangeTag={vi.fn()}
         highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
       />,
     );
 
@@ -153,6 +169,8 @@ describe("PlaceList", () => {
         onRemove={vi.fn()}
         onChangeTag={vi.fn()}
         highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
       />,
     );
 
@@ -176,6 +194,8 @@ describe("PlaceList", () => {
         onRemove={vi.fn()}
         onChangeTag={onChangeTag}
         highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
       />,
     );
 
@@ -186,5 +206,28 @@ describe("PlaceList", () => {
     expect(
       screen.queryByRole("button", { name: "Hometown" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("calls onChangeTag with a customTag payload when a custom swatch is picked", async () => {
+    const onChangeTag = vi.fn();
+    const user = userEvent.setup();
+    const marathon = { id: "marathon", label: "Marathon", color: "#8b5cf6" };
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={onChangeTag}
+        highlightedQuery={null}
+        customTags={[marathon]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByText("Paris, France"));
+    await user.click(screen.getByRole("button", { name: "Marathon" }));
+
+    expect(onChangeTag).toHaveBeenCalledWith("Paris", { customTag: marathon });
   });
 });

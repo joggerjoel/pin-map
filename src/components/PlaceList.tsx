@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PlaceCategory } from "../lib/checklist";
 import type { PlaceIcon } from "../lib/placeTags";
+import type { CustomTag } from "../lib/customTags";
 import { TagPicker } from "./TagPicker";
 
 export interface PlaceListProps {
@@ -11,9 +12,11 @@ export interface PlaceListProps {
   onRemove: (query: string) => void;
   onChangeTag: (
     query: string,
-    tag: { category?: PlaceCategory; icon?: PlaceIcon },
+    tag: { category?: PlaceCategory; icon?: PlaceIcon; customTag?: CustomTag },
   ) => void;
   highlightedQuery: string | null;
+  customTags: CustomTag[];
+  onCreateCustomTag: (label: string, color: string) => void;
 }
 
 export function PlaceList({
@@ -23,6 +26,8 @@ export function PlaceList({
   onRemove,
   onChangeTag,
   highlightedQuery,
+  customTags,
+  onCreateCustomTag,
 }: PlaceListProps) {
   const itemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null);
@@ -73,21 +78,27 @@ export function PlaceList({
             {expandedQuery === place.query && (
               <TagPicker
                 selectedTag={
-                  place.category
-                    ? { kind: "category", value: place.category }
-                    : place.icon
-                      ? { kind: "icon", value: place.icon }
-                      : null
+                  place.customTag
+                    ? { kind: "custom", value: place.customTag }
+                    : place.category
+                      ? { kind: "category", value: place.category }
+                      : place.icon
+                        ? { kind: "icon", value: place.icon }
+                        : null
                 }
                 onSelect={(tag) => {
                   onChangeTag(
                     place.query,
                     tag.kind === "category"
                       ? { category: tag.value }
-                      : { icon: tag.value },
+                      : tag.kind === "icon"
+                        ? { icon: tag.value }
+                        : { customTag: tag.value },
                   );
                   setExpandedQuery(null);
                 }}
+                customTags={customTags}
+                onCreateCustomTag={onCreateCustomTag}
               />
             )}
           </li>

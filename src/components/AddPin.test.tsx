@@ -9,7 +9,14 @@ describe("AddPin", () => {
   it("defaults to the Visited icon and submits city + category", async () => {
     const onAdd = vi.fn();
     const user = userEvent.setup();
-    render(<AddPin onAdd={onAdd} isLoading={false} />);
+    render(
+      <AddPin
+        onAdd={onAdd}
+        isLoading={false}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
 
     await user.type(screen.getByLabelText("Add a pin"), "Paris");
     await user.click(screen.getByRole("button", { name: "Pin it" }));
@@ -23,7 +30,14 @@ describe("AddPin", () => {
   it("submits the chosen icon when a different swatch is selected", async () => {
     const onAdd = vi.fn();
     const user = userEvent.setup();
-    render(<AddPin onAdd={onAdd} isLoading={false} />);
+    render(
+      <AddPin
+        onAdd={onAdd}
+        isLoading={false}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
 
     await user.click(screen.getByRole("button", { name: "Ironman" }));
     await user.type(screen.getByLabelText("Add a pin"), "Kailua-Kona");
@@ -38,7 +52,14 @@ describe("AddPin", () => {
   it("does not submit when the city field is empty", async () => {
     const onAdd = vi.fn();
     const user = userEvent.setup();
-    render(<AddPin onAdd={onAdd} isLoading={false} />);
+    render(
+      <AddPin
+        onAdd={onAdd}
+        isLoading={false}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
 
     await user.click(screen.getByRole("button", { name: "Pin it" }));
 
@@ -47,7 +68,14 @@ describe("AddPin", () => {
 
   it("clears the city field after a successful submit", async () => {
     const user = userEvent.setup();
-    render(<AddPin onAdd={vi.fn()} isLoading={false} />);
+    render(
+      <AddPin
+        onAdd={vi.fn()}
+        isLoading={false}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
 
     await user.type(screen.getByLabelText("Add a pin"), "Paris");
     await user.click(screen.getByRole("button", { name: "Pin it" }));
@@ -56,7 +84,14 @@ describe("AddPin", () => {
   });
 
   it("disables the submit button and shows a loading label while isLoading", () => {
-    render(<AddPin onAdd={vi.fn()} isLoading={true} />);
+    render(
+      <AddPin
+        onAdd={vi.fn()}
+        isLoading={true}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
     expect(screen.getByRole("button", { name: "Pinning..." })).toBeDisabled();
   });
 });
@@ -77,7 +112,14 @@ describe("AddPin autocomplete", () => {
       { query: "Par", name: "Paris, France", lng: 2.35, lat: 48.86 },
     ]);
     const user = userEvent.setup({ delay: null });
-    render(<AddPin onAdd={vi.fn()} isLoading={false} />);
+    render(
+      <AddPin
+        onAdd={vi.fn()}
+        isLoading={false}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
 
     await user.type(screen.getByLabelText("Add a pin"), "Par");
     await vi.advanceTimersByTimeAsync(300);
@@ -92,7 +134,14 @@ describe("AddPin autocomplete", () => {
       { query: "Par", name: "Paris, France", lng: 2.35, lat: 48.86 },
     ]);
     const user = userEvent.setup({ delay: null });
-    render(<AddPin onAdd={vi.fn()} isLoading={false} />);
+    render(
+      <AddPin
+        onAdd={vi.fn()}
+        isLoading={false}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
 
     await user.type(screen.getByLabelText("Add a pin"), "Par");
     await vi.advanceTimersByTimeAsync(300);
@@ -113,7 +162,14 @@ describe("AddPin autocomplete", () => {
         { query: "Par", name: "Paris, France", lng: 2.35, lat: 48.86 },
       ]);
     const user = userEvent.setup({ delay: null });
-    render(<AddPin onAdd={vi.fn()} isLoading={false} />);
+    render(
+      <AddPin
+        onAdd={vi.fn()}
+        isLoading={false}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
 
     await user.type(screen.getByLabelText("Add a pin"), "Par");
     await vi.advanceTimersByTimeAsync(300);
@@ -134,7 +190,14 @@ describe("AddPin autocomplete", () => {
   it("does not fetch suggestions for a 1-character query", async () => {
     const searchSpy = vi.spyOn(geocoderModule, "searchPlaces");
     const user = userEvent.setup({ delay: null });
-    render(<AddPin onAdd={vi.fn()} isLoading={false} />);
+    render(
+      <AddPin
+        onAdd={vi.fn()}
+        isLoading={false}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+      />,
+    );
 
     await user.type(screen.getByLabelText("Add a pin"), "P");
     await vi.advanceTimersByTimeAsync(300);

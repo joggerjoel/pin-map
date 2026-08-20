@@ -12,6 +12,8 @@ import { PlaceList } from "./components/PlaceList";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { MapView } from "./components/MapView";
 import type { MapSelection } from "./components/MapView";
+import { getCustomTags, addCustomTag } from "./lib/customTags";
+import type { CustomTag } from "./lib/customTags";
 
 export function App() {
   const [token, setToken] = useState<string | null>(() => getMapboxToken());
@@ -21,9 +23,16 @@ export function App() {
     query: string;
     nonce: number;
   } | null>(null);
+  const [customTags, setCustomTags] = useState<CustomTag[]>(() =>
+    getCustomTags(),
+  );
   const selectionNonceRef = useRef(0);
   const removalNonce = useRef(0);
   const geocoder = useGeocoder(token ?? "");
+
+  function handleCreateCustomTag(label: string, color: string) {
+    setCustomTags(addCustomTag(label, color));
+  }
 
   // Selecting a place is modeled as a one-shot event (a nonce, not just the
   // query string) so re-selecting the same place still triggers a fresh
@@ -67,10 +76,14 @@ export function App() {
               city,
               tag.kind === "category"
                 ? { category: tag.value }
-                : { icon: tag.value },
+                : tag.kind === "icon"
+                  ? { icon: tag.value }
+                  : { customTag: tag.value },
             )
           }
           isLoading={geocoder.isLoading}
+          customTags={customTags}
+          onCreateCustomTag={handleCreateCustomTag}
         />
         <PlaceInput
           onSubmit={geocoder.pinPlaces}
@@ -91,6 +104,8 @@ export function App() {
           }}
           onChangeTag={geocoder.changeTag}
           highlightedQuery={highlightedQuery}
+          customTags={customTags}
+          onCreateCustomTag={handleCreateCustomTag}
         />
       </aside>
       <main className="app__map">

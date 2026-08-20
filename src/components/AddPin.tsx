@@ -5,15 +5,23 @@ import type { PinTag } from "./TagPicker";
 import { searchPlaces } from "../lib/geocoder";
 import type { GeocodeResult } from "../lib/geocoder";
 import { getMapboxToken } from "../lib/mapboxToken";
+import type { CustomTag } from "../lib/customTags";
 
 export type { PinTag };
 
 export interface AddPinProps {
   onAdd: (city: string, tag: PinTag) => void;
   isLoading: boolean;
+  customTags: CustomTag[];
+  onCreateCustomTag: (label: string, color: string) => void;
 }
 
-export function AddPin({ onAdd, isLoading }: AddPinProps) {
+export function AddPin({
+  onAdd,
+  isLoading,
+  customTags,
+  onCreateCustomTag,
+}: AddPinProps) {
   const [city, setCity] = useState("");
   const [selectedTag, setSelectedTag] = useState<PinTag>(TAG_OPTIONS[0].tag);
   const [suggestions, setSuggestions] = useState<GeocodeResult[]>([]);
@@ -95,7 +103,12 @@ export function AddPin({ onAdd, isLoading }: AddPinProps) {
           ))}
         </ul>
       )}
-      <TagPicker selectedTag={selectedTag} onSelect={setSelectedTag} />
+      <TagPicker
+        selectedTag={selectedTag}
+        onSelect={setSelectedTag}
+        customTags={customTags}
+        onCreateCustomTag={onCreateCustomTag}
+      />
       <button type="submit" disabled={isLoading}>
         {isLoading ? "Pinning..." : "Pin it"}
       </button>
