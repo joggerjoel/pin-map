@@ -132,6 +132,9 @@ export function useGeocoder(token: string): UseGeocoderResult {
         failedLinesRef.current.map((line) => line.toLowerCase()),
       );
       const newProcessedLines = processedLines.filter((processed) => {
+        if (processed.explicitCoords !== undefined) {
+          return true;
+        }
         const key = processed.query.toLowerCase();
         if (pinnedKeys.has(key)) return false;
         if (!isRetry && failedKeys.has(key)) return false;
@@ -147,18 +150,51 @@ export function useGeocoder(token: string): UseGeocoderResult {
       );
 
       if (explicitLines.length > 0) {
-        const explicitlyPinned: PinnedPlace[] = explicitLines.map(
-          (processed) => ({
-            query: processed.query,
-            name: processed.query,
-            lat: processed.explicitCoords.lat,
-            lng: processed.explicitCoords.lng,
-            category: processed.category,
-            icon: processed.icon,
-            date: processed.date,
-          }),
+        const explicitKeys = new Set(
+          explicitLines.map((processed) => processed.query.toLowerCase()),
         );
-        setPinnedPlaces((prev) => [...prev, ...explicitlyPinned]);
+        setPinnedPlaces((prev) => {
+          const updated = prev.map((place) => {
+            const match = explicitLines.find(
+              (processed) =>
+                processed.query.toLowerCase() === place.query.toLowerCase(),
+            );
+            if (match === undefined) {
+              return place;
+            }
+            return {
+              ...place,
+              query: match.query,
+              name: match.query,
+              lat: match.explicitCoords.lat,
+              lng: match.explicitCoords.lng,
+              category: match.category,
+              icon: match.icon,
+              date: match.date,
+            };
+          });
+          const alreadyPinnedKeys = new Set(
+            prev.map((place) => place.query.toLowerCase()),
+          );
+          const newlyAdded: PinnedPlace[] = explicitLines
+            .filter(
+              (processed) =>
+                !alreadyPinnedKeys.has(processed.query.toLowerCase()),
+            )
+            .map((processed) => ({
+              query: processed.query,
+              name: processed.query,
+              lat: processed.explicitCoords.lat,
+              lng: processed.explicitCoords.lng,
+              category: processed.category,
+              icon: processed.icon,
+              date: processed.date,
+            }));
+          return [...updated, ...newlyAdded];
+        });
+        setFailedLines((prev) =>
+          prev.filter((line) => !explicitKeys.has(line.toLowerCase())),
+        );
       }
 
       if (linesToGeocode.length === 0) {

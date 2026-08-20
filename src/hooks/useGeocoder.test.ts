@@ -317,6 +317,108 @@ describe("useGeocoder explicit coordinates", () => {
   });
 });
 
+describe("useGeocoder explicit-coordinate corrections", () => {
+  it("updates an already-pinned place when a corrected explicit-coordinate line is pasted", async () => {
+    const batchSpy = vi.spyOn(geocoderModule, "geocodeBatch");
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("Macau Island, China, 1.0,2.0");
+    });
+    await act(async () => {
+      await result.current.pinPlaces(
+        "Macau Island, China, 13.7308093,121.8832412",
+      );
+    });
+
+    expect(batchSpy).not.toHaveBeenCalled();
+    const macauEntries = result.current.pinnedPlaces.filter(
+      (place) => place.query === "Macau Island, China",
+    );
+    expect(macauEntries).toHaveLength(1);
+    expect(macauEntries[0]).toMatchObject({
+      lat: 13.7308093,
+      lng: 121.8832412,
+    });
+  });
+
+  it("resolves a previously-failed line when it's re-pasted with explicit coordinates", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({ pinned: [], failed: ["Bintan, Malaysia"] });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("Bintan, Malaysia");
+    });
+    expect(result.current.failedLines).toEqual(["Bintan, Malaysia"]);
+
+    await act(async () => {
+      await result.current.pinPlaces("Bintan, Malaysia, 1.1775686,104.3017263");
+    });
+
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    expect(result.current.failedLines).toEqual([]);
+    expect(result.current.pinnedPlaces).toContainEqual(
+      expect.objectContaining({
+        query: "Bintan, Malaysia",
+        lat: 1.1775686,
+        lng: 104.3017263,
+      }),
+    );
+  });
+
+  it("still skips a plain re-paste of an already-pinned place with no explicit coordinates", async () => {
+    const tokyo: GeocodeResult = {
+      query: "Tokyo",
+      name: "Tokyo, Japan",
+      lng: 139.69,
+      lat: 35.68,
+    };
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({ pinned: [tokyo], failed: [] });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("Tokyo");
+    });
+    await act(async () => {
+      await result.current.pinPlaces("Tokyo");
+    });
+
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    expect(result.current.pinnedPlaces).toEqual([tokyo]);
+  });
+
+  it("replaces category/icon/date entirely from the new line when updating a pinned place", async () => {
+    const batchSpy = vi.spyOn(geocoderModule, "geocodeBatch");
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("Nice, France (ironman), 43.0,7.0");
+    });
+    await act(async () => {
+      await result.current.pinPlaces("Nice, France, 43.7,7.3");
+    });
+
+    expect(batchSpy).not.toHaveBeenCalled();
+    const niceEntries = result.current.pinnedPlaces.filter(
+      (place) => place.query === "Nice, France",
+    );
+    expect(niceEntries).toHaveLength(1);
+    expect(niceEntries[0]).toMatchObject({
+      lat: 43.7,
+      lng: 7.3,
+      icon: undefined,
+    });
+  });
+});
+
 describe("useGeocoder checklist auto-detection", () => {
   it("auto-detects a checklist-shaped line and applies the US country filter", async () => {
     const batchSpy = vi
