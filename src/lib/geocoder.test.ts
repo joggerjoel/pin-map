@@ -215,3 +215,54 @@ describe("geocodeBatch with a country filter", () => {
     }
   });
 });
+
+describe("geocodeLine with a bbox filter", () => {
+  it("includes the bbox param in the request URL when provided", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        features: [{ place_name: "Paris, France", center: [2.35, 48.86] }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await geocodeLine("Paris", "pk.test", undefined, [-25, 34, 45, 72]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("bbox=-25%2C34%2C45%2C72"),
+    );
+  });
+
+  it("omits the bbox param when not provided", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ features: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await geocodeLine("Paris", "pk.test");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.not.stringContaining("bbox="),
+    );
+  });
+});
+
+describe("geocodeBatch with a bbox filter", () => {
+  it("passes the bbox filter through to every request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        features: [{ place_name: "Paris, France", center: [2.35, 48.86] }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await geocodeBatch(
+      ["Paris", "Berlin"],
+      "pk.test",
+      undefined,
+      [-25, 34, 45, 72],
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      expect(call[0]).toContain("bbox=");
+    }
+  });
+});
