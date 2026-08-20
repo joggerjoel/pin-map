@@ -18,8 +18,14 @@ export function AddPin({ onAdd, isLoading }: AddPinProps) {
   const [selectedTag, setSelectedTag] = useState<PinTag>(TAG_OPTIONS[0].tag);
   const [suggestions, setSuggestions] = useState<GeocodeResult[]>([]);
   const latestQueryRef = useRef("");
+  const suppressNextFetchRef = useRef(false);
 
   useEffect(() => {
+    if (suppressNextFetchRef.current) {
+      suppressNextFetchRef.current = false;
+      return;
+    }
+
     const trimmed = city.trim();
     if (trimmed.length < 2) {
       setSuggestions([]);
@@ -78,6 +84,7 @@ export function AddPin({ onAdd, isLoading }: AddPinProps) {
               <button
                 type="button"
                 onClick={() => {
+                  suppressNextFetchRef.current = true;
                   setCity(suggestion.name);
                   setSuggestions([]);
                 }}

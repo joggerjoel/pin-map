@@ -106,6 +106,31 @@ describe("AddPin autocomplete", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("does not re-fetch suggestions after selecting one, even past the debounce window", async () => {
+    const searchSpy = vi
+      .spyOn(geocoderModule, "searchPlaces")
+      .mockResolvedValue([
+        { query: "Par", name: "Paris, France", lng: 2.35, lat: 48.86 },
+      ]);
+    const user = userEvent.setup({ delay: null });
+    render(<AddPin onAdd={vi.fn()} isLoading={false} />);
+
+    await user.type(screen.getByLabelText("Add a pin"), "Par");
+    await vi.advanceTimersByTimeAsync(300);
+    await user.click(
+      await screen.findByRole("button", { name: "Paris, France" }),
+    );
+
+    expect(searchSpy).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(searchSpy).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("listbox", { name: "City suggestions" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not fetch suggestions for a 1-character query", async () => {
     const searchSpy = vi.spyOn(geocoderModule, "searchPlaces");
     const user = userEvent.setup({ delay: null });
