@@ -1,8 +1,10 @@
 import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
+import type { ExpressionSpecification } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PlaceCategory } from "../lib/checklist";
+import { toGeoJsonStateName } from "../lib/stateNames";
 
 /**
  * A one-shot request to fly the map to a place. `nonce` must change on every
@@ -36,6 +38,37 @@ const CATEGORY_LABELS: Record<PlaceCategory, string> = {
 
 const CATEGORY_ORDER: PlaceCategory[] = ["visited", "lived", "hometown"];
 
+type MapboxMatchExpression = ExpressionSpecification;
+
+function applyStateColors(map: mapboxgl.Map, places: PinnedPlace[]): void {
+  if (!map.getLayer("us-states-fill")) return;
+
+  const categorizedByState = new Map<string, PlaceCategory>();
+  places.forEach((place) => {
+    if (place.category) {
+      categorizedByState.set(toGeoJsonStateName(place.query), place.category);
+    }
+  });
+
+  if (categorizedByState.size === 0) {
+    map.setPaintProperty("us-states-fill", "fill-color", "rgba(0, 0, 0, 0)");
+    map.setPaintProperty("us-states-outline", "line-color", "rgba(0, 0, 0, 0)");
+    return;
+  }
+
+  const fillMatch: MapboxMatchExpression = ["match", ["get", "name"]];
+  const outlineMatch: MapboxMatchExpression = ["match", ["get", "name"]];
+  categorizedByState.forEach((category, stateName) => {
+    fillMatch.push(stateName, CATEGORY_COLORS[category]);
+    outlineMatch.push(stateName, "#1f2937");
+  });
+  fillMatch.push("rgba(0, 0, 0, 0)");
+  outlineMatch.push("rgba(0, 0, 0, 0)");
+
+  map.setPaintProperty("us-states-fill", "fill-color", fillMatch);
+  map.setPaintProperty("us-states-outline", "line-color", outlineMatch);
+}
+
 export function MapView({
   token,
   places,
@@ -62,6 +95,31 @@ export function MapView({
       zoom: 1.5,
     });
     mapRef.current = map;
+    map.on("load", () => {
+      map.addSource("us-states", {
+        type: "geojson",
+        data: "/us-states.geo.json",
+      });
+      map.addLayer({
+        id: "us-states-fill",
+        type: "fill",
+        source: "us-states",
+        paint: {
+          "fill-color": "rgba(0, 0, 0, 0)",
+          "fill-opacity": 0.45,
+        },
+      });
+      map.addLayer({
+        id: "us-states-outline",
+        type: "line",
+        source: "us-states",
+        paint: {
+          "line-color": "rgba(0, 0, 0, 0)",
+          "line-width": 1.5,
+        },
+      });
+      applyStateColors(map, placesRef.current);
+    });
     return () => {
       map.remove();
       mapRef.current = null;
@@ -94,6 +152,12 @@ export function MapView({
       const bounds = new mapboxgl.LngLatBounds();
       places.forEach((place) => bounds.extend([place.lng, place.lat]));
       map.fitBounds(bounds, { padding: 60, maxZoom: 12 });
+    }
+
+    if (map.isStyleLoaded()) {
+      applyStateColors(map, places);
+    } else {
+      map.once("load", () => applyStateColors(map, places));
     }
   }, [places]);
 

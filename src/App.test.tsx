@@ -14,6 +14,8 @@ const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
       // assert on the LAST command regardless of which method produced it.
       commands: Array<{ type: "flyTo" | "fitBounds"; opts: unknown }> = [];
 
+      layerIds = new Set<string>();
+
       constructor(public options: unknown) {
         instances.push(this);
       }
@@ -25,6 +27,27 @@ const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
       fitBounds(bounds: unknown, opts: unknown): void {
         this.fitBoundsCalls.push({ bounds, opts });
         this.commands.push({ type: "fitBounds", opts: { bounds, opts } });
+      }
+      getLayer(id: string): boolean {
+        return this.layerIds.has(id);
+      }
+      addSource(): void {}
+      addLayer(options: { id: string }): void {
+        this.layerIds.add(options.id);
+      }
+      setPaintProperty(): void {}
+      isStyleLoaded(): boolean {
+        return true;
+      }
+      on(event: string, handler: () => void): void {
+        if (event === "load") {
+          handler();
+        }
+      }
+      once(event: string, handler: () => void): void {
+        if (event === "load") {
+          handler();
+        }
       }
     }
 

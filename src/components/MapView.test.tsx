@@ -18,6 +18,10 @@ const {
     options: unknown;
     flyToCalls: unknown[] = [];
     fitBoundsCalls: unknown[] = [];
+    layerIds = new Set<string>();
+    sourceCalls: unknown[] = [];
+    paintPropertyCalls: { layerId: string; prop: string; value: unknown }[] =
+      [];
 
     constructor(options: unknown) {
       this.options = options;
@@ -29,6 +33,31 @@ const {
     }
     fitBounds(bounds: unknown, opts: unknown): void {
       this.fitBoundsCalls.push({ bounds, opts });
+    }
+    getLayer(id: string): boolean {
+      return this.layerIds.has(id);
+    }
+    addSource(id: string, options: unknown): void {
+      this.sourceCalls.push({ id, options });
+    }
+    addLayer(options: { id: string }): void {
+      this.layerIds.add(options.id);
+    }
+    setPaintProperty(layerId: string, prop: string, value: unknown): void {
+      this.paintPropertyCalls.push({ layerId, prop, value });
+    }
+    isStyleLoaded(): boolean {
+      return true;
+    }
+    on(event: string, handler: () => void): void {
+      if (event === "load") {
+        handler();
+      }
+    }
+    once(event: string, handler: () => void): void {
+      if (event === "load") {
+        handler();
+      }
     }
   }
 
@@ -292,5 +321,66 @@ describe("MapView", () => {
 
     expect(instances[0]?.flyToCalls.length).toBe(flyToCallsBefore);
     expect(instances[0]?.fitBoundsCalls.length).toBe(fitBoundsCallsBefore);
+  });
+
+  it("adds a US states fill layer and shades a state matching a categorized place's query", () => {
+    const michigan = {
+      ...paris,
+      query: "Michigan",
+      name: "Michigan, USA",
+      category: "hometown" as const,
+    };
+    const { rerender } = render(
+      <MapView
+        token="pk.test"
+        places={[]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
+    const map = instances[0];
+    expect(map?.getLayer("us-states-fill")).toBe(true);
+
+    rerender(
+      <MapView
+        token="pk.test"
+        places={[michigan]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
+
+    const lastFillCall = map?.paintPropertyCalls
+      ?.filter(
+        (call) =>
+          call.layerId === "us-states-fill" && call.prop === "fill-color",
+      )
+      .at(-1);
+    expect(lastFillCall?.value).toEqual([
+      "match",
+      ["get", "name"],
+      "Michigan",
+      "#eab308",
+      "rgba(0, 0, 0, 0)",
+    ]);
+  });
+
+  it("resets state colors to transparent when no place has a category", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
+    const map = instances[0];
+    const lastFillCall = map?.paintPropertyCalls
+      ?.filter(
+        (call) =>
+          call.layerId === "us-states-fill" && call.prop === "fill-color",
+      )
+      .at(-1);
+    expect(lastFillCall?.value).toBe("rgba(0, 0, 0, 0)");
   });
 });
