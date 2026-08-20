@@ -312,9 +312,21 @@ body {
   box-sizing: border-box;
 }
 
-.map-legend {
+.map-zoom-indicator {
   position: absolute;
   top: 1rem;
+  right: 1rem;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1f2937;
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  font-family: monospace;
+}
+
+.map-legend {
+  position: absolute;
+  top: 3.25rem;
   right: 1rem;
   background: rgba(255, 255, 255, 0.9);
   color: #1f2937;

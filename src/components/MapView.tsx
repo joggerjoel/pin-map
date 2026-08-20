@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import type { ExpressionSpecification } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -291,6 +291,8 @@ export function MapView({
     places.some((place) => place.category === category),
   );
 
+  const [displayZoom, setDisplayZoom] = useState<number | null>(null);
+
   useEffect(() => {
     if (containerRef.current === null) return;
     mapboxgl.accessToken = token;
@@ -301,6 +303,9 @@ export function MapView({
       zoom: 1.5,
     });
     mapRef.current = map;
+    setDisplayZoom(map.getZoom());
+    const handleZoom = () => setDisplayZoom(map.getZoom());
+    map.on("zoom", handleZoom);
     map.on("load", () => {
       map.addSource("us-states", {
         type: "geojson",
@@ -341,6 +346,7 @@ export function MapView({
       applyStateColors(map, placesRef.current, builtinAppearanceRef.current);
     });
     return () => {
+      map.off("zoom", handleZoom);
       map.remove();
       mapRef.current = null;
     };
@@ -514,6 +520,9 @@ export function MapView({
   return (
     <>
       <div ref={containerRef} className="map-view" />
+      {displayZoom !== null && (
+        <div className="map-zoom-indicator">Zoom: {displayZoom.toFixed(1)}</div>
+      )}
       {presentCategories.length > 0 && (
         <div className="map-legend">
           {presentCategories.map((category) => (

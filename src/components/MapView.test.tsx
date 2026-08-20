@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MapView } from "./MapView";
 import type { GeocodeResult } from "../lib/geocoder";
@@ -80,12 +80,16 @@ const {
     isStyleLoaded(): boolean {
       return true;
     }
+    zoomHandlers: Array<() => void> = [];
     on(event: string, handler: () => void): void {
       if (event === "load") {
         handler();
       }
       if (event === "move") {
         this.moveHandlers.push(handler);
+      }
+      if (event === "zoom") {
+        this.zoomHandlers.push(handler);
       }
     }
     once(event: string, handler: () => void): void {
@@ -97,9 +101,15 @@ const {
       if (event === "move") {
         this.moveHandlers = this.moveHandlers.filter((h) => h !== handler);
       }
+      if (event === "zoom") {
+        this.zoomHandlers = this.zoomHandlers.filter((h) => h !== handler);
+      }
     }
     triggerMove(): void {
       this.moveHandlers.forEach((handler) => handler());
+    }
+    triggerZoom(): void {
+      this.zoomHandlers.forEach((handler) => handler());
     }
     project(lngLat: [number, number]): { x: number; y: number } {
       return { x: lngLat[0] * 100, y: lngLat[1] * -100 };
@@ -216,6 +226,41 @@ describe("MapView", () => {
       />,
     );
     expect(instances).toHaveLength(1);
+  });
+
+  it("shows the current zoom level", () => {
+    const { getByText } = render(
+      <MapView
+        token="pk.test"
+        places={[]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    expect(getByText("Zoom: 10.0")).toBeInTheDocument();
+  });
+
+  it("updates the displayed zoom level when the map zooms", () => {
+    const { getByText } = render(
+      <MapView
+        token="pk.test"
+        places={[]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    const map = instances[0];
+    if (map) map.zoom = 6.7;
+    act(() => {
+      map?.triggerZoom();
+    });
+    expect(getByText("Zoom: 6.7")).toBeInTheDocument();
   });
 
   it("flies to the single place when there is exactly one", () => {
