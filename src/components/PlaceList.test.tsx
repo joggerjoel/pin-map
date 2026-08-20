@@ -131,6 +131,23 @@ describe("PlaceList", () => {
     expect(item).toHaveClass("place-list__item--highlighted");
   });
 
+  it("expands the tag picker for a place when it becomes highlighted (e.g. its marker was clicked)", () => {
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery="Paris"
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Visited" })).toBeInTheDocument();
+  });
+
   it("does not highlight anything when highlightedQuery is null", () => {
     render(
       <PlaceList

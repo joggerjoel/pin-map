@@ -45,6 +45,7 @@ export function PlaceList({
     if (highlightedQuery === null) return;
     const el = itemRefs.current.get(highlightedQuery);
     el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    setExpandedQuery(highlightedQuery);
   }, [highlightedQuery]);
 
   return (
