@@ -65,6 +65,7 @@ const {
     options: { color?: string; element?: HTMLElement } | undefined;
     clickHandler: (() => void) | null = null;
     element = {
+      title: "",
       addEventListener: (event: string, handler: () => void) => {
         if (event === "click") this.clickHandler = handler;
       },
@@ -246,6 +247,47 @@ describe("MapView", () => {
 
     expect(instances[0]?.flyToCalls.length).toBe(flyToCallsBefore);
     expect(instances[0]?.fitBoundsCalls.length).toBeGreaterThan(0);
+  });
+
+  it("sets the marker's title to the pin's type label on hover", () => {
+    const home = { ...paris, icon: "house-home" as const };
+    render(
+      <MapView
+        token="pk.test"
+        places={[home]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
+    expect(markerInstances[0]?.element.title).toBe("Hometown");
+  });
+
+  it("sets the marker's title to a custom tag's label", () => {
+    const tagged = {
+      ...paris,
+      customTag: { id: "marathon", label: "Marathon", color: "#8b5cf6" },
+    };
+    render(
+      <MapView
+        token="pk.test"
+        places={[tagged]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
+    expect(markerInstances[0]?.element.title).toBe("Marathon");
+  });
+
+  it("leaves the marker untitled when the place has no type", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
+    expect(markerInstances[0]?.element.title).toBe("");
   });
 
   it("colors a marker according to its category", () => {

@@ -133,6 +133,15 @@ const CATEGORY_LABELS: Record<PlaceCategory, string> = {
 
 const CATEGORY_ORDER: PlaceCategory[] = ["visited", "lived", "hometown"];
 
+function getPinTypeLabel(place: PinnedPlace): string | undefined {
+  if (place.customTag) return place.customTag.label;
+  if (place.icon === "triathlete") return "Ironman";
+  if (place.icon === "house-home") return "Hometown";
+  if (place.icon === "house-live") return "Lived";
+  if (place.category) return CATEGORY_LABELS[place.category];
+  return undefined;
+}
+
 type MapboxMatchExpression = ExpressionSpecification;
 
 function applyStateColors(map: mapboxgl.Map, places: PinnedPlace[]): void {
@@ -237,6 +246,10 @@ export function MapView({
       marker.getElement().addEventListener("click", () => {
         onMarkerClick(place.query);
       });
+      const typeLabel = getPinTypeLabel(place);
+      if (typeLabel !== undefined) {
+        marker.getElement().title = typeLabel;
+      }
       markersRef.current.set(place.query, marker);
     });
 
