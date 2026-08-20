@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 import { fetchRoster, saveRosterPerson } from "../lib/classRosterRepository";
 import type { RosterPerson } from "../lib/classRosterRepository";
 import type { RosterPersonPhoto } from "../lib/classRosterPhotosRepository";
+import { geocodeLine } from "../lib/geocoder";
+import { CLASS_GEOCODE_COUNTRY_BIAS } from "../lib/classGeocodeBias";
 import { RosterGrid } from "./RosterGrid";
 
 export interface ClassRosterEditorProps {
   classSlug: string;
+  token?: string | null;
   photosByPersonId?: Record<number, RosterPersonPhoto[]>;
   onAddPhoto?: (personId: number, file: File, year: number | null) => void;
 }
@@ -42,6 +45,7 @@ type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 export function ClassRosterEditor({
   classSlug,
+  token,
   photosByPersonId,
   onAddPhoto,
 }: ClassRosterEditorProps) {
@@ -94,16 +98,41 @@ export function ClassRosterEditor({
       living: form.living.trim(),
       currentLocation: form.currentLocation.trim(),
     };
+
+    // The map avatar pin needs coordinates, but geocoding on every save
+    // (rather than only when "living" actually changed) would burn quota
+    // re-resolving a city that hasn't moved.
+    let livingLat = selected.livingLat;
+    let livingLng = selected.livingLng;
+    if (trimmed.living !== selected.living) {
+      if (trimmed.living === "") {
+        livingLat = null;
+        livingLng = null;
+      } else if (token) {
+        const geocoded = await geocodeLine(
+          trimmed.living,
+          token,
+          CLASS_GEOCODE_COUNTRY_BIAS,
+        );
+        livingLat = geocoded?.lat ?? null;
+        livingLng = geocoded?.lng ?? null;
+      }
+    }
+
     const ok = await saveRosterPerson(classSlug, {
       id: selected.id,
       ...trimmed,
+      livingLat,
+      livingLng,
     });
     if (!ok) {
       setSaveStatus("error");
       return;
     }
     setPeople((prev) =>
-      prev.map((p) => (p.id === selected.id ? { ...p, ...trimmed } : p)),
+      prev.map((p) =>
+        p.id === selected.id ? { ...p, ...trimmed, livingLat, livingLng } : p,
+      ),
     );
     setForm(trimmed);
     setSaveStatus("saved");

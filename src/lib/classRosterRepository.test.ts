@@ -59,6 +59,8 @@ const row = {
   current_name: "Jane Smith Johnson",
   hometown: "Belding, Michigan",
   living: "Grand Rapids, Michigan",
+  living_lat: 42.96,
+  living_lng: -85.67,
   current_location: "Chicago, Illinois",
 };
 
@@ -84,6 +86,8 @@ describe("fetchRoster", () => {
         currentName: "Jane Smith Johnson",
         hometown: "Belding, Michigan",
         living: "Grand Rapids, Michigan",
+        livingLat: 42.96,
+        livingLng: -85.67,
         currentLocation: "Chicago, Illinois",
       },
     ]);
@@ -115,6 +119,8 @@ describe("saveRosterPerson", () => {
     currentName: "Jane Smith Johnson",
     hometown: "Belding, Michigan",
     living: "Grand Rapids, Michigan",
+    livingLat: 42.96,
+    livingLng: -85.67,
     currentLocation: "Chicago, Illinois",
   };
 
@@ -131,6 +137,8 @@ describe("saveRosterPerson", () => {
       current_name: "Jane Smith Johnson",
       hometown: "Belding, Michigan",
       living: "Grand Rapids, Michigan",
+      living_lat: 42.96,
+      living_lng: -85.67,
       current_location: "Chicago, Illinois",
     });
     expect(chain.eq).toHaveBeenNthCalledWith(1, "class_slug", "belding1989");

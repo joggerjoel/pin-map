@@ -4,10 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClassRosterEditor } from "./ClassRosterEditor";
 import * as classRosterRepositoryModule from "../lib/classRosterRepository";
 import type { RosterPerson } from "../lib/classRosterRepository";
+import * as geocoderModule from "../lib/geocoder";
 
 vi.mock("../lib/classRosterRepository", () => ({
   fetchRoster: vi.fn(),
   saveRosterPerson: vi.fn(),
+}));
+
+vi.mock("../lib/geocoder", () => ({
+  geocodeLine: vi.fn(),
 }));
 
 const jane: RosterPerson = {
@@ -19,6 +24,8 @@ const jane: RosterPerson = {
   currentName: "Jane Smith Johnson",
   hometown: "Belding, Michigan",
   living: "Grand Rapids, Michigan",
+  livingLat: 42.96,
+  livingLng: -85.67,
   currentLocation: "Chicago, Illinois",
 };
 
@@ -31,6 +38,8 @@ const bob: RosterPerson = {
   currentName: "",
   hometown: "Belding, Michigan",
   living: "",
+  livingLat: null,
+  livingLng: null,
   currentLocation: "",
 };
 
@@ -124,11 +133,101 @@ describe("ClassRosterEditor", () => {
           currentName: "Bob Leeson",
           hometown: "Belding, Michigan",
           living: "Detroit",
+          livingLat: null,
+          livingLng: null,
           currentLocation: "Chicago",
         },
       );
     });
     expect(await screen.findByText("Saved")).toBeInTheDocument();
+  });
+
+  it("geocodes the living field and caches its coordinates when it changes", async () => {
+    vi.mocked(classRosterRepositoryModule.saveRosterPerson).mockResolvedValue(
+      true,
+    );
+    vi.mocked(geocoderModule.geocodeLine).mockResolvedValue({
+      query: "Detroit",
+      name: "Detroit, Michigan, USA",
+      lat: 42.33,
+      lng: -83.05,
+    });
+    const user = userEvent.setup();
+    render(<ClassRosterEditor classSlug="belding1989" token="pk.test" />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Select Bob Lee" }),
+    );
+    await user.type(await screen.findByLabelText("Living"), "Detroit");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(classRosterRepositoryModule.saveRosterPerson).toHaveBeenCalledWith(
+        "belding1989",
+        expect.objectContaining({
+          living: "Detroit",
+          livingLat: 42.33,
+          livingLng: -83.05,
+        }),
+      );
+    });
+    expect(geocoderModule.geocodeLine).toHaveBeenCalledWith(
+      "Detroit",
+      "pk.test",
+      "us",
+    );
+  });
+
+  it("does not re-geocode when living is unchanged, reusing the cached coordinates", async () => {
+    vi.mocked(classRosterRepositoryModule.saveRosterPerson).mockResolvedValue(
+      true,
+    );
+    const user = userEvent.setup();
+    render(<ClassRosterEditor classSlug="belding1989" token="pk.test" />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
+    );
+    await user.type(await screen.findByLabelText("Current name"), "x");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(classRosterRepositoryModule.saveRosterPerson).toHaveBeenCalledWith(
+        "belding1989",
+        expect.objectContaining({
+          living: jane.living,
+          livingLat: jane.livingLat,
+          livingLng: jane.livingLng,
+        }),
+      );
+    });
+    expect(geocoderModule.geocodeLine).not.toHaveBeenCalled();
+  });
+
+  it("clears the cached coordinates without geocoding when living is cleared", async () => {
+    vi.mocked(classRosterRepositoryModule.saveRosterPerson).mockResolvedValue(
+      true,
+    );
+    const user = userEvent.setup();
+    render(<ClassRosterEditor classSlug="belding1989" token="pk.test" />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
+    );
+    await user.clear(await screen.findByLabelText("Living"));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(classRosterRepositoryModule.saveRosterPerson).toHaveBeenCalledWith(
+        "belding1989",
+        expect.objectContaining({
+          living: "",
+          livingLat: null,
+          livingLng: null,
+        }),
+      );
+    });
+    expect(geocoderModule.geocodeLine).not.toHaveBeenCalled();
   });
 
   it("shows an error state when saving fails", async () => {

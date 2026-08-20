@@ -8,6 +8,8 @@ export interface RosterPerson {
   currentName: string;
   hometown: string;
   living: string;
+  livingLat: number | null;
+  livingLng: number | null;
   currentLocation: string;
 }
 
@@ -19,6 +21,8 @@ interface RosterRow {
   current_name: string;
   hometown: string;
   living: string;
+  living_lat: number | null;
+  living_lng: number | null;
   current_location: string;
 }
 
@@ -31,6 +35,8 @@ function toRosterPerson(row: RosterRow): RosterPerson {
     currentName: row.current_name,
     hometown: row.hometown,
     living: row.living,
+    livingLat: row.living_lat,
+    livingLng: row.living_lng,
     currentLocation: row.current_location,
   };
 }
@@ -40,7 +46,7 @@ export async function fetchRoster(classSlug: string): Promise<RosterPerson[]> {
     const { data, error } = await supabase
       .from("pinmap_class_roster")
       .select(
-        "id, filename, image_url, high_school_name, current_name, hometown, living, current_location",
+        "id, filename, image_url, high_school_name, current_name, hometown, living, living_lat, living_lng, current_location",
       )
       .eq("class_slug", classSlug)
       .order("id");
@@ -59,6 +65,8 @@ export interface RosterPersonUpdate {
   currentName: string;
   hometown: string;
   living: string;
+  livingLat: number | null;
+  livingLng: number | null;
   currentLocation: string;
 }
 
@@ -74,6 +82,8 @@ export async function saveRosterPerson(
         current_name: update.currentName,
         hometown: update.hometown,
         living: update.living,
+        living_lat: update.livingLat,
+        living_lng: update.livingLng,
         current_location: update.currentLocation,
       })
       .eq("class_slug", classSlug)

@@ -34,6 +34,8 @@ const jane: RosterPerson = {
   currentName: "Jane Smith Johnson",
   hometown: "Belding, Michigan",
   living: "",
+  livingLat: null,
+  livingLng: null,
   currentLocation: "",
 };
 

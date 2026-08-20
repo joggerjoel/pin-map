@@ -2,6 +2,7 @@ import { render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ClassMeetupMapView } from "./ClassMeetupMapView";
 import type { ClassMeetup } from "../lib/classMeetupsRepository";
+import type { RosterPerson } from "../lib/classRosterRepository";
 
 const { markerInstances, MockMap, MockMarker, MockPopup } = vi.hoisted(() => {
   const markerInstances: InstanceType<typeof MockMarker>[] = [];
@@ -23,7 +24,9 @@ const { markerInstances, MockMap, MockMarker, MockPopup } = vi.hoisted(() => {
     lngLat: [number, number] | undefined;
     popup: MockPopup | undefined;
     removed = false;
-    constructor() {
+    element: HTMLElement | undefined;
+    constructor(options?: { element?: HTMLElement }) {
+      this.element = options?.element;
       markerInstances.push(this);
     }
     setLngLat(lngLat: [number, number]): MockMarker {
@@ -70,16 +73,48 @@ const meetup: ClassMeetup = {
   metDate: "06/1995",
 };
 
+const jane: RosterPerson = {
+  id: 1,
+  filename: "class1989-001_sheet1_row1_col1.png",
+  imageUrl:
+    "https://files.sohyper.com/class1989/class1989-001_sheet1_row1_col1.png",
+  highSchoolName: "Jane Smith",
+  currentName: "Jane Smith Johnson",
+  hometown: "Belding, Michigan",
+  living: "Grand Rapids, Michigan",
+  livingLat: 42.96,
+  livingLng: -85.67,
+  currentLocation: "",
+};
+
+const bob: RosterPerson = {
+  id: 2,
+  filename: "class1989-002_sheet1_row1_col2.png",
+  imageUrl:
+    "https://files.sohyper.com/class1989/class1989-002_sheet1_row1_col2.png",
+  highSchoolName: "Bob Lee",
+  currentName: "",
+  hometown: "Belding, Michigan",
+  living: "",
+  livingLat: null,
+  livingLng: null,
+  currentLocation: "",
+};
+
 describe("ClassMeetupMapView", () => {
   it("places a marker for each meetup at its coordinates", () => {
-    render(<ClassMeetupMapView token="pk.test" meetups={[meetup]} />);
+    render(
+      <ClassMeetupMapView token="pk.test" meetups={[meetup]} people={[]} />,
+    );
 
     expect(markerInstances).toHaveLength(1);
     expect(markerInstances[0]?.lngLat).toEqual([meetup.lng, meetup.lat]);
   });
 
   it("builds popup content with the place, who was met, the date, and who submitted it", () => {
-    render(<ClassMeetupMapView token="pk.test" meetups={[meetup]} />);
+    render(
+      <ClassMeetupMapView token="pk.test" meetups={[meetup]} people={[]} />,
+    );
 
     const content = markerInstances[0]?.popup?.domContent as HTMLDivElement;
     expect(content.textContent).toContain("Chicago, Illinois, USA");
@@ -90,12 +125,67 @@ describe("ClassMeetupMapView", () => {
 
   it("re-renders markers when the meetups list changes", () => {
     const { rerender } = render(
-      <ClassMeetupMapView token="pk.test" meetups={[meetup]} />,
+      <ClassMeetupMapView token="pk.test" meetups={[meetup]} people={[]} />,
     );
     expect(markerInstances).toHaveLength(1);
 
     const second: ClassMeetup = { ...meetup, id: "meetup-2", query: "Tokyo" };
-    rerender(<ClassMeetupMapView token="pk.test" meetups={[meetup, second]} />);
+    rerender(
+      <ClassMeetupMapView
+        token="pk.test"
+        meetups={[meetup, second]}
+        people={[]}
+      />,
+    );
+
+    expect(markerInstances).toHaveLength(3);
+    expect(markerInstances[0]?.removed).toBe(true);
+  });
+
+  it("places an avatar marker only for people with a cached living location", () => {
+    render(
+      <ClassMeetupMapView token="pk.test" meetups={[]} people={[jane, bob]} />,
+    );
+
+    expect(markerInstances).toHaveLength(1);
+    expect(markerInstances[0]?.lngLat).toEqual([
+      jane.livingLng,
+      jane.livingLat,
+    ]);
+    expect(markerInstances[0]?.element?.className).toBe(
+      "class-meetup-map__avatar-marker",
+    );
+    const img = markerInstances[0]?.element?.querySelector("img");
+    expect(img?.src).toBe(jane.imageUrl);
+    expect(img?.alt).toBe("Jane Smith Johnson");
+  });
+
+  it("builds avatar popup content with the person's name and where they live", () => {
+    render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[jane]} />);
+
+    const content = markerInstances[0]?.popup?.domContent as HTMLDivElement;
+    expect(content.textContent).toContain("Jane Smith Johnson");
+    expect(content.textContent).toContain("Grand Rapids, Michigan");
+  });
+
+  it("re-renders avatar markers when the people list changes", () => {
+    const { rerender } = render(
+      <ClassMeetupMapView token="pk.test" meetups={[]} people={[jane]} />,
+    );
+    expect(markerInstances).toHaveLength(1);
+
+    const relocatedBob: RosterPerson = {
+      ...bob,
+      livingLat: 41.5,
+      livingLng: -81.6,
+    };
+    rerender(
+      <ClassMeetupMapView
+        token="pk.test"
+        meetups={[]}
+        people={[jane, relocatedBob]}
+      />,
+    );
 
     expect(markerInstances).toHaveLength(3);
     expect(markerInstances[0]?.removed).toBe(true);

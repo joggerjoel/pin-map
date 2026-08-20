@@ -55,6 +55,7 @@ export function ClassReunionApp({
       {tab === "roster" && (
         <ClassRosterEditor
           classSlug={classSlug}
+          token={token}
           photosByPersonId={rosterPhotos.photosByPersonId}
           onAddPhoto={rosterPhotos.addPhoto}
         />

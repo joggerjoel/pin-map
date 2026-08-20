@@ -2,10 +2,24 @@ import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { ClassMeetup } from "../lib/classMeetupsRepository";
+import type { RosterPerson } from "../lib/classRosterRepository";
+import { displayName } from "../lib/rosterName";
 
 export interface ClassMeetupMapViewProps {
   token: string;
   meetups: ClassMeetup[];
+  people: RosterPerson[];
+}
+
+type PersonWithLivingLocation = RosterPerson & {
+  livingLat: number;
+  livingLng: number;
+};
+
+function hasLivingLocation(
+  person: RosterPerson,
+): person is PersonWithLivingLocation {
+  return person.livingLat !== null && person.livingLng !== null;
 }
 
 function createPopupContent(meetup: ClassMeetup): HTMLDivElement {
@@ -34,13 +48,40 @@ function createPopupContent(meetup: ClassMeetup): HTMLDivElement {
   return container;
 }
 
+function createAvatarMarkerElement(person: RosterPerson): HTMLDivElement {
+  const el = document.createElement("div");
+  el.className = "class-meetup-map__avatar-marker";
+  const img = document.createElement("img");
+  img.src = person.imageUrl;
+  img.alt = displayName(person);
+  el.appendChild(img);
+  return el;
+}
+
+function createAvatarPopupContent(person: RosterPerson): HTMLDivElement {
+  const container = document.createElement("div");
+  container.className = "map-popup";
+
+  const nameEl = document.createElement("div");
+  nameEl.textContent = displayName(person);
+  container.appendChild(nameEl);
+
+  const livingEl = document.createElement("div");
+  livingEl.textContent = person.living;
+  container.appendChild(livingEl);
+
+  return container;
+}
+
 export function ClassMeetupMapView({
   token,
   meetups,
+  people,
 }: ClassMeetupMapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const avatarMarkersRef = useRef<mapboxgl.Marker[]>([]);
 
   useEffect(() => {
     if (containerRef.current === null) return;
@@ -77,6 +118,21 @@ export function ClassMeetupMapView({
         .addTo(map),
     );
   }, [meetups]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map === null) return;
+
+    avatarMarkersRef.current.forEach((marker) => marker.remove());
+    avatarMarkersRef.current = people.filter(hasLivingLocation).map((person) =>
+      new mapboxgl.Marker({ element: createAvatarMarkerElement(person) })
+        .setLngLat([person.livingLng, person.livingLat])
+        .setPopup(
+          new mapboxgl.Popup().setDOMContent(createAvatarPopupContent(person)),
+        )
+        .addTo(map),
+    );
+  }, [people]);
 
   return <div ref={containerRef} className="class-meetup-map__canvas" />;
 }

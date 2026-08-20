@@ -13,6 +13,8 @@ create table if not exists public.pinmap_class_roster (
   current_name text not null default '',
   hometown text not null default '',
   living text not null default '',
+  living_lat double precision,
+  living_lng double precision,
   current_location text not null default '',
   updated_at timestamptz not null default now(),
   primary key (class_slug, id)

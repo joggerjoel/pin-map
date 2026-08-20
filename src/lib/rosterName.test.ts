@@ -12,6 +12,8 @@ function person(overrides: Partial<RosterPerson> = {}): RosterPerson {
     currentName: "",
     hometown: "",
     living: "",
+    livingLat: null,
+    livingLng: null,
     currentLocation: "",
     ...overrides,
   };

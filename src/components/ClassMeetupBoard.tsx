@@ -5,16 +5,10 @@ import type { RosterPersonPhoto } from "../lib/classRosterPhotosRepository";
 import { addMeetup, fetchMeetups } from "../lib/classMeetupsRepository";
 import type { ClassMeetup } from "../lib/classMeetupsRepository";
 import { geocodeLine } from "../lib/geocoder";
+import { CLASS_GEOCODE_COUNTRY_BIAS } from "../lib/classGeocodeBias";
 import { displayName } from "../lib/rosterName";
 import { ClassMeetupMapView } from "./ClassMeetupMapView";
 import { RosterGrid } from "./RosterGrid";
-
-// Nearly every classmate lives in the US, and city names collide across
-// countries often enough (a plain "Chicago" or "Paris" search can resolve
-// abroad) that biasing toward the US measurably improves match accuracy for
-// this class's actual population, without hard-blocking a genuine
-// non-US entry (the bias narrows ranking, it doesn't filter results out).
-const GEOCODE_COUNTRY_BIAS = "us";
 
 export interface ClassMeetupBoardProps {
   classSlug: string;
@@ -73,7 +67,7 @@ export function ClassMeetupBoard({
     const geocoded = await geocodeLine(
       trimmedCity,
       token,
-      GEOCODE_COUNTRY_BIAS,
+      CLASS_GEOCODE_COUNTRY_BIAS,
     );
     if (geocoded === null) {
       setIsSubmitting(false);
@@ -103,7 +97,7 @@ export function ClassMeetupBoard({
 
   return (
     <div className="class-meetup-board">
-      <ClassMeetupMapView token={token} meetups={meetups} />
+      <ClassMeetupMapView token={token} meetups={meetups} people={people} />
       <div className="class-meetup-board__drawer">
         <RosterGrid
           people={people}
