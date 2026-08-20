@@ -611,3 +611,25 @@ describe("App Mapbox quota limiter", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("App without a Mapbox token", () => {
+  it("still shows the editable place list when signed in with no token available", async () => {
+    // No env token stubbed, no localStorage token set — effectiveToken stays
+    // null. The map area falls back to TokenSetup, but that must not take
+    // the whole app down with it: tag editing, reordering, and photos have
+    // nothing to do with Mapbox and should stay usable.
+    render(<App />);
+
+    expect(
+      await screen.findByText(/Paste a Mapbox access token to get started/),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Add a pin")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Paste places, one per line"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Connect a Mapbox token to add new places/),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter places")).toBeInTheDocument();
+  });
+});

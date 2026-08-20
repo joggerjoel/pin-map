@@ -41,7 +41,7 @@ export const BUILTIN_TAG_LABELS: Record<BuiltinTagKey, string> = {
 export const BUILTIN_APPEARANCE_DEFAULTS: Record<BuiltinTagKey, TagAppearance> =
   {
     visited: { color: "#3b82f6", iconShape: "none" },
-    lived: { color: "#f97316", iconShape: "none" },
+    lived: { color: "#f97316", iconShape: "house" },
     hometown: { color: "#eab308", iconShape: "house" },
     ironman: { color: "#dc2626", iconShape: "triathlete" },
     airport: { color: "#0891b2", iconShape: "airplane" },

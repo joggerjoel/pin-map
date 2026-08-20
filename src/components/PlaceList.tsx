@@ -3,6 +3,7 @@ import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PlaceCategory } from "../lib/checklist";
 import type { PlaceIcon } from "../lib/placeTags";
 import type { CustomTag } from "../lib/customTags";
+import type { PlacePhoto } from "../lib/photosRepository";
 import { buildGoogleMapsUrl } from "../lib/googleMaps";
 import { resolveLocationInput } from "../lib/locationInput";
 import { TagPicker } from "./TagPicker";
@@ -11,6 +12,8 @@ import type {
   IconShape,
   TagAppearance,
 } from "../lib/tagAppearance";
+
+const EMPTY_PHOTOS_BY_QUERY: Record<string, PlacePhoto[]> = {};
 
 export interface PlaceListProps {
   pinnedPlaces: PinnedPlace[];
@@ -37,6 +40,9 @@ export interface PlaceListProps {
     id: string,
     updates: { label: string; color: string; iconShape: IconShape },
   ) => void;
+  photosByQuery?: Record<string, PlacePhoto[]>;
+  onAddPhoto?: (query: string, file: File) => void;
+  onRemovePhoto?: (photo: PlacePhoto) => void;
 }
 
 export function PlaceList({
@@ -54,6 +60,9 @@ export function PlaceList({
   builtinAppearance,
   onEditBuiltinTag,
   onEditCustomTag,
+  photosByQuery = EMPTY_PHOTOS_BY_QUERY,
+  onAddPhoto,
+  onRemovePhoto,
 }: PlaceListProps) {
   const itemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null);
@@ -166,6 +175,18 @@ export function PlaceList({
                 ↗
               </a>
             </div>
+            {photosByQuery[place.query]?.length ? (
+              <div className="place-list__photos">
+                {photosByQuery[place.query].map((photo) => (
+                  <img
+                    key={photo.id}
+                    src={photo.url}
+                    alt={`Photo of ${place.name}`}
+                    className="place-list__photo-thumb"
+                  />
+                ))}
+              </div>
+            ) : null}
             {expandedQuery === place.query && (
               <TagPicker
                 selectedTag={
@@ -220,6 +241,40 @@ export function PlaceList({
                 />
                 <button type="submit">Update location</button>
               </form>
+            )}
+            {expandedQuery === place.query && (
+              <div className="place-list__photo-manage">
+                {photosByQuery[place.query]?.map((photo) => (
+                  <span
+                    key={photo.id}
+                    className="place-list__photo-manage-item"
+                  >
+                    <img src={photo.url} alt={`Photo of ${place.name}`} />
+                    <button
+                      type="button"
+                      aria-label={`Remove photo of ${place.name}`}
+                      onClick={() => onRemovePhoto?.(photo)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                <label className="place-list__photo-upload">
+                  Add photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    aria-label={`Add a photo for ${place.name}`}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) {
+                        onAddPhoto?.(place.query, file);
+                      }
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
             )}
           </li>
         ))}

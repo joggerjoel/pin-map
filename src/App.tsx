@@ -10,6 +10,7 @@ import type { TokenUsage } from "./lib/tokenUsage";
 import { useGeocoder } from "./hooks/useGeocoder";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
 import { useAuth } from "./hooks/useAuth";
+import { usePhotos } from "./hooks/usePhotos";
 import { fetchOwnerId } from "./lib/pinsRepository";
 import { TokenSetup } from "./components/TokenSetup";
 import { LoginForm } from "./components/LoginForm";
@@ -119,6 +120,7 @@ export function App() {
     ownerUserId,
     customTags,
   });
+  const photos = usePhotos(userId, ownerUserId);
 
   function handleCreateCustomTag(
     label: string,
@@ -159,18 +161,6 @@ export function App() {
     selectionNonceRef.current += 1;
     setSelection({ query, nonce: selectionNonceRef.current });
   }, []);
-
-  if (effectiveToken === null) {
-    return (
-      <TokenSetup
-        onSubmit={(newToken) => {
-          setMapboxToken(newToken);
-          setToken(newToken);
-          setPersonalToken(newToken);
-        }}
-      />
-    );
-  }
 
   return (
     <div
@@ -232,29 +222,39 @@ export function App() {
         )}
         {auth.status === "signed-in" && (
           <>
-            <AddPin
-              onAdd={(city, tag) =>
-                geocoder.pinPlace(
-                  city,
-                  tag.kind === "category"
-                    ? { category: tag.value }
-                    : tag.kind === "icon"
-                      ? { icon: tag.value }
-                      : { customTag: tag.value },
-                )
-              }
-              isLoading={geocoder.isLoading}
-              customTags={customTags}
-              onCreateCustomTag={handleCreateCustomTag}
-              builtinAppearance={builtinAppearance}
-              onEditBuiltinTag={handleEditBuiltinTag}
-              onEditCustomTag={handleEditCustomTag}
-            />
-            <PlaceInput
-              onSubmit={geocoder.pinPlaces}
-              isLoading={geocoder.isLoading}
-              removedPlace={lastRemoval}
-            />
+            {effectiveToken !== null ? (
+              <>
+                <AddPin
+                  onAdd={(city, tag) =>
+                    geocoder.pinPlace(
+                      city,
+                      tag.kind === "category"
+                        ? { category: tag.value }
+                        : tag.kind === "icon"
+                          ? { icon: tag.value }
+                          : { customTag: tag.value },
+                    )
+                  }
+                  isLoading={geocoder.isLoading}
+                  customTags={customTags}
+                  onCreateCustomTag={handleCreateCustomTag}
+                  builtinAppearance={builtinAppearance}
+                  onEditBuiltinTag={handleEditBuiltinTag}
+                  onEditCustomTag={handleEditCustomTag}
+                />
+                <PlaceInput
+                  onSubmit={geocoder.pinPlaces}
+                  isLoading={geocoder.isLoading}
+                  removedPlace={lastRemoval}
+                />
+              </>
+            ) : (
+              <p className="app__no-token-notice">
+                Connect a Mapbox token to add new places or move pins on the
+                map. Your existing places below can still be edited, tagged, and
+                reordered.
+              </p>
+            )}
             {geocoder.error !== null && (
               <ErrorBanner message={geocoder.error} onRetry={geocoder.retry} />
             )}
@@ -277,6 +277,9 @@ export function App() {
               builtinAppearance={builtinAppearance}
               onEditBuiltinTag={handleEditBuiltinTag}
               onEditCustomTag={handleEditCustomTag}
+              photosByQuery={photos.photosByQuery}
+              onAddPhoto={photos.addPhoto}
+              onRemovePhoto={photos.removePhoto}
             />
           </>
         )}
@@ -289,17 +292,28 @@ export function App() {
         onMouseDown={sidebarLayout.onSplitterMouseDown}
       />
       <main className="app__map">
-        <MapView
-          token={effectiveToken}
-          places={geocoder.pinnedPlaces}
-          selection={selection}
-          onMarkerClick={setHighlightedQuery}
-          onRelocate={geocoder.relocatePlace}
-          onSetLocation={geocoder.setLocation}
-          builtinAppearance={builtinAppearance}
-          declutterEnabled={declutterEnabled}
-          canEdit={auth.status === "signed-in"}
-        />
+        {effectiveToken !== null ? (
+          <MapView
+            token={effectiveToken}
+            places={geocoder.pinnedPlaces}
+            selection={selection}
+            onMarkerClick={setHighlightedQuery}
+            onRelocate={geocoder.relocatePlace}
+            onSetLocation={geocoder.setLocation}
+            builtinAppearance={builtinAppearance}
+            declutterEnabled={declutterEnabled}
+            canEdit={auth.status === "signed-in"}
+            photosByQuery={photos.photosByQuery}
+          />
+        ) : (
+          <TokenSetup
+            onSubmit={(newToken) => {
+              setMapboxToken(newToken);
+              setToken(newToken);
+              setPersonalToken(newToken);
+            }}
+          />
+        )}
       </main>
     </div>
   );

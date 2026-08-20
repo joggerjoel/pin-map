@@ -3,6 +3,7 @@ import mapboxgl from "mapbox-gl";
 import type { ExpressionSpecification } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { PinnedPlace } from "../hooks/useGeocoder";
+import type { PlacePhoto } from "../lib/photosRepository";
 import type { PlaceCategory } from "../lib/checklist";
 import { buildGoogleMapsUrl } from "../lib/googleMaps";
 import { resolveLocationInput } from "../lib/locationInput";
@@ -23,6 +24,12 @@ import type { ScreenPoint } from "../lib/markerDeclutter";
 const MIN_DECLUTTER_ZOOM = 4;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+// A stable reference for the default, rather than a fresh `{}` literal in
+// the destructuring default — an inline literal default is re-created on
+// every render, which would change identity every time and defeat the
+// marker-rebuild effect's dependency check below.
+const EMPTY_PHOTOS_BY_QUERY: Record<string, PlacePhoto[]> = {};
 
 function createTriathleteIconSvg(): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, "svg");
@@ -112,6 +119,7 @@ function createPopupContent(
   onRelocate: (query: string, searchText: string) => void,
   onSetLocation: (query: string, lat: number, lng: number) => void,
   canEdit: boolean,
+  photos: PlacePhoto[],
 ): HTMLDivElement {
   const container = document.createElement("div");
   container.className = "map-popup";
@@ -126,6 +134,18 @@ function createPopupContent(
   link.rel = "noopener noreferrer";
   link.textContent = "View on Google Maps";
   container.appendChild(link);
+
+  if (photos.length > 0) {
+    const gallery = document.createElement("div");
+    gallery.className = "map-popup__photos";
+    for (const photo of photos) {
+      const img = document.createElement("img");
+      img.src = photo.url;
+      img.alt = `Photo of ${place.name}`;
+      gallery.appendChild(img);
+    }
+    container.appendChild(gallery);
+  }
 
   // The relocate form triggers a live Mapbox search-API call on submit
   // (see resolveLocationInput/geocodeLine) — omitted entirely for viewers
@@ -202,6 +222,7 @@ export interface MapViewProps {
   builtinAppearance: Record<BuiltinTagKey, TagAppearance>;
   declutterEnabled: boolean;
   canEdit: boolean;
+  photosByQuery?: Record<string, PlacePhoto[]>;
 }
 
 function resolveBuiltinKey(place: PinnedPlace): BuiltinTagKey | undefined {
@@ -335,6 +356,7 @@ export function MapView({
   builtinAppearance,
   declutterEnabled,
   canEdit,
+  photosByQuery = EMPTY_PHOTOS_BY_QUERY,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -444,7 +466,13 @@ export function MapView({
         .setLngLat([place.lng, place.lat])
         .setPopup(
           new mapboxgl.Popup().setDOMContent(
-            createPopupContent(place, onRelocate, onSetLocation, canEdit),
+            createPopupContent(
+              place,
+              onRelocate,
+              onSetLocation,
+              canEdit,
+              photosByQuery[place.query] ?? [],
+            ),
           ),
         )
         .addTo(map);
@@ -598,7 +626,7 @@ export function MapView({
         cancelAnimationFrame(declutterFrame);
       }
     };
-  }, [places, builtinAppearance, declutterEnabled, canEdit]);
+  }, [places, builtinAppearance, declutterEnabled, canEdit, photosByQuery]);
 
   // Depends only on `selection`, never on `places` — otherwise pinning a new
   // place would re-fire this effect and fly back to the last selection,

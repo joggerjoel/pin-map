@@ -738,3 +738,127 @@ describe("PlaceList", () => {
     expect(onRelocate).toHaveBeenCalledWith("Paris", "Paris, Texas");
   });
 });
+
+describe("PlaceList photos", () => {
+  const parisPhoto = {
+    id: "photo-1",
+    placeQuery: "Paris",
+    storagePath: "user-1/photo-1.jpg",
+    url: "https://cdn.example.com/photo-1.jpg",
+  };
+
+  it("shows a thumbnail for a place with a photo, without expanding it", () => {
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        photosByQuery={{ Paris: [parisPhoto] }}
+      />,
+    );
+
+    expect(screen.getByAltText("Photo of Paris, France")).toHaveAttribute(
+      "src",
+      "https://cdn.example.com/photo-1.jpg",
+    );
+  });
+
+  it("shows no thumbnail for a place with no photos", () => {
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByAltText("Photo of Paris, France")).toBeNull();
+  });
+
+  it("calls onAddPhoto with the selected file when a photo is added to an expanded place", async () => {
+    const user = userEvent.setup();
+    const onAddPhoto = vi.fn();
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        onAddPhoto={onAddPhoto}
+      />,
+    );
+    await user.click(screen.getByText("Paris, France"));
+
+    const file = new File(["fake"], "eiffel.jpg", { type: "image/jpeg" });
+    await user.upload(
+      screen.getByLabelText("Add a photo for Paris, France"),
+      file,
+    );
+
+    expect(onAddPhoto).toHaveBeenCalledWith("Paris", file);
+  });
+
+  it("calls onRemovePhoto when an existing photo's remove button is clicked", async () => {
+    const user = userEvent.setup();
+    const onRemovePhoto = vi.fn();
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        photosByQuery={{ Paris: [parisPhoto] }}
+        onRemovePhoto={onRemovePhoto}
+      />,
+    );
+    await user.click(screen.getByText("Paris, France"));
+
+    await user.click(
+      screen.getByRole("button", { name: "Remove photo of Paris, France" }),
+    );
+
+    expect(onRemovePhoto).toHaveBeenCalledWith(parisPhoto);
+  });
+});

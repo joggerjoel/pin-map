@@ -593,10 +593,10 @@ describe("MapView", () => {
     expect(marker?.options?.color).toBeUndefined();
   });
 
-  it("colors a marker with the 'lived' appearance for a place tagged with the live icon", () => {
+  it("renders a custom house marker element for a place tagged with the live icon", () => {
     // "house-live" resolves to the "lived" builtin key, whose default
-    // appearance has iconShape "none" — so it renders as a plain colored
-    // dot (the lived color), not a house-badge element.
+    // appearance has iconShape "house" — a house-badge element, not a
+    // plain colored dot.
     const tagged = { ...paris, icon: "house-live" as const };
     render(
       <MapView
@@ -612,9 +612,8 @@ describe("MapView", () => {
       />,
     );
     const marker = markerInstances[0];
-    expect(marker?.options).toEqual({
-      color: TEST_BUILTIN_APPEARANCE.lived.color,
-    });
+    expect(marker?.options?.element).toBeInstanceOf(HTMLElement);
+    expect(marker?.options?.color).toBeUndefined();
   });
 
   it("renders a custom house marker element for a hometown place", () => {
@@ -907,6 +906,57 @@ describe("MapView", () => {
     expect(domContent?.querySelector("a")?.textContent).toBe(
       "View on Google Maps",
     );
+  });
+
+  it("shows a photo gallery in the popup for a place with photos", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+        canEdit={false}
+        photosByQuery={{
+          paris: [
+            {
+              id: "photo-1",
+              placeQuery: "paris",
+              storagePath: "user-1/photo-1.jpg",
+              url: "https://cdn.example.com/photo-1.jpg",
+            },
+          ],
+        }}
+      />,
+    );
+    const marker = markerInstances[0];
+    const domContent = marker?.popup?.domContent as HTMLDivElement | undefined;
+    const images = domContent?.querySelectorAll("img");
+    expect(images).toHaveLength(1);
+    expect(images?.[0].src).toBe("https://cdn.example.com/photo-1.jpg");
+    expect(images?.[0].alt).toBe("Photo of Paris, France");
+  });
+
+  it("shows no photo gallery in the popup for a place with no photos", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+        canEdit={true}
+      />,
+    );
+    const marker = markerInstances[0];
+    const domContent = marker?.popup?.domContent as HTMLDivElement | undefined;
+    expect(domContent?.querySelector("img")).toBeNull();
   });
 
   it("gives the popup's relocate form an accessible input", () => {
