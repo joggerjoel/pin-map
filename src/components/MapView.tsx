@@ -34,18 +34,36 @@ function createTriathleteIconSvg(): SVGSVGElement {
   return svg;
 }
 
-function createTriathleteMarkerElement(): HTMLDivElement {
+function createHouseIconSvg(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "16");
+  svg.setAttribute("height", "16");
+
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", "M12 3 L22 12 L19 12 L19 21 L5 21 L5 12 L2 12 Z");
+  path.setAttribute("fill", "#ffffff");
+  path.setAttribute("fill-opacity", "1");
+
+  svg.appendChild(path);
+  return svg;
+}
+
+function createIconBadgeElement(
+  backgroundColor: string,
+  icon: SVGSVGElement,
+): HTMLDivElement {
   const el = document.createElement("div");
   el.style.width = "32px";
   el.style.height = "32px";
   el.style.borderRadius = "50%";
-  el.style.background = "#dc2626";
+  el.style.background = backgroundColor;
   el.style.display = "flex";
   el.style.alignItems = "center";
   el.style.justifyContent = "center";
   el.style.border = "2px solid white";
   el.style.boxShadow = "0 1px 4px rgba(0, 0, 0, 0.3)";
-  el.appendChild(createTriathleteIconSvg());
+  el.appendChild(icon);
   return el;
 }
 
@@ -179,12 +197,24 @@ export function MapView({
     places.forEach((place) => {
       const marker =
         place.icon === "triathlete"
-          ? new mapboxgl.Marker({ element: createTriathleteMarkerElement() })
-          : new mapboxgl.Marker(
-              place.category
-                ? { color: CATEGORY_COLORS[place.category] }
-                : undefined,
-            );
+          ? new mapboxgl.Marker({
+              element: createIconBadgeElement(
+                "#dc2626",
+                createTriathleteIconSvg(),
+              ),
+            })
+          : place.category === "hometown"
+            ? new mapboxgl.Marker({
+                element: createIconBadgeElement(
+                  CATEGORY_COLORS.hometown,
+                  createHouseIconSvg(),
+                ),
+              })
+            : new mapboxgl.Marker(
+                place.category
+                  ? { color: CATEGORY_COLORS[place.category] }
+                  : undefined,
+              );
       marker
         .setLngLat([place.lng, place.lat])
         .setPopup(new mapboxgl.Popup().setText(place.name))
