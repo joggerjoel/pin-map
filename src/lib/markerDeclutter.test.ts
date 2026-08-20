@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   computeDeclutterOffsets,
   DECLUTTER_COLLISION_RADIUS,
+  MAX_CLUSTER_DIAGONAL,
+  MAX_CLUSTER_MEMBERS,
 } from "./markerDeclutter";
 import type { ScreenPoint } from "./markerDeclutter";
 
@@ -163,6 +165,66 @@ describe("computeDeclutterOffsets", () => {
         spreadRadius + 1e-6,
       );
       expect(distance(adjusted, centroid1)).toBeGreaterThan(spreadRadius);
+    });
+  });
+
+  it("does not spread a long chain of merely-adjacent points into one giant cluster", () => {
+    // Single-linkage (transitive) clustering means a chain of points each
+    // just inside the collision radius of the next can bridge an enormous
+    // distance overall — e.g. a pin in the USA transitively "colliding"
+    // with one in Australia through many pins in between. Build a chain
+    // whose consecutive gaps are all well inside the default 24px radius,
+    // but whose overall span far exceeds MAX_CLUSTER_DIAGONAL.
+    const chainLength = 30;
+    const stepPx = 10;
+    const points: ScreenPoint[] = Array.from(
+      { length: chainLength },
+      (_, index) => ({
+        key: `chain-${index}`,
+        x: index * stepPx,
+        y: 0,
+      }),
+    );
+    expect((chainLength - 1) * stepPx).toBeGreaterThan(MAX_CLUSTER_DIAGONAL);
+
+    const offsets = computeDeclutterOffsets(points);
+    expect(offsets).toHaveLength(chainLength);
+    offsets.forEach((offset) => {
+      expect(offset).toMatchObject({ dx: 0, dy: 0 });
+    });
+  });
+
+  it("does not spread a cluster with more members than MAX_CLUSTER_MEMBERS, even if tightly packed", () => {
+    const memberCount = MAX_CLUSTER_MEMBERS + 1;
+    const points: ScreenPoint[] = Array.from(
+      { length: memberCount },
+      (_, index) => ({
+        key: `dense-${index}`,
+        // All within a couple of pixels of the origin — tightly packed,
+        // well under MAX_CLUSTER_DIAGONAL — but too many members.
+        x: (index % 3) * 2,
+        y: Math.floor(index / 3) * 2,
+      }),
+    );
+    const offsets = computeDeclutterOffsets(points);
+    expect(offsets).toHaveLength(memberCount);
+    offsets.forEach((offset) => {
+      expect(offset).toMatchObject({ dx: 0, dy: 0 });
+    });
+  });
+
+  it("still spreads a small, genuinely local cluster normally", () => {
+    // Sanity check that the chain-rejection caps don't over-trigger for an
+    // ordinary small local collision.
+    const points: ScreenPoint[] = [
+      { key: "a", x: 0, y: 0 },
+      { key: "b", x: 5, y: 0 },
+      { key: "c", x: 0, y: 5 },
+    ];
+    const offsets = computeDeclutterOffsets(points);
+    expect(offsets).toHaveLength(3);
+    offsets.forEach((offset) => {
+      expect(offset.dx !== 0 || offset.dy !== 0).toBe(true);
     });
   });
 });

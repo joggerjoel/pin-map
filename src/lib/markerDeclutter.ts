@@ -12,6 +12,26 @@ export interface DeclutterOffset {
 
 export const DECLUTTER_COLLISION_RADIUS = 24;
 
+// Union-find clustering is single-linkage: A-B close and B-C close merges
+// all three even if A and C are far apart. With enough points, that lets a
+// "chain" of merely-adjacent pins bridge all the way across a map (e.g. a
+// pin in the USA transitively linked to one in Australia through many
+// pins in between). Real visual overlaps are a handful of pins in a small
+// screen area, not dozens spanning the whole viewport — so any cluster
+// that's implausibly large or spread out is treated as a chaining
+// artifact, not a genuine collision, and its members are left alone
+// rather than being spread into a giant, meaningless fan.
+export const MAX_CLUSTER_MEMBERS = 12;
+export const MAX_CLUSTER_DIAGONAL = 150;
+
+function clusterDiagonal(cluster: ScreenPoint[]): number {
+  const xs = cluster.map((point) => point.x);
+  const ys = cluster.map((point) => point.y);
+  const width = Math.max(...xs) - Math.min(...xs);
+  const height = Math.max(...ys) - Math.min(...ys);
+  return Math.sqrt(width * width + height * height);
+}
+
 export function computeDeclutterOffsets(
   points: ScreenPoint[],
   collisionRadius: number = DECLUTTER_COLLISION_RADIUS,
@@ -19,8 +39,13 @@ export function computeDeclutterOffsets(
   const clusters = clusterPoints(points, collisionRadius);
   const offsets: DeclutterOffset[] = [];
   for (const cluster of clusters) {
-    if (cluster.length === 1) {
-      offsets.push({ key: cluster[0].key, dx: 0, dy: 0 });
+    const isChainArtifact =
+      cluster.length > MAX_CLUSTER_MEMBERS ||
+      clusterDiagonal(cluster) > MAX_CLUSTER_DIAGONAL;
+    if (cluster.length === 1 || isChainArtifact) {
+      cluster.forEach((point) => {
+        offsets.push({ key: point.key, dx: 0, dy: 0 });
+      });
       continue;
     }
     const spreadRadius = collisionRadius * (1 + cluster.length * 0.3);
