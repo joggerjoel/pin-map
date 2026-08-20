@@ -61,22 +61,20 @@ export function PlaceInput({
 
   return (
     <form className="place-input" onSubmit={handleSubmit}>
+      <input
+        type="checkbox"
+        aria-label="Checklist mode"
+        checked={checklistMode}
+        onChange={(event) => {
+          const checked = event.target.checked;
+          setChecklistMode(checked);
+          if (checked) {
+            setContinent(null);
+          }
+        }}
+      />
       <label>
-        <input
-          type="checkbox"
-          checked={checklistMode}
-          onChange={(event) => {
-            const checked = event.target.checked;
-            setChecklistMode(checked);
-            if (checked) {
-              setContinent(null);
-            }
-          }}
-        />
-        Checklist mode (numbered list with X/(home)/Y marks)
-      </label>
-      <label>
-        Continent (optional)
+        Continent
         <select
           value={continent ?? ""}
           disabled={checklistMode}
