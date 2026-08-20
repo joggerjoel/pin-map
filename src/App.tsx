@@ -304,6 +304,7 @@ export function App() {
             declutterEnabled={declutterEnabled}
             canEdit={auth.status === "signed-in"}
             photosByQuery={photos.photosByQuery}
+            onAddPhoto={photos.addPhoto}
           />
         ) : (
           <TokenSetup

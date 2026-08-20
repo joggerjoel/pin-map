@@ -959,6 +959,57 @@ describe("MapView", () => {
     expect(domContent?.querySelector("img")).toBeNull();
   });
 
+  it("gives the popup a photo upload input when canEdit is true, and calls onAddPhoto with the file", () => {
+    const onAddPhoto = vi.fn();
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+        canEdit={true}
+        onAddPhoto={onAddPhoto}
+      />,
+    );
+    const marker = markerInstances[0];
+    const domContent = marker?.popup?.domContent as HTMLDivElement | undefined;
+    const input = domContent?.querySelector(
+      "input[type=file]",
+    ) as HTMLInputElement | null;
+    expect(input?.getAttribute("aria-label")).toBe(
+      "Add a photo for Paris, France",
+    );
+
+    const file = new File(["fake"], "eiffel.jpg", { type: "image/jpeg" });
+    Object.defineProperty(input, "files", { value: [file] });
+    input?.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(onAddPhoto).toHaveBeenCalledWith("paris", file);
+  });
+
+  it("omits the photo upload input from the popup when canEdit is false", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+        canEdit={false}
+      />,
+    );
+    const marker = markerInstances[0];
+    const domContent = marker?.popup?.domContent as HTMLDivElement | undefined;
+    expect(domContent?.querySelector("input[type=file]")).toBeNull();
+  });
+
   it("gives the popup's relocate form an accessible input", () => {
     render(
       <MapView

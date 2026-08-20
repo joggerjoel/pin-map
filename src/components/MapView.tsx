@@ -30,6 +30,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 // every render, which would change identity every time and defeat the
 // marker-rebuild effect's dependency check below.
 const EMPTY_PHOTOS_BY_QUERY: Record<string, PlacePhoto[]> = {};
+const NOOP_ADD_PHOTO = (): void => {};
 
 function createTriathleteIconSvg(): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, "svg");
@@ -120,6 +121,7 @@ function createPopupContent(
   onSetLocation: (query: string, lat: number, lng: number) => void,
   canEdit: boolean,
   photos: PlacePhoto[],
+  onAddPhoto: (query: string, file: File) => void,
 ): HTMLDivElement {
   const container = document.createElement("div");
   container.className = "map-popup";
@@ -180,6 +182,24 @@ function createPopupContent(
 
   container.appendChild(form);
 
+  const photoLabel = document.createElement("label");
+  photoLabel.className = "map-popup__photo-upload";
+  photoLabel.textContent = "Add photo";
+
+  const photoInput = document.createElement("input");
+  photoInput.type = "file";
+  photoInput.accept = "image/*";
+  photoInput.setAttribute("aria-label", `Add a photo for ${place.name}`);
+  photoInput.addEventListener("change", () => {
+    const file = photoInput.files?.[0];
+    if (file) {
+      onAddPhoto(place.query, file);
+    }
+    photoInput.value = "";
+  });
+  photoLabel.appendChild(photoInput);
+  container.appendChild(photoLabel);
+
   return container;
 }
 
@@ -223,6 +243,7 @@ export interface MapViewProps {
   declutterEnabled: boolean;
   canEdit: boolean;
   photosByQuery?: Record<string, PlacePhoto[]>;
+  onAddPhoto?: (query: string, file: File) => void;
 }
 
 function resolveBuiltinKey(place: PinnedPlace): BuiltinTagKey | undefined {
@@ -357,6 +378,7 @@ export function MapView({
   declutterEnabled,
   canEdit,
   photosByQuery = EMPTY_PHOTOS_BY_QUERY,
+  onAddPhoto = NOOP_ADD_PHOTO,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -472,6 +494,7 @@ export function MapView({
               onSetLocation,
               canEdit,
               photosByQuery[place.query] ?? [],
+              onAddPhoto,
             ),
           ),
         )
