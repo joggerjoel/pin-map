@@ -235,6 +235,26 @@ describe("App", () => {
     expect(lastCommand?.type).toBe("fitBounds");
   });
 
+  it("toggles the spider declutter setting and persists it", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("pin-map:mapbox-token", "pk.stored-token");
+
+    render(<App />);
+
+    const toggle = screen.getByRole("button", { name: "Spider: On" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(toggle);
+
+    expect(screen.getByRole("button", { name: "Spider: Off" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(window.localStorage.getItem("pin-map:declutter-enabled")).toBe(
+      "false",
+    );
+  });
+
   it("returns to the token setup screen and clears the stored token when Change token is clicked", async () => {
     const user = userEvent.setup();
     window.localStorage.setItem("pin-map:mapbox-token", "pk.stored-token");

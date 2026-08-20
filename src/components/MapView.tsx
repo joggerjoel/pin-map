@@ -159,6 +159,7 @@ export interface MapViewProps {
   onRelocate: (query: string, searchText: string) => void;
   onSetLocation: (query: string, lat: number, lng: number) => void;
   builtinAppearance: Record<BuiltinTagKey, TagAppearance>;
+  declutterEnabled: boolean;
 }
 
 function resolveBuiltinKey(place: PinnedPlace): BuiltinTagKey | undefined {
@@ -277,6 +278,7 @@ export function MapView({
   onRelocate,
   onSetLocation,
   builtinAppearance,
+  declutterEnabled,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -447,6 +449,10 @@ export function MapView({
         return;
       }
       const visiblePlaces = updateMarkerVisibility(currentMap);
+      if (!declutterEnabled) {
+        clearDeclutter(currentMap);
+        return;
+      }
       // Screen-pixel collision doesn't know about real-world distance — at a
       // zoomed-out view (the whole world, or a whole continent), pins on
       // opposite sides of the globe can land within the collision radius
@@ -525,7 +531,7 @@ export function MapView({
         cancelAnimationFrame(declutterFrame);
       }
     };
-  }, [places, builtinAppearance]);
+  }, [places, builtinAppearance, declutterEnabled]);
 
   // Depends only on `selection`, never on `places` — otherwise pinning a new
   // place would re-fire this effect and fly back to the last selection,

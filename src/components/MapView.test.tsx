@@ -230,6 +230,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(instances).toHaveLength(1);
@@ -245,6 +246,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(getByText("Zoom: 10.0")).toBeInTheDocument();
@@ -260,6 +262,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const map = instances[0];
@@ -280,6 +283,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(instances[0]?.flyToCalls).toEqual([
@@ -297,6 +301,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(instances[0]?.fitBoundsCalls).toHaveLength(1);
@@ -312,6 +317,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const flyToCalls = instances[0]?.flyToCalls ?? [];
@@ -331,6 +337,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
@@ -344,6 +351,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
 
@@ -361,6 +369,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
@@ -380,6 +389,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
 
@@ -398,6 +408,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(markerInstances[0]?.element.title).toBe("Hometown");
@@ -422,6 +433,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(markerInstances[0]?.element.title).toBe("Marathon");
@@ -437,6 +449,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(markerInstances[0]?.element.title).toBe("");
@@ -453,6 +466,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(markerInstances[0]?.options).toEqual({ color: "#3b82f6" });
@@ -469,6 +483,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const marker = markerInstances[0];
@@ -487,6 +502,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const marker = markerInstances[0];
@@ -508,6 +524,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const marker = markerInstances[0];
@@ -527,6 +544,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const marker = markerInstances[0];
@@ -553,6 +571,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(markerInstances[0]?.options).toEqual({ color: "#8b5cf6" });
@@ -569,6 +588,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(container.textContent).toContain("Visited");
@@ -586,6 +606,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(container.querySelector(".map-legend")).toBeNull();
@@ -602,6 +623,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
 
@@ -621,6 +643,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
@@ -648,6 +671,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const map = instances[0];
@@ -662,6 +686,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
 
@@ -690,6 +715,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const map = instances[0];
@@ -712,6 +738,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     // Tokyo (lng 139.69) is listed first, Paris (lng 2.35) second — but Paris
@@ -731,6 +758,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(markerInstances[0]?.lngLat).toEqual([paris.lng, paris.lat]);
@@ -747,6 +775,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const marker = markerInstances[0];
@@ -770,6 +799,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const marker = markerInstances[0];
@@ -793,6 +823,7 @@ describe("MapView", () => {
         onRelocate={onRelocate}
         onSetLocation={onSetLocation}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const marker = markerInstances[0];
@@ -824,6 +855,7 @@ describe("MapView", () => {
         onRelocate={onRelocate}
         onSetLocation={onSetLocation}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const marker = markerInstances[0];
@@ -850,6 +882,7 @@ describe("MapView", () => {
         onRelocate={onRelocate}
         onSetLocation={onSetLocation}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const marker = markerInstances[0];
@@ -879,6 +912,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={customAppearance}
+        declutterEnabled={true}
       />,
     );
     const marker = markerInstances[0];
@@ -900,6 +934,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const originalElement = markerInstances[0]?.options
@@ -919,6 +954,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={changedAppearance}
+        declutterEnabled={true}
       />,
     );
 
@@ -939,6 +975,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const marker = markerInstances[0];
@@ -967,6 +1004,7 @@ describe("MapView", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const marker = markerInstances[0];
@@ -1002,6 +1040,7 @@ describe("MapView declutter", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     // MockMap.isStyleLoaded() always returns true, so declutter recalculates
@@ -1021,6 +1060,7 @@ describe("MapView declutter", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     expect(markerInstances[0]?.lngLat).toEqual([paris.lng, paris.lat]);
@@ -1037,6 +1077,7 @@ describe("MapView declutter", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const map = instances[0];
@@ -1070,6 +1111,7 @@ describe("MapView declutter", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const map = instances[0];
@@ -1108,6 +1150,7 @@ describe("MapView declutter", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const map = instances[0];
@@ -1155,6 +1198,7 @@ describe("MapView marker visibility", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const map = instances[0];
@@ -1185,6 +1229,7 @@ describe("MapView marker visibility", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const map = instances[0];
@@ -1221,6 +1266,7 @@ describe("MapView marker visibility", () => {
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
         builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
       />,
     );
     const map = instances[0];
@@ -1235,5 +1281,89 @@ describe("MapView marker visibility", () => {
     // proof Close B (out of bounds) was excluded from the collision math,
     // not merely hidden after the fact.
     expect(markerInstances[0]?.lngLat).toEqual([closeA.lng, closeA.lat]);
+  });
+});
+
+describe("MapView declutterEnabled toggle", () => {
+  const closeA: GeocodeResult = {
+    query: "close-a",
+    name: "Close A",
+    lng: 0,
+    lat: 0,
+  };
+  const closeB: GeocodeResult = {
+    query: "close-b",
+    name: "Close B",
+    lng: 0.001,
+    lat: 0,
+  };
+
+  it("nudges colliding pins apart when enabled", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[closeA, closeB]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+      />,
+    );
+    expect(markerInstances[0]?.lngLat).not.toEqual([closeA.lng, closeA.lat]);
+  });
+
+  it("leaves colliding pins at their true position when disabled", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[closeA, closeB]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={false}
+      />,
+    );
+    expect(markerInstances[0]?.lngLat).toEqual([closeA.lng, closeA.lat]);
+    expect(markerInstances[1]?.lngLat).toEqual([closeB.lng, closeB.lat]);
+  });
+
+  it("un-nudges already-spread pins when toggled off via a re-render", async () => {
+    const { rerender } = render(
+      <MapView
+        token="pk.test"
+        places={[closeA, closeB]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+      />,
+    );
+    expect(markerInstances[0]?.lngLat).not.toEqual([closeA.lng, closeA.lat]);
+
+    // The marker-rebuild effect tears down and recreates every marker on
+    // each run, so the markers from this rerender are new instances pushed
+    // onto the end of markerInstances — not the same objects at [0]/[1].
+    const countBeforeRerender = markerInstances.length;
+    rerender(
+      <MapView
+        token="pk.test"
+        places={[closeA, closeB]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={false}
+      />,
+    );
+    const freshMarkers = markerInstances.slice(countBeforeRerender);
+    expect(freshMarkers[0]?.lngLat).toEqual([closeA.lng, closeA.lat]);
+    expect(freshMarkers[1]?.lngLat).toEqual([closeB.lng, closeB.lat]);
   });
 });

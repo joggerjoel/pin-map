@@ -51,6 +51,11 @@ body {
   gap: 0.5rem;
 }
 
+.app__declutter-toggle {
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+
 .app__map {
   position: relative;
 }

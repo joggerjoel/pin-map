@@ -24,6 +24,10 @@ import type {
   IconShape,
   TagAppearance,
 } from "./lib/tagAppearance";
+import {
+  getDeclutterEnabled,
+  saveDeclutterEnabled,
+} from "./lib/declutterSettings";
 
 export function App() {
   const [token, setToken] = useState<string | null>(() => getMapboxToken());
@@ -39,6 +43,9 @@ export function App() {
   const [builtinAppearance, setBuiltinAppearance] = useState<
     Record<BuiltinTagKey, TagAppearance>
   >(() => getResolvedBuiltinAppearance());
+  const [declutterEnabled, setDeclutterEnabled] = useState<boolean>(() =>
+    getDeclutterEnabled(),
+  );
   const selectionNonceRef = useRef(0);
   const removalNonce = useRef(0);
   const geocoder = useGeocoder(token ?? "");
@@ -62,6 +69,14 @@ export function App() {
     updates: { label: string; color: string; iconShape: IconShape },
   ) {
     setCustomTags(updateCustomTag(id, updates));
+  }
+
+  function handleToggleDeclutter() {
+    setDeclutterEnabled((prev) => {
+      const next = !prev;
+      saveDeclutterEnabled(next);
+      return next;
+    });
   }
 
   // Selecting a place is modeled as a one-shot event (a nonce, not just the
@@ -107,6 +122,14 @@ export function App() {
       <aside className="app__sidebar">
         <div className="app__sidebar-header">
           <h1>Pin Map</h1>
+          <button
+            type="button"
+            className="app__declutter-toggle"
+            aria-pressed={declutterEnabled}
+            onClick={handleToggleDeclutter}
+          >
+            {declutterEnabled ? "Spider: On" : "Spider: Off"}
+          </button>
           <button
             type="button"
             className="app__change-token"
@@ -181,6 +204,7 @@ export function App() {
           onRelocate={geocoder.relocatePlace}
           onSetLocation={geocoder.setLocation}
           builtinAppearance={builtinAppearance}
+          declutterEnabled={declutterEnabled}
         />
       </main>
     </div>
