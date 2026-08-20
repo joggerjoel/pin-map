@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getMapboxToken, setMapboxToken } from "./mapboxToken";
+import {
+  clearMapboxToken,
+  getMapboxToken,
+  setMapboxToken,
+} from "./mapboxToken";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -31,5 +35,13 @@ describe("setMapboxToken", () => {
     expect(window.localStorage.getItem("pin-map:mapbox-token")).toBe(
       "pk.new-token",
     );
+  });
+});
+
+describe("clearMapboxToken", () => {
+  it("removes the token from localStorage", () => {
+    setMapboxToken("pk.new-token");
+    clearMapboxToken();
+    expect(window.localStorage.getItem("pin-map:mapbox-token")).toBeNull();
   });
 });

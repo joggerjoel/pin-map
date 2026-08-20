@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { geocodeBatch, geocodeLine, parseLines } from "./geocoder";
+import {
+  GeocodeAllFailedError,
+  GeocodeRequestError,
+  geocodeBatch,
+  geocodeLine,
+  parseLines,
+} from "./geocoder";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -71,6 +77,19 @@ describe("geocodeLine", () => {
       "Mapbox geocoding request failed: 500",
     );
   });
+
+  it("throws a GeocodeRequestError carrying the status code", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({}, false, 401)),
+    );
+    await expect(geocodeLine("Paris", "pk.test")).rejects.toMatchObject({
+      status: 401,
+    });
+    await expect(geocodeLine("Paris", "pk.test")).rejects.toBeInstanceOf(
+      GeocodeRequestError,
+    );
+  });
 });
 
 describe("geocodeBatch", () => {
@@ -120,5 +139,29 @@ describe("geocodeBatch", () => {
     await expect(geocodeBatch(["Paris", "Tokyo"], "pk.test")).rejects.toThrow(
       "All geocoding requests failed",
     );
+  });
+
+  it("flags the failure as an auth error when every line 401s", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({}, false, 401)),
+    );
+    const rejection = await geocodeBatch(["Paris", "Tokyo"], "pk.test").catch(
+      (err: unknown) => err,
+    );
+    expect(rejection).toBeInstanceOf(GeocodeAllFailedError);
+    expect((rejection as GeocodeAllFailedError).isAuthError).toBe(true);
+  });
+
+  it("does not flag a non-auth failure as an auth error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("network down")),
+    );
+    const rejection = await geocodeBatch(["Paris", "Tokyo"], "pk.test").catch(
+      (err: unknown) => err,
+    );
+    expect(rejection).toBeInstanceOf(GeocodeAllFailedError);
+    expect((rejection as GeocodeAllFailedError).isAuthError).toBe(false);
   });
 });

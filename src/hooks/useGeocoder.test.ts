@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useGeocoder } from "./useGeocoder";
 import * as geocoderModule from "../lib/geocoder";
+import { GeocodeAllFailedError } from "../lib/geocoder";
 import type { GeocodeResult } from "../lib/geocoder";
 
 afterEach(() => {
@@ -81,6 +82,83 @@ describe("useGeocoder", () => {
     });
 
     expect(result.current.pinnedPlaces).toEqual([]);
+  });
+
+  it("sets a distinct message when geocodeBatch rejects with an auth failure", async () => {
+    vi.spyOn(geocoderModule, "geocodeBatch").mockRejectedValue(
+      new GeocodeAllFailedError(true),
+    );
+
+    const { result } = renderHook(() => useGeocoder("pk.bad-token"));
+    await act(async () => {
+      await result.current.pinPlaces("Paris");
+    });
+
+    expect(result.current.error).toBe(
+      "That Mapbox token was rejected — check it and try again.",
+    );
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it("sets the generic message when geocodeBatch rejects without an auth failure", async () => {
+    vi.spyOn(geocoderModule, "geocodeBatch").mockRejectedValue(
+      new GeocodeAllFailedError(false),
+    );
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+    await act(async () => {
+      await result.current.pinPlaces("Paris");
+    });
+
+    expect(result.current.error).toBe(
+      "Couldn't reach Mapbox. Check your connection and try again.",
+    );
+  });
+
+  it("does not duplicate a failed line when the same input is resubmitted", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({
+        pinned: [],
+        failed: ["Nowhereville"],
+      });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+    await act(async () => {
+      await result.current.pinPlaces("Nowhereville");
+    });
+    await act(async () => {
+      await result.current.pinPlaces("Nowhereville");
+    });
+
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    expect(result.current.failedLines).toEqual(["Nowhereville"]);
+  });
+
+  it("retry re-attempts a failed line and removes it from failedLines when it succeeds", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValueOnce({ pinned: [], failed: ["Nowhereville"] })
+      .mockResolvedValueOnce({
+        pinned: [{ ...paris, query: "Nowhereville" }],
+        failed: [],
+      });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+    await act(async () => {
+      await result.current.pinPlaces("Nowhereville");
+    });
+    expect(result.current.failedLines).toEqual(["Nowhereville"]);
+
+    await act(async () => {
+      await result.current.retry();
+    });
+
+    expect(batchSpy).toHaveBeenCalledTimes(2);
+    expect(result.current.failedLines).toEqual([]);
+    expect(result.current.pinnedPlaces.map((place) => place.query)).toEqual([
+      "Nowhereville",
+    ]);
   });
 
   it("retry re-runs pinPlaces with the last raw input", async () => {

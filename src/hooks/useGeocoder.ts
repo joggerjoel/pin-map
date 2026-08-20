@@ -1,5 +1,9 @@
 import { useCallback, useRef, useState } from "react";
-import { geocodeBatch, parseLines } from "../lib/geocoder";
+import {
+  GeocodeAllFailedError,
+  geocodeBatch,
+  parseLines,
+} from "../lib/geocoder";
 import type { GeocodeResult } from "../lib/geocoder";
 
 export interface UseGeocoderResult {
@@ -18,20 +22,32 @@ export function useGeocoder(token: string): UseGeocoderResult {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pinnedPlacesRef = useRef<GeocodeResult[]>([]);
+  const failedLinesRef = useRef<string[]>([]);
   const lastRawInput = useRef<string>("");
 
   pinnedPlacesRef.current = pinnedPlaces;
+  failedLinesRef.current = failedLines;
 
-  const pinPlaces = useCallback(
-    async (raw: string) => {
+  // Shared by pinPlaces (normal submission) and retry (re-attempts failures).
+  // `isRetry` controls whether lines already in failedLines are skipped:
+  // a normal re-submission of the same text must not re-append duplicates,
+  // but retry() must still be able to re-attempt them.
+  const runPinPlaces = useCallback(
+    async (raw: string, isRetry: boolean) => {
       lastRawInput.current = raw;
       const lines = parseLines(raw);
-      const existingKeys = new Set(
+      const pinnedKeys = new Set(
         pinnedPlacesRef.current.map((place) => place.query.toLowerCase()),
       );
-      const newLines = lines.filter(
-        (line) => !existingKeys.has(line.toLowerCase()),
+      const failedKeys = new Set(
+        failedLinesRef.current.map((line) => line.toLowerCase()),
       );
+      const newLines = lines.filter((line) => {
+        const key = line.toLowerCase();
+        if (pinnedKeys.has(key)) return false;
+        if (!isRetry && failedKeys.has(key)) return false;
+        return true;
+      });
       if (newLines.length === 0) {
         return;
       }
@@ -41,10 +57,30 @@ export function useGeocoder(token: string): UseGeocoderResult {
 
       try {
         const batch = await geocodeBatch(newLines, token);
+        const succeededKeys = new Set(
+          batch.pinned.map((place) => place.query.toLowerCase()),
+        );
         setPinnedPlaces((prev) => [...prev, ...batch.pinned]);
-        setFailedLines((prev) => [...prev, ...batch.failed]);
-      } catch {
-        setError("Couldn't reach Mapbox. Check your connection and try again.");
+        setFailedLines((prev) => {
+          const survivors = prev.filter(
+            (line) => !succeededKeys.has(line.toLowerCase()),
+          );
+          const survivorKeys = new Set(
+            survivors.map((line) => line.toLowerCase()),
+          );
+          const additions = batch.failed.filter(
+            (line) => !survivorKeys.has(line.toLowerCase()),
+          );
+          return [...survivors, ...additions];
+        });
+      } catch (err) {
+        if (err instanceof GeocodeAllFailedError && err.isAuthError) {
+          setError("That Mapbox token was rejected — check it and try again.");
+        } else {
+          setError(
+            "Couldn't reach Mapbox. Check your connection and try again.",
+          );
+        }
       } finally {
         setIsLoading(false);
       }
@@ -52,13 +88,18 @@ export function useGeocoder(token: string): UseGeocoderResult {
     [token],
   );
 
+  const pinPlaces = useCallback(
+    (raw: string) => runPinPlaces(raw, false),
+    [runPinPlaces],
+  );
+
   const removePlace = useCallback((query: string) => {
     setPinnedPlaces((prev) => prev.filter((place) => place.query !== query));
   }, []);
 
   const retry = useCallback(() => {
-    void pinPlaces(lastRawInput.current);
-  }, [pinPlaces]);
+    void runPinPlaces(lastRawInput.current, true);
+  }, [runPinPlaces]);
 
   return {
     pinnedPlaces,

@@ -10,6 +10,31 @@ export interface GeocodeBatchResult {
   failed: string[];
 }
 
+/** Thrown by geocodeLine on a non-ok HTTP response; keeps the status code
+ * around so callers can distinguish an auth failure from other failures. */
+export class GeocodeRequestError extends Error {
+  status: number;
+
+  constructor(status: number) {
+    super(`Mapbox geocoding request failed: ${status}`);
+    this.name = "GeocodeRequestError";
+    this.status = status;
+  }
+}
+
+/** Thrown by geocodeBatch when every query failed. `isAuthError` is true
+ * only when every failure was a 401/403 GeocodeRequestError, letting
+ * callers show a "bad token" message instead of a generic connectivity one. */
+export class GeocodeAllFailedError extends Error {
+  isAuthError: boolean;
+
+  constructor(isAuthError: boolean) {
+    super("All geocoding requests failed");
+    this.name = "GeocodeAllFailedError";
+    this.isAuthError = isAuthError;
+  }
+}
+
 export function parseLines(raw: string): string[] {
   const seen = new Set<string>();
   const lines: string[] = [];
@@ -34,7 +59,7 @@ export async function geocodeLine(
 
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Mapbox geocoding request failed: ${response.status}`);
+    throw new GeocodeRequestError(response.status);
   }
 
   const data = (await response.json()) as {
@@ -64,7 +89,7 @@ export async function geocodeBatch(
 
   const pinned: GeocodeResult[] = [];
   const failed: string[] = [];
-  let rejectedCount = 0;
+  const rejectedReasons: unknown[] = [];
 
   settled.forEach((result, index) => {
     const query = queries[index];
@@ -74,12 +99,17 @@ export async function geocodeBatch(
     }
     failed.push(query);
     if (result.status === "rejected") {
-      rejectedCount += 1;
+      rejectedReasons.push(result.reason);
     }
   });
 
-  if (queries.length > 0 && rejectedCount === queries.length) {
-    throw new Error("All geocoding requests failed");
+  if (queries.length > 0 && rejectedReasons.length === queries.length) {
+    const isAuthError = rejectedReasons.every(
+      (reason) =>
+        reason instanceof GeocodeRequestError &&
+        (reason.status === 401 || reason.status === 403),
+    );
+    throw new GeocodeAllFailedError(isAuthError);
   }
 
   return { pinned, failed };

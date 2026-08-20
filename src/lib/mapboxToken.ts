@@ -11,3 +11,7 @@ export function getMapboxToken(): string | null {
 export function setMapboxToken(token: string): void {
   window.localStorage.setItem(STORAGE_KEY, token);
 }
+
+export function clearMapboxToken(): void {
+  window.localStorage.removeItem(STORAGE_KEY);
+}
