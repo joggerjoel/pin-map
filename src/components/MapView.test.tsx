@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MapView } from "./MapView";
 import type { GeocodeResult } from "../lib/geocoder";
@@ -156,6 +156,8 @@ describe("MapView", () => {
         places={[]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(instances).toHaveLength(1);
@@ -168,6 +170,8 @@ describe("MapView", () => {
         places={[paris]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(instances[0]?.flyToCalls).toEqual([
@@ -182,6 +186,8 @@ describe("MapView", () => {
         places={[paris, tokyo]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(instances[0]?.fitBoundsCalls).toHaveLength(1);
@@ -194,6 +200,8 @@ describe("MapView", () => {
         places={[paris, tokyo]}
         selection={{ query: "tokyo", nonce: 1 }}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const flyToCalls = instances[0]?.flyToCalls ?? [];
@@ -210,6 +218,8 @@ describe("MapView", () => {
         places={[paris, tokyo]}
         selection={{ query: "tokyo", nonce: 1 }}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
@@ -220,6 +230,8 @@ describe("MapView", () => {
         places={[paris, tokyo]}
         selection={{ query: "tokyo", nonce: 2 }}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
 
@@ -234,6 +246,8 @@ describe("MapView", () => {
         places={[paris, tokyo]}
         selection={selection}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
@@ -250,6 +264,8 @@ describe("MapView", () => {
         places={[paris, tokyo, mountainView]}
         selection={selection}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
 
@@ -265,6 +281,8 @@ describe("MapView", () => {
         places={[home]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(markerInstances[0]?.element.title).toBe("Hometown");
@@ -281,6 +299,8 @@ describe("MapView", () => {
         places={[tagged]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(markerInstances[0]?.element.title).toBe("Marathon");
@@ -293,6 +313,8 @@ describe("MapView", () => {
         places={[paris]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(markerInstances[0]?.element.title).toBe("");
@@ -306,6 +328,8 @@ describe("MapView", () => {
         places={[visited]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(markerInstances[0]?.options).toEqual({ color: "#3b82f6" });
@@ -319,6 +343,8 @@ describe("MapView", () => {
         places={[tagged]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const marker = markerInstances[0];
@@ -334,6 +360,8 @@ describe("MapView", () => {
         places={[tagged]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const marker = markerInstances[0];
@@ -349,6 +377,8 @@ describe("MapView", () => {
         places={[tagged]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const marker = markerInstances[0];
@@ -364,6 +394,8 @@ describe("MapView", () => {
         places={[home]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const marker = markerInstances[0];
@@ -382,6 +414,8 @@ describe("MapView", () => {
         places={[tagged]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(markerInstances[0]?.options).toEqual({ color: "#8b5cf6" });
@@ -395,6 +429,8 @@ describe("MapView", () => {
         places={[visited]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(container.textContent).toContain("Visited");
@@ -409,6 +445,8 @@ describe("MapView", () => {
         places={[paris]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(container.querySelector(".map-legend")).toBeNull();
@@ -422,6 +460,8 @@ describe("MapView", () => {
         places={[paris]}
         selection={null}
         onMarkerClick={onMarkerClick}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
 
@@ -438,6 +478,8 @@ describe("MapView", () => {
         places={[paris, tokyo]}
         selection={null}
         onMarkerClick={onMarkerClick}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
@@ -462,6 +504,8 @@ describe("MapView", () => {
         places={[]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const map = instances[0];
@@ -473,6 +517,8 @@ describe("MapView", () => {
         places={[michigan]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
 
@@ -498,6 +544,8 @@ describe("MapView", () => {
         places={[paris]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const map = instances[0];
@@ -517,6 +565,8 @@ describe("MapView", () => {
         places={[paris, tokyo]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     expect(markerInstances[0]?.element.style.zIndex).toBe("1");
@@ -530,6 +580,8 @@ describe("MapView", () => {
         places={[paris]}
         selection={null}
         onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
       />,
     );
     const marker = markerInstances[0];
@@ -541,5 +593,105 @@ describe("MapView", () => {
     );
     expect(link?.target).toBe("_blank");
     expect(link?.textContent).toBe("View on Google Maps");
+  });
+
+  it("gives the popup's relocate form an accessible input", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+      />,
+    );
+    const marker = markerInstances[0];
+    const domContent = marker?.popup?.domContent as HTMLDivElement | undefined;
+    const input = domContent?.querySelector("input");
+    expect(input?.getAttribute("aria-label")).toBe(
+      "Fix location for Paris, France",
+    );
+    expect(input?.placeholder).toContain("Paste a Google Maps link");
+  });
+
+  it("calls onSetLocation when the popup's relocate form is submitted with a Google Maps URL", () => {
+    const onRelocate = vi.fn();
+    const onSetLocation = vi.fn();
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={onRelocate}
+        onSetLocation={onSetLocation}
+      />,
+    );
+    const marker = markerInstances[0];
+    const domContent = marker?.popup?.domContent as HTMLDivElement;
+    const input = domContent.querySelector("input") as HTMLInputElement;
+    const form = domContent.querySelector("form") as HTMLFormElement;
+
+    fireEvent.change(input, {
+      target: {
+        value:
+          "https://www.google.com/maps/place/@37.7749,-122.4194,15z/data=!4m2!3m1!1s0x0!3e0!3d37.7749!4d-122.4194",
+      },
+    });
+    fireEvent.submit(form);
+
+    expect(onSetLocation).toHaveBeenCalledWith("paris", 37.7749, -122.4194);
+    expect(onRelocate).not.toHaveBeenCalled();
+  });
+
+  it("calls onRelocate when the popup's relocate form is submitted with free text", () => {
+    const onRelocate = vi.fn();
+    const onSetLocation = vi.fn();
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={onRelocate}
+        onSetLocation={onSetLocation}
+      />,
+    );
+    const marker = markerInstances[0];
+    const domContent = marker?.popup?.domContent as HTMLDivElement;
+    const input = domContent.querySelector("input") as HTMLInputElement;
+    const form = domContent.querySelector("form") as HTMLFormElement;
+
+    fireEvent.change(input, { target: { value: "Paris, Texas" } });
+    fireEvent.submit(form);
+
+    expect(onRelocate).toHaveBeenCalledWith("paris", "Paris, Texas");
+    expect(onSetLocation).not.toHaveBeenCalled();
+  });
+
+  it("calls neither callback when the popup's relocate form is submitted empty", () => {
+    const onRelocate = vi.fn();
+    const onSetLocation = vi.fn();
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={onRelocate}
+        onSetLocation={onSetLocation}
+      />,
+    );
+    const marker = markerInstances[0];
+    const domContent = marker?.popup?.domContent as HTMLDivElement;
+    const input = domContent.querySelector("input") as HTMLInputElement;
+    const form = domContent.querySelector("form") as HTMLFormElement;
+
+    fireEvent.change(input, { target: { value: "   " } });
+    fireEvent.submit(form);
+
+    expect(onRelocate).not.toHaveBeenCalled();
+    expect(onSetLocation).not.toHaveBeenCalled();
   });
 });

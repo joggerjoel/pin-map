@@ -3,11 +3,8 @@ import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PlaceCategory } from "../lib/checklist";
 import type { PlaceIcon } from "../lib/placeTags";
 import type { CustomTag } from "../lib/customTags";
-import {
-  buildGoogleMapsUrl,
-  parseGoogleMapsUrl,
-  parseLatLngPair,
-} from "../lib/googleMaps";
+import { buildGoogleMapsUrl } from "../lib/googleMaps";
+import { resolveLocationInput } from "../lib/locationInput";
 import { TagPicker } from "./TagPicker";
 
 export interface PlaceListProps {
@@ -25,25 +22,6 @@ export interface PlaceListProps {
   onReorder: (fromIndex: number, toIndex: number) => void;
   onRelocate: (query: string, searchText: string) => void;
   onSetLocation: (query: string, lat: number, lng: number) => void;
-}
-
-function handleLocationInput(
-  query: string,
-  text: string,
-  onRelocate: (query: string, searchText: string) => void,
-  onSetLocation: (query: string, lat: number, lng: number) => void,
-): void {
-  const fromUrl = parseGoogleMapsUrl(text);
-  if (fromUrl) {
-    onSetLocation(query, fromUrl.lat, fromUrl.lng);
-    return;
-  }
-  const fromPair = parseLatLngPair(text);
-  if (fromPair) {
-    onSetLocation(query, fromPair.lat, fromPair.lng);
-    return;
-  }
-  onRelocate(query, text);
 }
 
 export function PlaceList({
@@ -184,7 +162,7 @@ export function PlaceList({
                   const formData = new FormData(event.currentTarget);
                   const text = String(formData.get("location") ?? "").trim();
                   if (text === "") return;
-                  handleLocationInput(
+                  resolveLocationInput(
                     place.query,
                     text,
                     onRelocate,

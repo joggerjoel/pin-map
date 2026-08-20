@@ -144,6 +144,8 @@ export function App() {
           places={geocoder.pinnedPlaces}
           selection={selection}
           onMarkerClick={setHighlightedQuery}
+          onRelocate={geocoder.relocatePlace}
+          onSetLocation={geocoder.setLocation}
         />
       </main>
     </div>

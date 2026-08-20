@@ -5,6 +5,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PlaceCategory } from "../lib/checklist";
 import { buildGoogleMapsUrl } from "../lib/googleMaps";
+import { resolveLocationInput } from "../lib/locationInput";
 import { toGeoJsonStateName } from "../lib/stateNames";
 import {
   HOUSE_ICON_PATH,
@@ -52,8 +53,13 @@ function createHouseIconSvg(): SVGSVGElement {
   return svg;
 }
 
-function createPopupContent(place: PinnedPlace): HTMLDivElement {
+function createPopupContent(
+  place: PinnedPlace,
+  onRelocate: (query: string, searchText: string) => void,
+  onSetLocation: (query: string, lat: number, lng: number) => void,
+): HTMLDivElement {
   const container = document.createElement("div");
+  container.className = "map-popup";
 
   const nameEl = document.createElement("div");
   nameEl.textContent = place.name;
@@ -65,6 +71,31 @@ function createPopupContent(place: PinnedPlace): HTMLDivElement {
   link.rel = "noopener noreferrer";
   link.textContent = "View on Google Maps";
   container.appendChild(link);
+
+  const form = document.createElement("form");
+  form.className = "map-popup__relocate";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.name = "location";
+  input.placeholder = "Paste a Google Maps link, lat,lng, or a new search";
+  input.setAttribute("aria-label", `Fix location for ${place.name}`);
+  form.appendChild(input);
+
+  const submitButton = document.createElement("button");
+  submitButton.type = "submit";
+  submitButton.textContent = "Update location";
+  form.appendChild(submitButton);
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = input.value.trim();
+    if (text === "") return;
+    resolveLocationInput(place.query, text, onRelocate, onSetLocation);
+    input.value = "";
+  });
+
+  container.appendChild(form);
 
   return container;
 }
@@ -103,6 +134,8 @@ export interface MapViewProps {
   places: PinnedPlace[];
   selection: MapSelection | null;
   onMarkerClick: (query: string) => void;
+  onRelocate: (query: string, searchText: string) => void;
+  onSetLocation: (query: string, lat: number, lng: number) => void;
 }
 
 const CATEGORY_COLORS: Record<PlaceCategory, string> = {
@@ -196,6 +229,8 @@ export function MapView({
   places,
   selection,
   onMarkerClick,
+  onRelocate,
+  onSetLocation,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -259,7 +294,11 @@ export function MapView({
       const marker = new mapboxgl.Marker(createMarkerOptions(place));
       marker
         .setLngLat([place.lng, place.lat])
-        .setPopup(new mapboxgl.Popup().setDOMContent(createPopupContent(place)))
+        .setPopup(
+          new mapboxgl.Popup().setDOMContent(
+            createPopupContent(place, onRelocate, onSetLocation),
+          ),
+        )
         .addTo(map);
       marker.getElement().addEventListener("click", () => {
         onMarkerClick(place.query);

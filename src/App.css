@@ -239,6 +239,24 @@ body {
   color: #1f2937;
 }
 
+.map-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.map-popup__relocate {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+.map-popup__relocate input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .map-legend {
   position: absolute;
   top: 1rem;
