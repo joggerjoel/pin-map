@@ -40,7 +40,14 @@ describe("extractPlaceIcon", () => {
   it("extracts the home tag and strips it from the query", () => {
     expect(extractPlaceIcon("Belding, Michigan (home)")).toEqual({
       query: "Belding, Michigan",
-      icon: "house",
+      icon: "house-home",
+    });
+  });
+
+  it("extracts the live tag and strips it from the query", () => {
+    expect(extractPlaceIcon("Chicago, Illinois (live)")).toEqual({
+      query: "Chicago, Illinois",
+      icon: "house-live",
     });
   });
 });

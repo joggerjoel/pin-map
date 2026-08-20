@@ -93,6 +93,35 @@ const CATEGORY_COLORS: Record<PlaceCategory, string> = {
   hometown: "#eab308",
 };
 
+function createMarkerOptions(
+  place: PinnedPlace,
+): { element: HTMLDivElement } | { color: string } | undefined {
+  if (place.icon === "triathlete") {
+    return {
+      element: createIconBadgeElement("#dc2626", createTriathleteIconSvg()),
+    };
+  }
+  if (place.icon === "house-live") {
+    return {
+      element: createIconBadgeElement(
+        CATEGORY_COLORS.visited,
+        createHouseIconSvg(),
+      ),
+    };
+  }
+  if (place.icon === "house-home" || place.category === "hometown") {
+    return {
+      element: createIconBadgeElement(
+        CATEGORY_COLORS.hometown,
+        createHouseIconSvg(),
+      ),
+    };
+  }
+  return place.category
+    ? { color: CATEGORY_COLORS[place.category] }
+    : undefined;
+}
+
 const CATEGORY_LABELS: Record<PlaceCategory, string> = {
   visited: "Visited",
   lived: "Lived",
@@ -197,26 +226,7 @@ export function MapView({
     markersRef.current.clear();
 
     places.forEach((place) => {
-      const marker =
-        place.icon === "triathlete"
-          ? new mapboxgl.Marker({
-              element: createIconBadgeElement(
-                "#dc2626",
-                createTriathleteIconSvg(),
-              ),
-            })
-          : place.icon === "house" || place.category === "hometown"
-            ? new mapboxgl.Marker({
-                element: createIconBadgeElement(
-                  CATEGORY_COLORS.hometown,
-                  createHouseIconSvg(),
-                ),
-              })
-            : new mapboxgl.Marker(
-                place.category
-                  ? { color: CATEGORY_COLORS[place.category] }
-                  : undefined,
-              );
+      const marker = new mapboxgl.Marker(createMarkerOptions(place));
       marker
         .setLngLat([place.lng, place.lat])
         .setPopup(new mapboxgl.Popup().setText(place.name))
