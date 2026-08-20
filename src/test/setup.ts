@@ -46,3 +46,15 @@ if (!window.localStorage) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
+
+// jsdom doesn't implement ResizeObserver at all — a bare no-op stub so any
+// component that observes its own container size doesn't throw on mount.
+// Tests that need to actually verify resize-triggered behavior define a
+// more capable mock scoped to their own file (see MapView.test.tsx).
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  };
+}

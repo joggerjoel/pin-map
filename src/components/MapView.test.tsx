@@ -19,6 +19,26 @@ if (typeof globalThis.requestAnimationFrame === "undefined") {
     clearTimeout(id)) as typeof cancelAnimationFrame;
 }
 
+// The global stub in src/test/setup.ts is a bare no-op — this file needs a
+// version that captures the observer callback so a test can simulate the
+// container actually being resized and assert map.resize() got called.
+let latestResizeObserverCallback: (() => void) | null = null;
+let latestResizeObserverDisconnectCalls = 0;
+class MockResizeObserver {
+  callback: () => void;
+  constructor(callback: () => void) {
+    this.callback = callback;
+    latestResizeObserverCallback = callback;
+  }
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {
+    latestResizeObserverDisconnectCalls += 1;
+  }
+}
+globalThis.ResizeObserver =
+  MockResizeObserver as unknown as typeof ResizeObserver;
+
 const {
   instances,
   markerInstances,
@@ -128,6 +148,10 @@ const {
     getBounds(): { contains: (lngLat: [number, number]) => boolean } {
       return { contains: this.boundsContains };
     }
+    resizeCalls = 0;
+    resize(): void {
+      this.resizeCalls += 1;
+    }
   }
 
   class MockMarker {
@@ -234,6 +258,47 @@ describe("MapView", () => {
       />,
     );
     expect(instances).toHaveLength(1);
+  });
+
+  it("calls map.resize() when its container is resized (e.g. the sidebar collapsing)", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+      />,
+    );
+    const map = instances[0];
+    expect(map?.resizeCalls).toBe(0);
+
+    expect(latestResizeObserverCallback).not.toBeNull();
+    latestResizeObserverCallback?.();
+
+    expect(map?.resizeCalls).toBe(1);
+  });
+
+  it("disconnects the resize observer on unmount", () => {
+    latestResizeObserverDisconnectCalls = 0;
+    const { unmount } = render(
+      <MapView
+        token="pk.test"
+        places={[]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+      />,
+    );
+    expect(latestResizeObserverDisconnectCalls).toBe(0);
+    unmount();
+    expect(latestResizeObserverDisconnectCalls).toBe(1);
   });
 
   it("shows the current zoom level", () => {

@@ -309,6 +309,16 @@ export function MapView({
     setDisplayZoom(map.getZoom());
     const handleZoom = () => setDisplayZoom(map.getZoom());
     map.on("zoom", handleZoom);
+    // Mapbox GL doesn't notice when its own container element is resized by
+    // something else — collapsing the sidebar, dragging the splitter, or
+    // just resizing the browser window all leave its canvas at its old
+    // pixel size, showing as blank space until map.resize() is called (the
+    // library has no way to detect this on its own; only a full page
+    // reload used to "fix" it, by recreating the map at the new size).
+    const resizeObserver = new ResizeObserver(() => {
+      map.resize();
+    });
+    resizeObserver.observe(containerRef.current);
     map.on("load", () => {
       map.addSource("us-states", {
         type: "geojson",
@@ -350,6 +360,7 @@ export function MapView({
     });
     return () => {
       map.off("zoom", handleZoom);
+      resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
     };
