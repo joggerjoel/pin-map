@@ -79,6 +79,7 @@ function createPopupContent(
   place: PinnedPlace,
   onRelocate: (query: string, searchText: string) => void,
   onSetLocation: (query: string, lat: number, lng: number) => void,
+  canEdit: boolean,
 ): HTMLDivElement {
   const container = document.createElement("div");
   container.className = "map-popup";
@@ -93,6 +94,14 @@ function createPopupContent(
   link.rel = "noopener noreferrer";
   link.textContent = "View on Google Maps";
   container.appendChild(link);
+
+  // The relocate form triggers a live Mapbox search-API call on submit
+  // (see resolveLocationInput/geocodeLine) — omitted entirely for viewers
+  // who can't sign in and persist a change anyway, so an anonymous visitor
+  // can never burn the shared Mapbox quota just by clicking a pin.
+  if (!canEdit) {
+    return container;
+  }
 
   const form = document.createElement("form");
   form.className = "map-popup__relocate";
@@ -160,6 +169,7 @@ export interface MapViewProps {
   onSetLocation: (query: string, lat: number, lng: number) => void;
   builtinAppearance: Record<BuiltinTagKey, TagAppearance>;
   declutterEnabled: boolean;
+  canEdit: boolean;
 }
 
 function resolveBuiltinKey(place: PinnedPlace): BuiltinTagKey | undefined {
@@ -280,6 +290,7 @@ export function MapView({
   onSetLocation,
   builtinAppearance,
   declutterEnabled,
+  canEdit,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -389,7 +400,7 @@ export function MapView({
         .setLngLat([place.lng, place.lat])
         .setPopup(
           new mapboxgl.Popup().setDOMContent(
-            createPopupContent(place, onRelocate, onSetLocation),
+            createPopupContent(place, onRelocate, onSetLocation, canEdit),
           ),
         )
         .addTo(map);
@@ -543,7 +554,7 @@ export function MapView({
         cancelAnimationFrame(declutterFrame);
       }
     };
-  }, [places, builtinAppearance, declutterEnabled]);
+  }, [places, builtinAppearance, declutterEnabled, canEdit]);
 
   // Depends only on `selection`, never on `places` — otherwise pinning a new
   // place would re-fire this effect and fly back to the last selection,

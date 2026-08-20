@@ -31,6 +31,10 @@ import {
   getDeclutterEnabled,
   saveDeclutterEnabled,
 } from "./lib/declutterSettings";
+import {
+  fetchDeclutterEnabled,
+  saveDeclutterEnabledRemote,
+} from "./lib/userSettings";
 
 export function App() {
   const [token, setToken] = useState<string | null>(() => getMapboxToken());
@@ -59,8 +63,25 @@ export function App() {
     fetchOwnerId().then(setOwnerUserId);
   }, []);
 
+  const userId = auth.status === "signed-in" ? auth.userId : null;
+
+  useEffect(() => {
+    if (userId === null) {
+      return;
+    }
+    let cancelled = false;
+    fetchDeclutterEnabled(userId).then((remote) => {
+      if (!cancelled && remote !== null) {
+        setDeclutterEnabled(remote);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
   const geocoder = useGeocoder(token ?? "", {
-    userId: auth.status === "signed-in" ? auth.userId : null,
+    userId,
     ownerUserId,
     customTags,
   });
@@ -89,6 +110,9 @@ export function App() {
     setDeclutterEnabled((prev) => {
       const next = !prev;
       saveDeclutterEnabled(next);
+      if (userId !== null) {
+        void saveDeclutterEnabledRemote(userId, next);
+      }
       return next;
     });
   }
@@ -238,6 +262,7 @@ export function App() {
           onSetLocation={geocoder.setLocation}
           builtinAppearance={builtinAppearance}
           declutterEnabled={declutterEnabled}
+          canEdit={auth.status === "signed-in"}
         />
       </main>
     </div>

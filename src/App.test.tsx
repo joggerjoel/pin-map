@@ -285,17 +285,17 @@ describe("App", () => {
 
     render(<App />);
 
-    const toggle = screen.getByRole("button", { name: "Spider: On" });
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    const toggle = screen.getByRole("button", { name: "Spider: Off" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
 
     await user.click(toggle);
 
-    expect(screen.getByRole("button", { name: "Spider: Off" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Spider: On" })).toHaveAttribute(
       "aria-pressed",
-      "false",
+      "true",
     );
     expect(window.localStorage.getItem("pin-map:declutter-enabled")).toBe(
-      "false",
+      "true",
     );
   });
 

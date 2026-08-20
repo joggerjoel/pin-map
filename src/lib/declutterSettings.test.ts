@@ -6,8 +6,8 @@ describe("declutterSettings", () => {
     window.localStorage.clear();
   });
 
-  it("defaults to enabled when nothing is stored", () => {
-    expect(getDeclutterEnabled()).toBe(true);
+  it("defaults to disabled when nothing is stored", () => {
+    expect(getDeclutterEnabled()).toBe(false);
   });
 
   it("round-trips saving false", () => {

@@ -1,7 +1,7 @@
 const STORAGE_KEY = "pin-map:declutter-enabled";
 
 export function getDeclutterEnabled(): boolean {
-  return window.localStorage.getItem(STORAGE_KEY) !== "false";
+  return window.localStorage.getItem(STORAGE_KEY) === "true";
 }
 
 export function saveDeclutterEnabled(enabled: boolean): void {
