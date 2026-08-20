@@ -81,7 +81,7 @@ export function PlaceInput({
         onChange={(event) => setValue(event.target.value)}
         rows={8}
         placeholder={
-          "2017 | Paris, France\nTokyo\nGeneral Sherman Tree, USA, 36.581739,-118.7720417\nBoston, Massachusetts (home)"
+          "2017 | Paris, France\nTokyo\nGeneral Sherman Tree, USA, 36.581739,-118.7720417\nBelding, Michigan (home)"
         }
       />
       <button type="submit" disabled={isLoading}>
