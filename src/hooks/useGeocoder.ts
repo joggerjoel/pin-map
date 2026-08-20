@@ -40,6 +40,7 @@ export interface UseGeocoderResult {
     query: string,
     tag: { category?: PlaceCategory; icon?: PlaceIcon; customTag?: CustomTag },
   ) => void;
+  reorderPlaces: (fromIndex: number, toIndex: number) => void;
   retry: () => void;
 }
 
@@ -239,6 +240,24 @@ export function useGeocoder(token: string): UseGeocoderResult {
     [],
   );
 
+  const reorderPlaces = useCallback((fromIndex: number, toIndex: number) => {
+    setPinnedPlaces((prev) => {
+      if (
+        fromIndex === toIndex ||
+        fromIndex < 0 ||
+        fromIndex >= prev.length ||
+        toIndex < 0 ||
+        toIndex >= prev.length
+      ) {
+        return prev;
+      }
+      const updated = [...prev];
+      const [moved] = updated.splice(fromIndex, 1);
+      updated.splice(toIndex, 0, moved);
+      return updated;
+    });
+  }, []);
+
   const retry = useCallback(() => {
     void runPinPlaces(
       lastRawInput.current,
@@ -257,6 +276,7 @@ export function useGeocoder(token: string): UseGeocoderResult {
     pinPlace,
     removePlace,
     changeTag,
+    reorderPlaces,
     retry,
   };
 }

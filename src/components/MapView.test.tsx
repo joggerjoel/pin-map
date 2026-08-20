@@ -66,6 +66,7 @@ const {
     clickHandler: (() => void) | null = null;
     element = {
       title: "",
+      style: { zIndex: "" },
       addEventListener: (event: string, handler: () => void) => {
         if (event === "click") this.clickHandler = handler;
       },
@@ -500,5 +501,18 @@ describe("MapView", () => {
       )
       .at(-1);
     expect(lastFillCall?.value).toBe("rgba(0, 0, 0, 0)");
+  });
+
+  it("sets increasing z-index by array position so later places render on top", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris, tokyo]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
+    expect(markerInstances[0]?.element.style.zIndex).toBe("1");
+    expect(markerInstances[1]?.element.style.zIndex).toBe("2");
   });
 });

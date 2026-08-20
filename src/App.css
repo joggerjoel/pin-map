@@ -120,6 +120,21 @@ body {
   gap: 0.5rem;
 }
 
+.place-list__drag-handle {
+  cursor: grab;
+  color: #888;
+  padding: 0 0.25rem;
+  user-select: none;
+}
+
+.place-list__drag-handle:active {
+  cursor: grabbing;
+}
+
+.place-list__item--dragging {
+  opacity: 0.5;
+}
+
 .place-list li {
   padding: 0.25rem 0;
 }

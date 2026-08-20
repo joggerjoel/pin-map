@@ -237,7 +237,7 @@ export function MapView({
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current.clear();
 
-    places.forEach((place) => {
+    places.forEach((place, index) => {
       const marker = new mapboxgl.Marker(createMarkerOptions(place));
       marker
         .setLngLat([place.lng, place.lat])
@@ -250,6 +250,7 @@ export function MapView({
       if (typeLabel !== undefined) {
         marker.getElement().title = typeLabel;
       }
+      marker.getElement().style.zIndex = String(index + 1);
       markersRef.current.set(place.query, marker);
     });
 

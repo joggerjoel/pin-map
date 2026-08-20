@@ -52,7 +52,10 @@ const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
     }
 
     class MockMarker {
-      element = { addEventListener: (): void => {} };
+      element = {
+        addEventListener: (): void => {},
+        style: { zIndex: "" },
+      };
 
       setLngLat(): MockMarker {
         return this;

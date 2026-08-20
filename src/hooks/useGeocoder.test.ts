@@ -491,3 +491,88 @@ describe("changeTag", () => {
     });
   });
 });
+
+describe("reorderPlaces", () => {
+  it("moves a place from one index to another", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine")
+      .mockResolvedValueOnce({
+        query: "Paris",
+        name: "Paris, France",
+        lng: 2.35,
+        lat: 48.86,
+      })
+      .mockResolvedValueOnce({
+        query: "Tokyo",
+        name: "Tokyo, Japan",
+        lng: 139.69,
+        lat: 35.68,
+      })
+      .mockResolvedValueOnce({
+        query: "Rome",
+        name: "Rome, Italy",
+        lng: 12.5,
+        lat: 41.9,
+      });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+    await act(async () => {
+      await result.current.pinPlace("Tokyo", { category: "visited" });
+    });
+    await act(async () => {
+      await result.current.pinPlace("Rome", { category: "visited" });
+    });
+
+    act(() => {
+      result.current.reorderPlaces(0, 2);
+    });
+
+    expect(result.current.pinnedPlaces.map((p) => p.query)).toEqual([
+      "Tokyo",
+      "Rome",
+      "Paris",
+    ]);
+  });
+
+  it("does nothing when fromIndex equals toIndex", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+
+    act(() => {
+      result.current.reorderPlaces(0, 0);
+    });
+
+    expect(result.current.pinnedPlaces.map((p) => p.query)).toEqual(["Paris"]);
+  });
+
+  it("does nothing for an out-of-range index", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+
+    act(() => {
+      result.current.reorderPlaces(0, 5);
+    });
+
+    expect(result.current.pinnedPlaces.map((p) => p.query)).toEqual(["Paris"]);
+  });
+});

@@ -11,6 +11,13 @@ const paris: PinnedPlace = {
   lat: 48.86,
 };
 
+const tokyo: PinnedPlace = {
+  query: "Tokyo",
+  name: "Tokyo, Japan",
+  lng: 139.69,
+  lat: 35.68,
+};
+
 describe("PlaceList", () => {
   it("renders pinned place names", () => {
     render(
@@ -23,6 +30,7 @@ describe("PlaceList", () => {
         highlightedQuery={null}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
       />,
     );
     expect(screen.getByText("Paris, France")).toBeInTheDocument();
@@ -41,6 +49,7 @@ describe("PlaceList", () => {
         highlightedQuery={null}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
       />,
     );
 
@@ -62,6 +71,7 @@ describe("PlaceList", () => {
         highlightedQuery={null}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
       />,
     );
 
@@ -81,6 +91,7 @@ describe("PlaceList", () => {
         highlightedQuery={null}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
       />,
     );
     expect(screen.queryByText("Couldn't find")).not.toBeInTheDocument();
@@ -95,6 +106,7 @@ describe("PlaceList", () => {
         highlightedQuery={null}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
       />,
     );
     expect(screen.getByText("Couldn't find")).toBeInTheDocument();
@@ -112,6 +124,7 @@ describe("PlaceList", () => {
         highlightedQuery="Paris"
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
       />,
     );
     const item = screen.getByText("Paris, France").closest("li");
@@ -129,6 +142,7 @@ describe("PlaceList", () => {
         highlightedQuery={null}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
       />,
     );
     const item = screen.getByText("Paris, France").closest("li");
@@ -147,6 +161,7 @@ describe("PlaceList", () => {
         highlightedQuery={null}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
       />,
     );
 
@@ -171,6 +186,7 @@ describe("PlaceList", () => {
         highlightedQuery={null}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
       />,
     );
 
@@ -196,6 +212,7 @@ describe("PlaceList", () => {
         highlightedQuery={null}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
       />,
     );
 
@@ -222,6 +239,7 @@ describe("PlaceList", () => {
         highlightedQuery={null}
         customTags={[marathon]}
         onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
       />,
     );
 
@@ -229,5 +247,33 @@ describe("PlaceList", () => {
     await user.click(screen.getByRole("button", { name: "Marathon" }));
 
     expect(onChangeTag).toHaveBeenCalledWith("Paris", { customTag: marathon });
+  });
+
+  it("calls onReorder with the dragged and target indexes on drop", () => {
+    const onReorder = vi.fn();
+    const { container } = render(
+      <PlaceList
+        pinnedPlaces={[paris, tokyo]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={onReorder}
+      />,
+    );
+
+    const handles = container.querySelectorAll(".place-list__drag-handle");
+    expect(handles).toHaveLength(2);
+
+    const dragStartEvent = new Event("dragstart", { bubbles: true });
+    handles[0]?.dispatchEvent(dragStartEvent);
+
+    const dropEvent = new Event("drop", { bubbles: true });
+    handles[1]?.dispatchEvent(dropEvent);
+
+    expect(onReorder).toHaveBeenCalledWith(0, 1);
   });
 });

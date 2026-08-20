@@ -17,6 +17,7 @@ export interface PlaceListProps {
   highlightedQuery: string | null;
   customTags: CustomTag[];
   onCreateCustomTag: (label: string, color: string) => void;
+  onReorder: (fromIndex: number, toIndex: number) => void;
 }
 
 export function PlaceList({
@@ -28,9 +29,16 @@ export function PlaceList({
   highlightedQuery,
   customTags,
   onCreateCustomTag,
+  onReorder,
 }: PlaceListProps) {
   const itemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  // Drag-and-drop handlers fire in rapid succession (dragstart then drop)
+  // with no guarantee React has re-rendered in between, so onDrop can't rely
+  // on `draggedIndex` from the closure without risking a stale read. A ref
+  // mirrors the same value for synchronous, always-current access.
+  const draggedIndexRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (highlightedQuery === null) return;
@@ -41,7 +49,7 @@ export function PlaceList({
   return (
     <div className="place-list">
       <ul>
-        {pinnedPlaces.map((place) => (
+        {pinnedPlaces.map((place, index) => (
           <li
             key={place.query}
             ref={(el) => {
@@ -49,12 +57,41 @@ export function PlaceList({
               else itemRefs.current.delete(place.query);
             }}
             className={
-              place.query === highlightedQuery
-                ? "place-list__item--highlighted"
-                : undefined
+              [
+                place.query === highlightedQuery
+                  ? "place-list__item--highlighted"
+                  : null,
+                index === draggedIndex ? "place-list__item--dragging" : null,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined
             }
           >
             <div className="place-list__row">
+              <span
+                className="place-list__drag-handle"
+                draggable
+                aria-label={`Reorder ${place.name}`}
+                onDragStart={() => {
+                  draggedIndexRef.current = index;
+                  setDraggedIndex(index);
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => {
+                  const fromIndex = draggedIndexRef.current;
+                  if (fromIndex !== null && fromIndex !== index) {
+                    onReorder(fromIndex, index);
+                  }
+                  draggedIndexRef.current = null;
+                  setDraggedIndex(null);
+                }}
+                onDragEnd={() => {
+                  draggedIndexRef.current = null;
+                  setDraggedIndex(null);
+                }}
+              >
+                ≡
+              </span>
               <button
                 type="button"
                 className="place-list__select"

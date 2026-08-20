@@ -106,6 +106,7 @@ export function App() {
           highlightedQuery={highlightedQuery}
           customTags={customTags}
           onCreateCustomTag={handleCreateCustomTag}
+          onReorder={geocoder.reorderPlaces}
         />
       </aside>
       <main className="app__map">
