@@ -9,14 +9,39 @@ body {
 
 .app {
   display: grid;
-  grid-template-columns: 320px 1fr;
   height: 100vh;
+  position: relative;
 }
 
 .app__sidebar {
   padding: 1rem;
   overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
   border-right: 1px solid #ccc;
+}
+
+.app__splitter {
+  cursor: col-resize;
+  background: transparent;
+}
+
+.app__splitter:hover {
+  background: #3b82f6;
+}
+
+.app__sidebar-toggle {
+  position: absolute;
+  top: 1rem;
+  z-index: 10;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #ccc;
+  background: #1f2937;
+  color: #fff;
+  cursor: pointer;
+  transition: left 0.15s ease;
 }
 
 .app__sidebar-header {

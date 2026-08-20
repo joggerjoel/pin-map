@@ -291,4 +291,31 @@ describe("App", () => {
     );
     expect(alabama).toBeUndefined();
   });
+
+  it("renders the sidebar toggle expanded initially and collapses it on click", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("pin-map:mapbox-token", "pk.stored-token");
+
+    render(<App />);
+
+    const toggle = screen.getByRole("button", { name: "Hide sidebar" });
+    expect(toggle).toBeInTheDocument();
+
+    await user.click(toggle);
+
+    expect(
+      screen.getByRole("button", { name: "Show sidebar" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the splitter as a resize separator", () => {
+    window.localStorage.setItem("pin-map:mapbox-token", "pk.stored-token");
+
+    render(<App />);
+
+    const splitter = screen.getByRole("separator", {
+      name: "Resize sidebar",
+    });
+    expect(splitter).toBeInTheDocument();
+  });
 });
