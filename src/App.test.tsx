@@ -230,7 +230,7 @@ describe("App", () => {
     expect(window.localStorage.getItem("pin-map:mapbox-token")).toBeNull();
   });
 
-  it("checklist mode geocodes only marked lines with a US country filter and colors markers by category", async () => {
+  it("auto-detects a checklist-shaped line, geocodes only marked lines with a US country filter, and colors markers by category", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn().mockImplementation(async (url: string) => {
       if (url.includes("country=us") && url.includes("Florida")) {
@@ -260,7 +260,6 @@ describe("App", () => {
     );
     await user.click(screen.getByRole("button", { name: "Save token" }));
 
-    await user.click(screen.getByLabelText(/Checklist mode/i));
     await user.type(
       screen.getByLabelText("Paste places, one per line"),
       "1 Alabama \n9 Florida X",

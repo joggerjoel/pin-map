@@ -6,7 +6,7 @@ import {
   parseLines,
 } from "../lib/geocoder";
 import type { GeocodeQuery, GeocodeResult } from "../lib/geocoder";
-import { parseChecklist } from "../lib/checklist";
+import { looksLikeChecklistRow, parseChecklistLine } from "../lib/checklist";
 import type { PlaceCategory } from "../lib/checklist";
 import { getContinentBbox } from "../lib/continents";
 import type { Continent } from "../lib/continents";
@@ -21,16 +21,35 @@ export interface PinnedPlace extends GeocodeResult {
   customTag?: CustomTag;
 }
 
+interface ProcessedLine {
+  query: string;
+  category?: PlaceCategory;
+  icon?: PlaceIcon;
+  country?: string;
+}
+
+// Every pasted line is independently checked for checklist shape ("9 Florida
+// X") rather than branching a whole submission between checklist/plain
+// modes — this is what lets a single paste mix state-checklist rows with
+// plain free-form addresses.
+function processLine(line: string): ProcessedLine | null {
+  if (looksLikeChecklistRow(line)) {
+    const parsed = parseChecklistLine(line);
+    if (parsed === null) {
+      return null; // unmarked checklist row — intentionally skipped
+    }
+    return { query: parsed.name, category: parsed.category, country: "us" };
+  }
+  const { query, icon } = extractPlaceIcon(line);
+  return { query, icon, country: detectCountryFromLine(query) };
+}
+
 export interface UseGeocoderResult {
   pinnedPlaces: PinnedPlace[];
   failedLines: string[];
   isLoading: boolean;
   error: string | null;
-  pinPlaces: (
-    raw: string,
-    checklistMode?: boolean,
-    continent?: Continent | null,
-  ) => Promise<void>;
+  pinPlaces: (raw: string, continent?: Continent | null) => Promise<void>;
   pinPlace: (
     query: string,
     tag: { category?: PlaceCategory; icon?: PlaceIcon; customTag?: CustomTag },
@@ -52,7 +71,6 @@ export function useGeocoder(token: string): UseGeocoderResult {
   const pinnedPlacesRef = useRef<PinnedPlace[]>([]);
   const failedLinesRef = useRef<string[]>([]);
   const lastRawInput = useRef<string>("");
-  const lastChecklistMode = useRef<boolean>(false);
   const lastContinent = useRef<Continent | null>(null);
 
   pinnedPlacesRef.current = pinnedPlaces;
@@ -63,23 +81,13 @@ export function useGeocoder(token: string): UseGeocoderResult {
   // a normal re-submission of the same text must not re-append duplicates,
   // but retry() must still be able to re-attempt them.
   const runPinPlaces = useCallback(
-    async (
-      raw: string,
-      checklistMode: boolean,
-      continent: Continent | null,
-      isRetry: boolean,
-    ) => {
+    async (raw: string, continent: Continent | null, isRetry: boolean) => {
       lastRawInput.current = raw;
-      lastChecklistMode.current = checklistMode;
       lastContinent.current = continent;
 
-      const checklistEntries = checklistMode ? parseChecklist(raw) : [];
-      const taggedLines = checklistMode
-        ? []
-        : parseLines(raw).map((line) => extractPlaceIcon(line));
-      const lines = checklistMode
-        ? checklistEntries.map((entry) => entry.name)
-        : taggedLines.map((tagged) => tagged.query);
+      const processedLines = parseLines(raw)
+        .map((line) => processLine(line))
+        .filter((processed): processed is ProcessedLine => processed !== null);
 
       const pinnedKeys = new Set(
         pinnedPlacesRef.current.map((place) => place.query.toLowerCase()),
@@ -87,13 +95,13 @@ export function useGeocoder(token: string): UseGeocoderResult {
       const failedKeys = new Set(
         failedLinesRef.current.map((line) => line.toLowerCase()),
       );
-      const newLines = lines.filter((line) => {
-        const key = line.toLowerCase();
+      const newProcessedLines = processedLines.filter((processed) => {
+        const key = processed.query.toLowerCase();
         if (pinnedKeys.has(key)) return false;
         if (!isRetry && failedKeys.has(key)) return false;
         return true;
       });
-      if (newLines.length === 0) {
+      if (newProcessedLines.length === 0) {
         return;
       }
 
@@ -101,31 +109,29 @@ export function useGeocoder(token: string): UseGeocoderResult {
       setError(null);
 
       try {
-        const bbox =
-          !checklistMode && continent ? getContinentBbox(continent) : undefined;
-        const entries: GeocodeQuery[] = newLines.map((line) => ({
-          query: line,
-          country: checklistMode ? "us" : detectCountryFromLine(line),
+        const bbox = continent ? getContinentBbox(continent) : undefined;
+        const entries: GeocodeQuery[] = newProcessedLines.map((processed) => ({
+          query: processed.query,
+          country: processed.country,
         }));
         const batch = await geocodeBatch(entries, token, bbox);
         const succeededKeys = new Set(
           batch.pinned.map((place) => place.query.toLowerCase()),
         );
-        const newlyPinned: PinnedPlace[] = checklistMode
-          ? batch.pinned.map((place) => {
-              const entry = checklistEntries.find(
-                (candidate) =>
-                  candidate.name.toLowerCase() === place.query.toLowerCase(),
-              );
-              return entry ? { ...place, category: entry.category } : place;
-            })
-          : batch.pinned.map((place) => {
-              const tagged = taggedLines.find(
-                (candidate) =>
-                  candidate.query.toLowerCase() === place.query.toLowerCase(),
-              );
-              return tagged?.icon ? { ...place, icon: tagged.icon } : place;
-            });
+        const newlyPinned: PinnedPlace[] = batch.pinned.map((place) => {
+          const processed = newProcessedLines.find(
+            (candidate) =>
+              candidate.query.toLowerCase() === place.query.toLowerCase(),
+          );
+          if (processed === undefined) {
+            return place;
+          }
+          return {
+            ...place,
+            category: processed.category,
+            icon: processed.icon,
+          };
+        });
         setPinnedPlaces((prev) => [...prev, ...newlyPinned]);
         setFailedLines((prev) => {
           const survivors = prev.filter(
@@ -155,8 +161,8 @@ export function useGeocoder(token: string): UseGeocoderResult {
   );
 
   const pinPlaces = useCallback(
-    (raw: string, checklistMode = false, continent: Continent | null = null) =>
-      runPinPlaces(raw, checklistMode, continent, false),
+    (raw: string, continent: Continent | null = null) =>
+      runPinPlaces(raw, continent, false),
     [runPinPlaces],
   );
 
@@ -259,12 +265,7 @@ export function useGeocoder(token: string): UseGeocoderResult {
   }, []);
 
   const retry = useCallback(() => {
-    void runPinPlaces(
-      lastRawInput.current,
-      lastChecklistMode.current,
-      lastContinent.current,
-      true,
-    );
+    void runPinPlaces(lastRawInput.current, lastContinent.current, true);
   }, [runPinPlaces]);
 
   return {

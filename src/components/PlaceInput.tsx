@@ -2,29 +2,21 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { CONTINENTS } from "../lib/continents";
 import type { Continent } from "../lib/continents";
-import { parseChecklistLine } from "../lib/checklist";
+import { looksLikeChecklistRow, parseChecklistLine } from "../lib/checklist";
 
 export interface PlaceInputProps {
-  onSubmit: (
-    raw: string,
-    checklistMode: boolean,
-    continent: Continent | null,
-  ) => void;
+  onSubmit: (raw: string, continent: Continent | null) => void;
   isLoading: boolean;
   removedPlace: { query: string; nonce: number } | null;
 }
 
-function removeMatchingLine(
-  raw: string,
-  query: string,
-  checklistMode: boolean,
-): string {
+function removeMatchingLine(raw: string, query: string): string {
   const lines = raw.split("\n");
   const targetKey = query.toLowerCase();
   let removed = false;
   const kept = lines.filter((line) => {
     if (removed) return true;
-    const identity = checklistMode
+    const identity = looksLikeChecklistRow(line)
       ? parseChecklistLine(line)?.name
       : line.trim();
     if (identity !== undefined && identity.toLowerCase() === targetKey) {
@@ -42,42 +34,26 @@ export function PlaceInput({
   removedPlace,
 }: PlaceInputProps) {
   const [value, setValue] = useState("");
-  const [checklistMode, setChecklistMode] = useState(false);
   const [continent, setContinent] = useState<Continent | null>(null);
 
   useEffect(() => {
     if (removedPlace === null) return;
-    setValue((prev) =>
-      removeMatchingLine(prev, removedPlace.query, checklistMode),
-    );
+    setValue((prev) => removeMatchingLine(prev, removedPlace.query));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [removedPlace]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (value.trim() === "") return;
-    onSubmit(value, checklistMode, checklistMode ? null : continent);
+    onSubmit(value, continent);
   }
 
   return (
     <form className="place-input" onSubmit={handleSubmit}>
-      <input
-        type="checkbox"
-        aria-label="Checklist mode"
-        checked={checklistMode}
-        onChange={(event) => {
-          const checked = event.target.checked;
-          setChecklistMode(checked);
-          if (checked) {
-            setContinent(null);
-          }
-        }}
-      />
       <label>
         Continent
         <select
           value={continent ?? ""}
-          disabled={checklistMode}
           onChange={(event) =>
             setContinent(
               event.target.value === ""

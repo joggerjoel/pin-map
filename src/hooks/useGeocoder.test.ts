@@ -179,7 +179,7 @@ describe("useGeocoder", () => {
     const { result } = renderHook(() => useGeocoder("pk.test"));
 
     await act(async () => {
-      await result.current.pinPlaces("Kailua-Kona, Hawaii (ironman)", false);
+      await result.current.pinPlaces("Kailua-Kona, Hawaii (ironman)");
     });
 
     expect(batchSpy).toHaveBeenCalledWith(
@@ -215,8 +215,8 @@ describe("useGeocoder", () => {
   });
 });
 
-describe("useGeocoder in checklist mode", () => {
-  it("parses checklist-format input, geocodes only marked entries with a US country filter, and attaches categories", async () => {
+describe("useGeocoder checklist auto-detection", () => {
+  it("auto-detects a checklist-shaped line and applies the US country filter", async () => {
     const batchSpy = vi
       .spyOn(geocoderModule, "geocodeBatch")
       .mockResolvedValue({
@@ -229,7 +229,7 @@ describe("useGeocoder in checklist mode", () => {
     const { result } = renderHook(() => useGeocoder("pk.test"));
 
     await act(async () => {
-      await result.current.pinPlaces("1 Alabama \n9 Florida X", true);
+      await result.current.pinPlaces("9 Florida X");
     });
 
     expect(batchSpy).toHaveBeenCalledWith(
@@ -237,18 +237,13 @@ describe("useGeocoder in checklist mode", () => {
       "pk.test",
       undefined,
     );
-    expect(result.current.pinnedPlaces).toEqual([
-      {
-        query: "Florida",
-        name: "Florida, USA",
-        lng: -81.5,
-        lat: 27.7,
-        category: "visited",
-      },
-    ]);
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      query: "Florida",
+      category: "visited",
+    });
   });
 
-  it("does not apply a country filter when checklistMode is false", async () => {
+  it("skips an unmarked checklist-shaped line", async () => {
     const batchSpy = vi
       .spyOn(geocoderModule, "geocodeBatch")
       .mockResolvedValue({ pinned: [], failed: [] });
@@ -256,7 +251,63 @@ describe("useGeocoder in checklist mode", () => {
     const { result } = renderHook(() => useGeocoder("pk.test"));
 
     await act(async () => {
-      await result.current.pinPlaces("Paris", false);
+      await result.current.pinPlaces("1 Alabama\n9 Florida X");
+    });
+
+    expect(batchSpy).toHaveBeenCalledWith(
+      [{ query: "Florida", country: "us" }],
+      "pk.test",
+      undefined,
+    );
+  });
+
+  it("mixes checklist-shaped and plain lines in the same paste", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({
+        pinned: [
+          { query: "Florida", name: "Florida, USA", lng: -81.5, lat: 27.7 },
+          {
+            query: "Dublin, Ireland",
+            name: "Dublin, Ireland",
+            lng: -6.26,
+            lat: 53.35,
+          },
+        ],
+        failed: [],
+      });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("9 Florida X\nDublin, Ireland");
+    });
+
+    expect(batchSpy).toHaveBeenCalledWith(
+      [
+        { query: "Florida", country: "us" },
+        { query: "Dublin, Ireland", country: "ie" },
+      ],
+      "pk.test",
+      undefined,
+    );
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      category: "visited",
+    });
+    expect(result.current.pinnedPlaces[1]).toMatchObject({
+      category: undefined,
+    });
+  });
+
+  it("does not apply a country filter to a plain line", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({ pinned: [], failed: [] });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("Paris");
     });
 
     expect(batchSpy).toHaveBeenCalledWith(
@@ -266,7 +317,7 @@ describe("useGeocoder in checklist mode", () => {
     );
   });
 
-  it("detects a per-line country for non-checklist mode geocoding", async () => {
+  it("detects a per-line country for a plain line", async () => {
     const batchSpy = vi
       .spyOn(geocoderModule, "geocodeBatch")
       .mockResolvedValue({ pinned: [], failed: [] });
@@ -274,7 +325,7 @@ describe("useGeocoder in checklist mode", () => {
     const { result } = renderHook(() => useGeocoder("pk.test"));
 
     await act(async () => {
-      await result.current.pinPlaces("Dublin, Ireland", false);
+      await result.current.pinPlaces("Dublin, Ireland");
     });
 
     expect(batchSpy).toHaveBeenCalledWith(
@@ -292,7 +343,7 @@ describe("useGeocoder in checklist mode", () => {
     const { result } = renderHook(() => useGeocoder("pk.test"));
 
     await act(async () => {
-      await result.current.pinPlaces("Paris", false, "europe");
+      await result.current.pinPlaces("Paris", "europe");
     });
 
     expect(batchSpy).toHaveBeenCalledWith(
@@ -302,7 +353,7 @@ describe("useGeocoder in checklist mode", () => {
     );
   });
 
-  it("retry re-runs the last call in the same mode it was originally called with", async () => {
+  it("retry re-runs the last call with the same auto-detected shape", async () => {
     const batchSpy = vi
       .spyOn(geocoderModule, "geocodeBatch")
       .mockRejectedValueOnce(new Error("All geocoding requests failed"))
@@ -316,7 +367,7 @@ describe("useGeocoder in checklist mode", () => {
     const { result } = renderHook(() => useGeocoder("pk.test"));
 
     await act(async () => {
-      await result.current.pinPlaces("9 Florida X", true);
+      await result.current.pinPlaces("9 Florida X");
     });
     expect(result.current.error).not.toBeNull();
 

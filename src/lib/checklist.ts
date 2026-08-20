@@ -46,3 +46,23 @@ export function parseChecklist(raw: string): ChecklistEntry[] {
     .map((line) => parseChecklistLine(line))
     .filter((entry): entry is ChecklistEntry => entry !== null);
 }
+
+const CHECKLIST_ROW_SHAPE = /^\d+\.?\s+[A-Za-z][A-Za-z\s]*$/;
+const KNOWN_MARK_TOKENS = new Set(["x", "xx", "y", "(home)"]);
+
+export function looksLikeChecklistRow(rawLine: string): boolean {
+  const trimmed = rawLine.trim();
+  if (trimmed === "") {
+    return false;
+  }
+
+  const tokens = trimmed.split(/\s+/);
+  while (
+    tokens.length > 0 &&
+    KNOWN_MARK_TOKENS.has(tokens[tokens.length - 1].toLowerCase())
+  ) {
+    tokens.pop();
+  }
+
+  return CHECKLIST_ROW_SHAPE.test(tokens.join(" "));
+}

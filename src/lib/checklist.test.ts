@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseChecklist, parseChecklistLine } from "./checklist";
+import {
+  looksLikeChecklistRow,
+  parseChecklist,
+  parseChecklistLine,
+} from "./checklist";
 
 describe("parseChecklistLine", () => {
   it("returns null for an unmarked line", () => {
@@ -95,5 +99,42 @@ describe("parseChecklist", () => {
 
   it("returns an empty array when nothing is marked", () => {
     expect(parseChecklist("1 Alabama \n2 Alaska \n")).toEqual([]);
+  });
+});
+
+describe("looksLikeChecklistRow", () => {
+  it("matches a marked checklist row", () => {
+    expect(looksLikeChecklistRow("9 Florida X")).toBe(true);
+  });
+
+  it("matches an unmarked checklist row (number + letters-only name)", () => {
+    expect(looksLikeChecklistRow("1 Alabama")).toBe(true);
+  });
+
+  it("matches a row with a multi-word name and the (home) mark", () => {
+    expect(looksLikeChecklistRow("22 Michigan (home)")).toBe(true);
+  });
+
+  it("matches a multi-word name with no mark", () => {
+    expect(looksLikeChecklistRow("47 Washington DC")).toBe(true);
+  });
+
+  it("does not match an address with a comma, even with a leading number", () => {
+    expect(looksLikeChecklistRow("1600 Amphitheatre Pkwy, Mountain View")).toBe(
+      false,
+    );
+  });
+
+  it("does not match a tagged plain-mode line with punctuation", () => {
+    expect(looksLikeChecklistRow("Kailua-Kona, Hawaii (ironman)")).toBe(false);
+  });
+
+  it("does not match a bare place name with no leading number", () => {
+    expect(looksLikeChecklistRow("Dublin, Ireland")).toBe(false);
+    expect(looksLikeChecklistRow("Tokyo")).toBe(false);
+  });
+
+  it("does not match a blank line", () => {
+    expect(looksLikeChecklistRow("   ")).toBe(false);
   });
 });
