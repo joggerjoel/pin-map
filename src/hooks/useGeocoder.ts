@@ -14,6 +14,7 @@ import { detectCountryFromLine } from "../lib/countryNames";
 import { extractPlaceIcon } from "../lib/placeTags";
 import type { PlaceIcon } from "../lib/placeTags";
 import type { CustomTag } from "../lib/customTags";
+import { extractExplicitCoords } from "../lib/explicitCoords";
 
 export interface PinnedPlace extends GeocodeResult {
   category?: PlaceCategory;
@@ -26,6 +27,7 @@ interface ProcessedLine {
   category?: PlaceCategory;
   icon?: PlaceIcon;
   country?: string;
+  explicitCoords?: { lat: number; lng: number };
 }
 
 // Every pasted line is independently checked for checklist shape ("9 Florida
@@ -41,7 +43,23 @@ function processLine(line: string): ProcessedLine | null {
     return { query: parsed.name, category: parsed.category, country: "us" };
   }
   const { query, icon } = extractPlaceIcon(line);
+  const explicit = extractExplicitCoords(query);
+  if (explicit !== null) {
+    return {
+      query: explicit.name,
+      icon,
+      explicitCoords: { lat: explicit.lat, lng: explicit.lng },
+    };
+  }
   return { query, icon, country: detectCountryFromLine(query) };
+}
+
+function hasExplicitCoords(
+  processed: ProcessedLine,
+): processed is ProcessedLine & {
+  explicitCoords: { lat: number; lng: number };
+} {
+  return processed.explicitCoords !== undefined;
 }
 
 export interface UseGeocoderResult {
@@ -107,12 +125,35 @@ export function useGeocoder(token: string): UseGeocoderResult {
         return;
       }
 
+      const explicitLines = newProcessedLines.filter(hasExplicitCoords);
+      const linesToGeocode = newProcessedLines.filter(
+        (processed) => !hasExplicitCoords(processed),
+      );
+
+      if (explicitLines.length > 0) {
+        const explicitlyPinned: PinnedPlace[] = explicitLines.map(
+          (processed) => ({
+            query: processed.query,
+            name: processed.query,
+            lat: processed.explicitCoords.lat,
+            lng: processed.explicitCoords.lng,
+            category: processed.category,
+            icon: processed.icon,
+          }),
+        );
+        setPinnedPlaces((prev) => [...prev, ...explicitlyPinned]);
+      }
+
+      if (linesToGeocode.length === 0) {
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
 
       try {
         const bbox = continent ? getContinentBbox(continent) : undefined;
-        const entries: GeocodeQuery[] = newProcessedLines.map((processed) => ({
+        const entries: GeocodeQuery[] = linesToGeocode.map((processed) => ({
           query: processed.query,
           country: processed.country,
         }));
@@ -121,7 +162,7 @@ export function useGeocoder(token: string): UseGeocoderResult {
           batch.pinned.map((place) => place.query.toLowerCase()),
         );
         const newlyPinned: PinnedPlace[] = batch.pinned.map((place) => {
-          const processed = newProcessedLines.find(
+          const processed = linesToGeocode.find(
             (candidate) =>
               candidate.query.toLowerCase() === place.query.toLowerCase(),
           );

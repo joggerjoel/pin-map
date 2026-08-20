@@ -215,6 +215,108 @@ describe("useGeocoder", () => {
   });
 });
 
+describe("useGeocoder explicit coordinates", () => {
+  it("pins a line with explicit coordinates and a tag suffix without calling geocodeBatch", async () => {
+    const batchSpy = vi.spyOn(geocoderModule, "geocodeBatch");
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces(
+        "Hong Kong SAR, China, 25.8144821,-80.176346, (home)",
+      );
+    });
+
+    expect(batchSpy).not.toHaveBeenCalled();
+    expect(result.current.pinnedPlaces).toEqual([
+      {
+        query: "Hong Kong SAR, China",
+        name: "Hong Kong SAR, China",
+        lat: 25.8144821,
+        lng: -80.176346,
+        icon: "house-home",
+      },
+    ]);
+  });
+
+  it("pins a line with explicit coordinates and no tag without calling geocodeBatch", async () => {
+    const batchSpy = vi.spyOn(geocoderModule, "geocodeBatch");
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces(
+        "Macau Island, China, 13.7308093,121.8832412",
+      );
+    });
+
+    expect(batchSpy).not.toHaveBeenCalled();
+    expect(result.current.pinnedPlaces).toEqual([
+      {
+        query: "Macau Island, China",
+        name: "Macau Island, China",
+        lat: 13.7308093,
+        lng: 121.8832412,
+      },
+    ]);
+  });
+
+  it("mixes an explicit-coordinate line with a plain geocoded line", async () => {
+    const tokyo: GeocodeResult = {
+      query: "Tokyo",
+      name: "Tokyo, Japan",
+      lng: 139.69,
+      lat: 35.68,
+    };
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({ pinned: [tokyo], failed: [] });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces(
+        "Hong Kong SAR, China, 25.8144821,-80.176346\nTokyo",
+      );
+    });
+
+    expect(batchSpy).toHaveBeenCalledWith(
+      [{ query: "Tokyo", country: undefined }],
+      "pk.test",
+      undefined,
+    );
+    expect(result.current.pinnedPlaces).toEqual([
+      {
+        query: "Hong Kong SAR, China",
+        name: "Hong Kong SAR, China",
+        lat: 25.8144821,
+        lng: -80.176346,
+      },
+      tokyo,
+    ]);
+  });
+
+  it("does not duplicate an explicit-coordinate line when it's pasted again", async () => {
+    const batchSpy = vi.spyOn(geocoderModule, "geocodeBatch");
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces(
+        "Macau Island, China, 13.7308093,121.8832412",
+      );
+    });
+    await act(async () => {
+      await result.current.pinPlaces(
+        "Macau Island, China, 13.7308093,121.8832412",
+      );
+    });
+
+    expect(batchSpy).not.toHaveBeenCalled();
+    expect(result.current.pinnedPlaces).toHaveLength(1);
+  });
+});
+
 describe("useGeocoder checklist auto-detection", () => {
   it("auto-detects a checklist-shaped line and applies the US country filter", async () => {
     const batchSpy = vi
