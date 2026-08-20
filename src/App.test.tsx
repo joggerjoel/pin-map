@@ -33,6 +33,7 @@ function createFromChain(result: FromChainResult) {
     eq: vi.fn(() => chain),
     limit: vi.fn(() => chain),
     maybeSingle: vi.fn(() => chain),
+    order: vi.fn(() => chain),
     then: (
       resolve: (value: FromChainResult) => void,
       reject?: (reason: unknown) => void,
@@ -631,5 +632,55 @@ describe("App without a Mapbox token", () => {
       screen.getByText(/Connect a Mapbox token to add new places/),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Filter places")).toBeInTheDocument();
+  });
+});
+
+describe("App class-roster mode (?class=)", () => {
+  afterEach(() => {
+    window.history.pushState({}, "", "/");
+  });
+
+  it("shows the login form instead of the roster when signed out", async () => {
+    window.history.pushState({}, "", "/?class=belding1989");
+    vi.mocked(supabaseModule.supabase.auth.getSession).mockResolvedValueOnce({
+      data: { session: null },
+    } as unknown as Awaited<
+      ReturnType<typeof supabaseModule.supabase.auth.getSession>
+    >);
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("Email")).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Search classmates"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the class reunion app (not the travel map) when signed in", async () => {
+    window.history.pushState({}, "", "/?class=belding1989");
+    mockSupabaseFrom({ pinmap_class_roster: { data: [], error: null } });
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("button", { name: "Meetup Map" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Pin Map")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Add a pin")).not.toBeInTheDocument();
+  });
+
+  it("lets a signed-in visitor edit the roster even without a Mapbox token", async () => {
+    window.history.pushState({}, "", "/?class=belding1989");
+    mockSupabaseFrom({ pinmap_class_roster: { data: [], error: null } });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Edit Roster" }),
+    );
+
+    expect(
+      await screen.findByLabelText("Search classmates"),
+    ).toBeInTheDocument();
   });
 });

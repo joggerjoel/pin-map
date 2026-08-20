@@ -14,6 +14,7 @@ import { usePhotos } from "./hooks/usePhotos";
 import { fetchOwnerId } from "./lib/pinsRepository";
 import { TokenSetup } from "./components/TokenSetup";
 import { LoginForm } from "./components/LoginForm";
+import { ClassReunionApp } from "./components/ClassReunionApp";
 import { AddPin } from "./components/AddPin";
 import { PlaceInput } from "./components/PlaceInput";
 import { PlaceList } from "./components/PlaceList";
@@ -66,6 +67,7 @@ export function App() {
   const removalNonce = useRef(0);
   const sidebarLayout = useSidebarLayout();
   const auth = useAuth();
+  const classSlug = new URLSearchParams(window.location.search).get("class");
 
   useEffect(() => {
     fetchOwnerId().then(setOwnerUserId);
@@ -161,6 +163,30 @@ export function App() {
     selectionNonceRef.current += 1;
     setSelection({ query, nonce: selectionNonceRef.current });
   }, []);
+
+  // "?class=<slug>" is a completely separate mode (a shared class-reunion
+  // meetup map + roster editor) with nothing in common with the travel-map
+  // UI below — still gated behind the same login, but never shown to a
+  // signed-out or anonymous visitor, unlike the travel map's
+  // public-by-default view.
+  if (classSlug !== null) {
+    if (auth.status === "loading") {
+      return <p>Loading…</p>;
+    }
+    if (auth.status === "signed-out") {
+      return (
+        <LoginForm onSendOtp={auth.sendOtp} onVerifyOtp={auth.verifyOtp} />
+      );
+    }
+    return (
+      <ClassReunionApp
+        classSlug={classSlug}
+        token={effectiveToken}
+        userId={auth.userId ?? ""}
+        userEmail={auth.email ?? ""}
+      />
+    );
+  }
 
   return (
     <div
