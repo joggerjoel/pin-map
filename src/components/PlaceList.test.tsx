@@ -1,11 +1,16 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PlaceList } from "./PlaceList";
 import type { PinnedPlace } from "../hooks/useGeocoder";
 import { BUILTIN_APPEARANCE_DEFAULTS } from "../lib/tagAppearance";
+import { closePhotoLightbox } from "../lib/photoLightbox";
 
 const TEST_BUILTIN_APPEARANCE = BUILTIN_APPEARANCE_DEFAULTS;
+
+afterEach(() => {
+  closePhotoLightbox();
+});
 
 const paris: PinnedPlace = {
   query: "Paris",
@@ -862,7 +867,7 @@ describe("PlaceList photos", () => {
     expect(onRemovePhoto).toHaveBeenCalledWith(parisPhoto);
   });
 
-  it("expands a thumbnail on click and shrinks it back on a second click", async () => {
+  it("opens a fullscreen lightbox when a thumbnail is clicked", async () => {
     const user = userEvent.setup();
     render(
       <PlaceList
@@ -883,13 +888,12 @@ describe("PlaceList photos", () => {
         photosByQuery={{ Paris: [parisPhoto] }}
       />,
     );
-    const thumb = screen.getByAltText("Photo of Paris, France");
-    expect(thumb.className).not.toContain("--expanded");
+    expect(document.querySelector(".photo-lightbox")).toBeNull();
 
-    await user.click(thumb);
-    expect(thumb.className).toContain("--expanded");
+    await user.click(screen.getByAltText("Photo of Paris, France"));
 
-    await user.click(thumb);
-    expect(thumb.className).not.toContain("--expanded");
+    const lightbox = document.querySelector(".photo-lightbox");
+    expect(lightbox).not.toBeNull();
+    expect(lightbox?.querySelector("img")?.src).toBe(parisPhoto.url);
   });
 });

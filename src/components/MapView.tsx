@@ -4,6 +4,7 @@ import type { ExpressionSpecification } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PlacePhoto } from "../lib/photosRepository";
+import { openPhotoLightbox } from "../lib/photoLightbox";
 import type { PlaceCategory } from "../lib/checklist";
 import { buildGoogleMapsUrl } from "../lib/googleMaps";
 import { resolveLocationInput } from "../lib/locationInput";
@@ -145,7 +146,7 @@ function createPopupContent(
       img.src = photo.url;
       img.alt = `Photo of ${place.name}`;
       img.addEventListener("click", () => {
-        img.classList.toggle("map-popup__photo--expanded");
+        openPhotoLightbox(photo.url, img.alt);
       });
       gallery.appendChild(img);
     }

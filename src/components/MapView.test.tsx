@@ -1,9 +1,10 @@
 import { act, fireEvent, render } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MapView } from "./MapView";
 import type { GeocodeResult } from "../lib/geocoder";
 import { BUILTIN_APPEARANCE_DEFAULTS } from "../lib/tagAppearance";
 import { AIRPLANE_ICON_PATH, HOUSE_ICON_PATH } from "../lib/iconShapes";
+import { closePhotoLightbox } from "../lib/photoLightbox";
 
 const TEST_BUILTIN_APPEARANCE = BUILTIN_APPEARANCE_DEFAULTS;
 
@@ -241,6 +242,10 @@ const tokyo: GeocodeResult = {
 beforeEach(() => {
   instances.length = 0;
   markerInstances.length = 0;
+});
+
+afterEach(() => {
+  closePhotoLightbox();
 });
 
 describe("MapView", () => {
@@ -940,7 +945,7 @@ describe("MapView", () => {
     expect(images?.[0].alt).toBe("Photo of Paris, France");
   });
 
-  it("toggles a popup photo's expanded class on click and back on a second click", () => {
+  it("opens a fullscreen lightbox when a popup photo is clicked", () => {
     render(
       <MapView
         token="pk.test"
@@ -968,13 +973,15 @@ describe("MapView", () => {
     const domContent = marker?.popup?.domContent as HTMLDivElement | undefined;
     const img = domContent?.querySelector("img") as HTMLImageElement;
 
-    expect(img.classList.contains("map-popup__photo--expanded")).toBe(false);
+    expect(document.querySelector(".photo-lightbox")).toBeNull();
 
     img.dispatchEvent(new Event("click", { bubbles: true }));
-    expect(img.classList.contains("map-popup__photo--expanded")).toBe(true);
 
-    img.dispatchEvent(new Event("click", { bubbles: true }));
-    expect(img.classList.contains("map-popup__photo--expanded")).toBe(false);
+    const lightbox = document.querySelector(".photo-lightbox");
+    expect(lightbox).not.toBeNull();
+    expect(lightbox?.querySelector("img")?.src).toBe(
+      "https://cdn.example.com/photo-1.jpg",
+    );
   });
 
   it("shows no photo gallery in the popup for a place with no photos", () => {
