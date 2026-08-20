@@ -121,6 +121,13 @@ const {
     getZoom(): number {
       return this.zoom;
     }
+    // Tests can override this to simulate specific pins being outside the
+    // current viewport; defaults to "everything is in view" so existing
+    // tests that don't care about visibility culling are unaffected.
+    boundsContains: (lngLat: [number, number]) => boolean = () => true;
+    getBounds(): { contains: (lngLat: [number, number]) => boolean } {
+      return { contains: this.boundsContains };
+    }
   }
 
   class MockMarker {
@@ -130,7 +137,7 @@ const {
     lngLat: [number, number] | undefined;
     element = {
       title: "",
-      style: { zIndex: "" },
+      style: { zIndex: "", display: "" },
       addEventListener: (event: string, handler: () => void) => {
         if (event === "click") this.clickHandler = handler;
       },
@@ -1123,5 +1130,110 @@ describe("MapView declutter", () => {
     const lastCall = lineSource?.dataCalls.at(-1) as
       { features: unknown[] } | undefined;
     expect(lastCall?.features).toEqual([]);
+  });
+});
+
+describe("MapView marker visibility", () => {
+  // jsdom (v25+) provides its own real, timer-based requestAnimationFrame,
+  // so this project's setTimeout-based rAF polyfill never installs — a
+  // triggerMove() needs a wait comfortably longer than jsdom's native rAF
+  // delay before its recalculation has actually run (see the "MapView
+  // declutter" describe block above for the same pattern).
+  async function flushDeclutter() {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+  }
+
+  it("hides markers whose true position falls outside the current map bounds", async () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris, tokyo]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    const map = instances[0];
+    if (map) {
+      // Only Paris is "in view" — Tokyo should be hidden.
+      map.boundsContains = (lngLat) => lngLat[0] === paris.lng;
+    }
+    map?.triggerMove();
+    await flushDeclutter();
+
+    const parisMarker = markerInstances.find(
+      (marker) => marker.lngLat?.[0] === paris.lng,
+    );
+    const tokyoMarker = markerInstances.find(
+      (marker) => marker.lngLat?.[0] === tokyo.lng,
+    );
+    expect(parisMarker?.element.style.display).toBe("");
+    expect(tokyoMarker?.element.style.display).toBe("none");
+  });
+
+  it("shows a previously out-of-bounds marker again once it's back in view", async () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    const map = instances[0];
+    if (map) map.boundsContains = () => false;
+    map?.triggerMove();
+    await flushDeclutter();
+    expect(markerInstances[0]?.element.style.display).toBe("none");
+
+    if (map) map.boundsContains = () => true;
+    map?.triggerMove();
+    await flushDeclutter();
+    expect(markerInstances[0]?.element.style.display).toBe("");
+  });
+
+  it("excludes out-of-bounds pins from declutter collision math entirely", async () => {
+    const closeA: GeocodeResult = {
+      query: "close-a",
+      name: "Close A",
+      lng: 0,
+      lat: 0,
+    };
+    const closeB: GeocodeResult = {
+      query: "close-b",
+      name: "Close B",
+      lng: 0.001,
+      lat: 0,
+    };
+    render(
+      <MapView
+        token="pk.test"
+        places={[closeA, closeB]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    const map = instances[0];
+    // Both would collide on screen, but only Close A is "in view" — since
+    // decluttering only ever compares in-bounds pins to each other, a lone
+    // in-bounds pin has nothing to collide with and stays at its true spot.
+    if (map) map.boundsContains = (lngLat) => lngLat[0] === closeA.lng;
+    map?.triggerMove();
+    await flushDeclutter();
+
+    // Close A has no in-bounds neighbor to collide with, so it stays put —
+    // proof Close B (out of bounds) was excluded from the collision math,
+    // not merely hidden after the fact.
+    expect(markerInstances[0]?.lngLat).toEqual([closeA.lng, closeA.lat]);
   });
 });

@@ -66,6 +66,9 @@ const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
       getZoom(): number {
         return 10;
       }
+      getBounds(): { contains: () => boolean } {
+        return { contains: () => true };
+      }
     }
 
     class MockMarker {

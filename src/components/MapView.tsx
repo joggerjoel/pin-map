@@ -418,11 +418,35 @@ export function MapView({
       }
     }
 
+    // Pins geographically far outside the current view (a different
+    // continent, or just off the edge of the map) shouldn't be visible or
+    // factor into decluttering — hide their markers entirely and exclude
+    // them from the collision math, rather than relying on it happening to
+    // project somewhere off-canvas.
+    function updateMarkerVisibility(currentMap: mapboxgl.Map): PinnedPlace[] {
+      const bounds = currentMap.getBounds();
+      const visible: PinnedPlace[] = [];
+      orderedPlaces.forEach((place) => {
+        const marker = markersRef.current.get(place.query);
+        if (marker === undefined) {
+          return;
+        }
+        const inBounds =
+          bounds === null || bounds.contains([place.lng, place.lat]);
+        marker.getElement().style.display = inBounds ? "" : "none";
+        if (inBounds) {
+          visible.push(place);
+        }
+      });
+      return visible;
+    }
+
     function updateDeclutter() {
       const currentMap = mapRef.current;
       if (currentMap === null) {
         return;
       }
+      const visiblePlaces = updateMarkerVisibility(currentMap);
       // Screen-pixel collision doesn't know about real-world distance — at a
       // zoomed-out view (the whole world, or a whole continent), pins on
       // opposite sides of the globe can land within the collision radius
@@ -433,7 +457,7 @@ export function MapView({
         clearDeclutter(currentMap);
         return;
       }
-      const points: ScreenPoint[] = orderedPlaces.map((place) => {
+      const points: ScreenPoint[] = visiblePlaces.map((place) => {
         const pixel = currentMap.project([place.lng, place.lat]);
         return { key: place.query, x: pixel.x, y: pixel.y };
       });
@@ -441,7 +465,7 @@ export function MapView({
       const lineFeatures: DeclutterLineFeature[] = [];
       offsets.forEach((offset) => {
         const marker = markersRef.current.get(offset.key);
-        const place = orderedPlaces.find(
+        const place = visiblePlaces.find(
           (candidate) => candidate.query === offset.key,
         );
         if (marker === undefined || place === undefined) {
