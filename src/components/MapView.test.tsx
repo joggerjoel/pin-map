@@ -65,6 +65,7 @@ const {
     options: { color?: string; element?: HTMLElement } | undefined;
     clickHandler: (() => void) | null = null;
     popup: MockPopup | undefined;
+    lngLat: [number, number] | undefined;
     element = {
       title: "",
       style: { zIndex: "" },
@@ -77,7 +78,8 @@ const {
       this.options = options;
       markerInstances.push(this);
     }
-    setLngLat(): MockMarker {
+    setLngLat(lngLat: [number, number]): MockMarker {
+      this.lngLat = lngLat;
       return this;
     }
     setPopup(popup: MockPopup): MockMarker {
@@ -558,7 +560,25 @@ describe("MapView", () => {
     expect(lastFillCall?.value).toBe("rgba(0, 0, 0, 0)");
   });
 
-  it("sets increasing z-index by array position so later places render on top", () => {
+  it("creates markers in west-to-east order so an easterly pin renders on top of an overlapping westerly one", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[tokyo, paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+      />,
+    );
+    // Tokyo (lng 139.69) is listed first, Paris (lng 2.35) second — but Paris
+    // is farther west, so its marker must still be created (and therefore
+    // appended to the DOM) first.
+    expect(markerInstances[0]?.lngLat).toEqual([paris.lng, paris.lat]);
+    expect(markerInstances[1]?.lngLat).toEqual([tokyo.lng, tokyo.lat]);
+  });
+
+  it("keeps west-to-east creation order when places are already sorted that way", () => {
     render(
       <MapView
         token="pk.test"
@@ -569,8 +589,8 @@ describe("MapView", () => {
         onSetLocation={vi.fn()}
       />,
     );
-    expect(markerInstances[0]?.element.style.zIndex).toBe("1");
-    expect(markerInstances[1]?.element.style.zIndex).toBe("2");
+    expect(markerInstances[0]?.lngLat).toEqual([paris.lng, paris.lat]);
+    expect(markerInstances[1]?.lngLat).toEqual([tokyo.lng, tokyo.lat]);
   });
 
   it("builds the popup content with the place name and a Google Maps link", () => {

@@ -290,7 +290,15 @@ export function MapView({
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current.clear();
 
-    places.forEach((place, index) => {
+    // Mapbox GL JS recalculates each marker's z-index on every render based on
+    // its own screen-space position, silently overwriting any z-index we set
+    // — so for pins that share (or nearly share) a location, stacking order
+    // instead falls back to DOM source order. Adding markers west-to-east
+    // (ascending longitude) means an easterly pin is appended after, and so
+    // renders on top of, a westerly one at the same spot.
+    const orderedPlaces = [...places].sort((a, b) => a.lng - b.lng);
+
+    orderedPlaces.forEach((place) => {
       const marker = new mapboxgl.Marker(createMarkerOptions(place));
       marker
         .setLngLat([place.lng, place.lat])
@@ -307,7 +315,6 @@ export function MapView({
       if (typeLabel !== undefined) {
         marker.getElement().title = typeLabel;
       }
-      marker.getElement().style.zIndex = String(index + 1);
       markersRef.current.set(place.query, marker);
     });
 
