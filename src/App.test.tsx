@@ -49,6 +49,20 @@ const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
           handler();
         }
       }
+      off(): void {}
+      // MapView's declutter recalculation calls project/unproject/getSource
+      // unconditionally on every marker-rebuild — these are simple no-op-ish
+      // stubs so that logic doesn't throw here; this file doesn't assert
+      // anything about declutter behavior (see MapView.test.tsx for that).
+      project(lngLat: [number, number]): { x: number; y: number } {
+        return { x: lngLat[0] * 100, y: lngLat[1] * -100 };
+      }
+      unproject(point: [number, number]): { lng: number; lat: number } {
+        return { lng: point[0] / 100, lat: point[1] / -100 };
+      }
+      getSource(): undefined {
+        return undefined;
+      }
     }
 
     class MockMarker {

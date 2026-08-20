@@ -15,6 +15,8 @@ import {
 } from "../lib/iconShapes";
 import { BUILTIN_TAG_LABELS } from "../lib/tagAppearance";
 import type { BuiltinTagKey, TagAppearance } from "../lib/tagAppearance";
+import { computeDeclutterOffsets } from "../lib/markerDeclutter";
+import type { ScreenPoint } from "../lib/markerDeclutter";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -220,6 +222,18 @@ function getPinTypeLabel(place: PinnedPlace): string | undefined {
 
 type MapboxMatchExpression = ExpressionSpecification;
 
+// mapbox-gl's own .d.ts types `GeoJSONSource.setData` in terms of the
+// ambient `GeoJSON` namespace (from the `@types/geojson` package), which
+// isn't installed in this project — referencing that namespace by name
+// ourselves (e.g. `GeoJSON.Feature`) fails to resolve. `setData`'s own
+// signature is still fully typed, though, so deriving the feature type from
+// it structurally avoids needing the ambient namespace at all.
+type DeclutterLineData = Parameters<mapboxgl.GeoJSONSource["setData"]>[0];
+type DeclutterLineFeature = Extract<
+  DeclutterLineData,
+  { type: "FeatureCollection" }
+>["features"][number];
+
 function applyStateColors(
   map: mapboxgl.Map,
   places: PinnedPlace[],
@@ -308,6 +322,20 @@ export function MapView({
           "line-width": 1.5,
         },
       });
+      map.addSource("declutter-lines", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "declutter-lines",
+        type: "line",
+        source: "declutter-lines",
+        paint: {
+          "line-color": "#9ca3af",
+          "line-width": 1,
+          "line-opacity": 0.8,
+        },
+      });
       applyStateColors(map, placesRef.current, builtinAppearanceRef.current);
     });
     return () => {
@@ -366,6 +394,82 @@ export function MapView({
     } else {
       map.once("load", () => applyStateColors(map, places, builtinAppearance));
     }
+
+    let declutterFrame: number | null = null;
+
+    function updateDeclutter() {
+      const currentMap = mapRef.current;
+      if (currentMap === null) {
+        return;
+      }
+      const points: ScreenPoint[] = orderedPlaces.map((place) => {
+        const pixel = currentMap.project([place.lng, place.lat]);
+        return { key: place.query, x: pixel.x, y: pixel.y };
+      });
+      const offsets = computeDeclutterOffsets(points);
+      const lineFeatures: DeclutterLineFeature[] = [];
+      offsets.forEach((offset) => {
+        const marker = markersRef.current.get(offset.key);
+        const place = orderedPlaces.find(
+          (candidate) => candidate.query === offset.key,
+        );
+        if (marker === undefined || place === undefined) {
+          return;
+        }
+        if (offset.dx === 0 && offset.dy === 0) {
+          marker.setLngLat([place.lng, place.lat]);
+          return;
+        }
+        const truePixel = currentMap.project([place.lng, place.lat]);
+        const adjusted = currentMap.unproject([
+          truePixel.x + offset.dx,
+          truePixel.y + offset.dy,
+        ]);
+        marker.setLngLat([adjusted.lng, adjusted.lat]);
+        lineFeatures.push({
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [place.lng, place.lat],
+              [adjusted.lng, adjusted.lat],
+            ],
+          },
+        });
+      });
+      const lineSource = currentMap.getSource("declutter-lines");
+      if (lineSource !== undefined && "setData" in lineSource) {
+        (lineSource as mapboxgl.GeoJSONSource).setData({
+          type: "FeatureCollection",
+          features: lineFeatures,
+        });
+      }
+    }
+
+    function scheduleDeclutterUpdate() {
+      if (declutterFrame !== null) {
+        return;
+      }
+      declutterFrame = requestAnimationFrame(() => {
+        declutterFrame = null;
+        updateDeclutter();
+      });
+    }
+
+    if (map.isStyleLoaded()) {
+      updateDeclutter();
+    } else {
+      map.once("load", updateDeclutter);
+    }
+    map.on("move", scheduleDeclutterUpdate);
+
+    return () => {
+      map.off("move", scheduleDeclutterUpdate);
+      if (declutterFrame !== null) {
+        cancelAnimationFrame(declutterFrame);
+      }
+    };
   }, [places, builtinAppearance]);
 
   // Depends only on `selection`, never on `places` — otherwise pinning a new

@@ -7,6 +7,18 @@ import { AIRPLANE_ICON_PATH, HOUSE_ICON_PATH } from "../lib/iconShapes";
 
 const TEST_BUILTIN_APPEARANCE = BUILTIN_APPEARANCE_DEFAULTS;
 
+// jsdom doesn't implement requestAnimationFrame/cancelAnimationFrame, and no
+// polyfill for it exists elsewhere in this project's test setup (checked
+// src/test/setup.ts and the rest of src/) — MapView's declutter scheduling
+// uses requestAnimationFrame to throttle recalculation to once per frame, so
+// without this it would throw as soon as the map fires a "move" event.
+if (typeof globalThis.requestAnimationFrame === "undefined") {
+  globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) =>
+    setTimeout(() => cb(0), 0)) as typeof requestAnimationFrame;
+  globalThis.cancelAnimationFrame = ((id: number) =>
+    clearTimeout(id)) as typeof cancelAnimationFrame;
+}
+
 const {
   instances,
   markerInstances,
@@ -26,6 +38,11 @@ const {
     sourceCalls: unknown[] = [];
     paintPropertyCalls: { layerId: string; prop: string; value: unknown }[] =
       [];
+    moveHandlers: Array<() => void> = [];
+    sources: Map<
+      string,
+      { setData: (data: unknown) => void; dataCalls: unknown[] }
+    > = new Map();
 
     constructor(options: unknown) {
       this.options = options;
@@ -43,6 +60,16 @@ const {
     }
     addSource(id: string, options: unknown): void {
       this.sourceCalls.push({ id, options });
+      const dataCalls: unknown[] = [];
+      this.sources.set(id, {
+        setData: (data: unknown) => {
+          dataCalls.push(data);
+        },
+        dataCalls,
+      });
+    }
+    getSource(id: string) {
+      return this.sources.get(id);
     }
     addLayer(options: { id: string }): void {
       this.layerIds.add(options.id);
@@ -57,11 +84,28 @@ const {
       if (event === "load") {
         handler();
       }
+      if (event === "move") {
+        this.moveHandlers.push(handler);
+      }
     }
     once(event: string, handler: () => void): void {
       if (event === "load") {
         handler();
       }
+    }
+    off(event: string, handler: () => void): void {
+      if (event === "move") {
+        this.moveHandlers = this.moveHandlers.filter((h) => h !== handler);
+      }
+    }
+    triggerMove(): void {
+      this.moveHandlers.forEach((handler) => handler());
+    }
+    project(lngLat: [number, number]): { x: number; y: number } {
+      return { x: lngLat[0] * 100, y: lngLat[1] * -100 };
+    }
+    unproject(point: [number, number]): { lng: number; lat: number } {
+      return { lng: point[0] / 100, lat: point[1] / -100 };
     }
   }
 
@@ -875,5 +919,121 @@ describe("MapView", () => {
     expect(element.style.background).toContain("0, 255, 0");
     expect(element.querySelector("circle")).not.toBeNull();
     expect(marker?.options?.color).toBeUndefined();
+  });
+});
+
+describe("MapView declutter", () => {
+  const closeA: GeocodeResult = {
+    query: "close-a",
+    name: "Close A",
+    lng: 0,
+    lat: 0,
+  };
+  const closeB: GeocodeResult = {
+    query: "close-b",
+    name: "Close B",
+    lng: 0.001,
+    lat: 0,
+  };
+
+  it("nudges two markers whose true positions project to nearly the same screen point", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[closeA, closeB]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    // MockMap.isStyleLoaded() always returns true, so declutter recalculates
+    // synchronously as part of the marker-rebuild effect on mount — no need
+    // to flush requestAnimationFrame just to see the initial nudge applied.
+    expect(markerInstances[0]?.lngLat).not.toEqual([closeA.lng, closeA.lat]);
+    expect(markerInstances[1]?.lngLat).not.toEqual([closeB.lng, closeB.lat]);
+  });
+
+  it("does not nudge markers that are far apart on screen", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris, tokyo]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    expect(markerInstances[0]?.lngLat).toEqual([paris.lng, paris.lat]);
+    expect(markerInstances[1]?.lngLat).toEqual([tokyo.lng, tokyo.lat]);
+  });
+
+  it("updates the declutter-lines source when two markers collide", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[closeA, closeB]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    const map = instances[0];
+    const lineSource = map?.getSource("declutter-lines");
+    const lastCall = lineSource?.dataCalls.at(-1) as
+      { type: string; features: { geometry: { type: string } }[] } | undefined;
+    expect(lastCall?.type).toBe("FeatureCollection");
+    // NOTE: the spec's suggested assertion was "exactly one LineString
+    // feature — one line for the pair", reasoning that a 2-member cluster is
+    // a single connecting relationship. That's not what this implementation
+    // does, though: updateDeclutter iterates the *offsets* (one per marker)
+    // and pushes a LineString for every marker with a non-zero offset — so
+    // a colliding pair, where BOTH markers get nudged (confirmed by
+    // markerDeclutter.test.ts), produces one line per marker, i.e. two
+    // lines, not one shared line for the cluster. This matches the Part 2
+    // reference implementation exactly as given, so the assertion below is
+    // adjusted to match actual behavior rather than the spec's guess.
+    expect(lastCall?.features).toHaveLength(2);
+    lastCall?.features.forEach((feature) => {
+      expect(feature.geometry.type).toBe("LineString");
+    });
+  });
+
+  it("produces a stable, idempotent nudge across repeated move events with unchanged place data", async () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[closeA, closeB]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    const map = instances[0];
+    const initial = [markerInstances[0]?.lngLat, markerInstances[1]?.lngLat];
+
+    expect(() => map?.triggerMove()).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const afterFirstMove = [
+      markerInstances[0]?.lngLat,
+      markerInstances[1]?.lngLat,
+    ];
+
+    expect(() => map?.triggerMove()).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const afterSecondMove = [
+      markerInstances[0]?.lngLat,
+      markerInstances[1]?.lngLat,
+    ];
+
+    expect(afterFirstMove).toEqual(initial);
+    expect(afterSecondMove).toEqual(afterFirstMove);
   });
 });
