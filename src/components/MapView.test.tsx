@@ -3,55 +3,75 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MapView } from "./MapView";
 import type { GeocodeResult } from "../lib/geocoder";
 
-const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
-  vi.hoisted(() => {
-    const instances: InstanceType<typeof MockMap>[] = [];
+const {
+  instances,
+  markerInstances,
+  MockMap,
+  MockMarker,
+  MockPopup,
+  MockLngLatBounds,
+} = vi.hoisted(() => {
+  const instances: InstanceType<typeof MockMap>[] = [];
+  const markerInstances: InstanceType<typeof MockMarker>[] = [];
 
-    class MockMap {
-      options: unknown;
-      flyToCalls: unknown[] = [];
-      fitBoundsCalls: unknown[] = [];
+  class MockMap {
+    options: unknown;
+    flyToCalls: unknown[] = [];
+    fitBoundsCalls: unknown[] = [];
 
-      constructor(options: unknown) {
-        this.options = options;
-        instances.push(this);
-      }
-      remove(): void {}
-      flyTo(opts: unknown): void {
-        this.flyToCalls.push(opts);
-      }
-      fitBounds(bounds: unknown, opts: unknown): void {
-        this.fitBoundsCalls.push({ bounds, opts });
-      }
+    constructor(options: unknown) {
+      this.options = options;
+      instances.push(this);
     }
-
-    class MockMarker {
-      setLngLat(): MockMarker {
-        return this;
-      }
-      setPopup(): MockMarker {
-        return this;
-      }
-      addTo(): MockMarker {
-        return this;
-      }
-      remove(): void {}
+    remove(): void {}
+    flyTo(opts: unknown): void {
+      this.flyToCalls.push(opts);
     }
-
-    class MockPopup {
-      setText(): MockPopup {
-        return this;
-      }
+    fitBounds(bounds: unknown, opts: unknown): void {
+      this.fitBoundsCalls.push({ bounds, opts });
     }
+  }
 
-    class MockLngLatBounds {
-      extend(): MockLngLatBounds {
-        return this;
-      }
+  class MockMarker {
+    options: unknown;
+
+    constructor(options?: unknown) {
+      this.options = options;
+      markerInstances.push(this);
     }
+    setLngLat(): MockMarker {
+      return this;
+    }
+    setPopup(): MockMarker {
+      return this;
+    }
+    addTo(): MockMarker {
+      return this;
+    }
+    remove(): void {}
+  }
 
-    return { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds };
-  });
+  class MockPopup {
+    setText(): MockPopup {
+      return this;
+    }
+  }
+
+  class MockLngLatBounds {
+    extend(): MockLngLatBounds {
+      return this;
+    }
+  }
+
+  return {
+    instances,
+    markerInstances,
+    MockMap,
+    MockMarker,
+    MockPopup,
+    MockLngLatBounds,
+  };
+});
 
 vi.mock("mapbox-gl", () => ({
   default: {
@@ -78,6 +98,7 @@ const tokyo: GeocodeResult = {
 
 beforeEach(() => {
   instances.length = 0;
+  markerInstances.length = 0;
 });
 
 describe("MapView", () => {
@@ -159,5 +180,28 @@ describe("MapView", () => {
 
     expect(instances[0]?.flyToCalls.length).toBe(flyToCallsBefore);
     expect(instances[0]?.fitBoundsCalls.length).toBeGreaterThan(0);
+  });
+
+  it("colors a marker according to its category", () => {
+    const visited = { ...paris, category: "visited" as const };
+    render(<MapView token="pk.test" places={[visited]} selection={null} />);
+    expect(markerInstances[0]?.options).toEqual({ color: "#3b82f6" });
+  });
+
+  it("shows a legend only for categories actually present", () => {
+    const visited = { ...paris, category: "visited" as const };
+    const { container } = render(
+      <MapView token="pk.test" places={[visited]} selection={null} />,
+    );
+    expect(container.textContent).toContain("Visited");
+    expect(container.textContent).not.toContain("Hometown");
+    expect(container.textContent).not.toContain("Lived");
+  });
+
+  it("shows no legend when no place has a category", () => {
+    const { container } = render(
+      <MapView token="pk.test" places={[paris]} selection={null} />,
+    );
+    expect(container.querySelector(".map-legend")).toBeNull();
   });
 });

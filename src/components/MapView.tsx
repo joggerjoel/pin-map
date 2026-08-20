@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import type { GeocodeResult } from "../lib/geocoder";
+import type { PinnedPlace } from "../hooks/useGeocoder";
+import type { PlaceCategory } from "../lib/checklist";
 
 /**
  * A one-shot request to fly the map to a place. `nonce` must change on every
@@ -16,16 +17,34 @@ export interface MapSelection {
 
 export interface MapViewProps {
   token: string;
-  places: GeocodeResult[];
+  places: PinnedPlace[];
   selection: MapSelection | null;
 }
+
+const CATEGORY_COLORS: Record<PlaceCategory, string> = {
+  visited: "#3b82f6",
+  lived: "#f97316",
+  hometown: "#eab308",
+};
+
+const CATEGORY_LABELS: Record<PlaceCategory, string> = {
+  visited: "Visited",
+  lived: "Lived",
+  hometown: "Hometown",
+};
+
+const CATEGORY_ORDER: PlaceCategory[] = ["visited", "lived", "hometown"];
 
 export function MapView({ token, places, selection }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
-  const placesRef = useRef<GeocodeResult[]>(places);
+  const placesRef = useRef<PinnedPlace[]>(places);
   placesRef.current = places;
+
+  const presentCategories = CATEGORY_ORDER.filter((category) =>
+    places.some((place) => place.category === category),
+  );
 
   useEffect(() => {
     if (containerRef.current === null) return;
@@ -51,7 +70,9 @@ export function MapView({ token, places, selection }: MapViewProps) {
     markersRef.current.clear();
 
     places.forEach((place) => {
-      const marker = new mapboxgl.Marker()
+      const marker = new mapboxgl.Marker(
+        place.category ? { color: CATEGORY_COLORS[place.category] } : undefined,
+      )
         .setLngLat([place.lng, place.lat])
         .setPopup(new mapboxgl.Popup().setText(place.name))
         .addTo(map);
@@ -81,5 +102,22 @@ export function MapView({ token, places, selection }: MapViewProps) {
     map.flyTo({ center: [place.lng, place.lat], zoom: 12 });
   }, [selection]);
 
-  return <div ref={containerRef} className="map-view" />;
+  return (
+    <>
+      <div ref={containerRef} className="map-view" />
+      {presentCategories.length > 0 && (
+        <div className="map-legend">
+          {presentCategories.map((category) => (
+            <div className="map-legend__item" key={category}>
+              <span
+                className="map-legend__swatch"
+                style={{ backgroundColor: CATEGORY_COLORS[category] }}
+              />
+              <span>{CATEGORY_LABELS[category]}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
 }

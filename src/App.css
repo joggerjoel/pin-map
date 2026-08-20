@@ -64,3 +64,26 @@ body {
   justify-content: space-between;
   gap: 0.5rem;
 }
+
+.map-legend {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.map-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.map-legend__swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+}
