@@ -182,3 +182,75 @@ describe("useGeocoder", () => {
     expect(result.current.error).toBeNull();
   });
 });
+
+describe("useGeocoder in checklist mode", () => {
+  it("parses checklist-format input, geocodes only marked entries with a US country filter, and attaches categories", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({
+        pinned: [
+          { query: "Florida", name: "Florida, USA", lng: -81.5, lat: 27.7 },
+        ],
+        failed: [],
+      });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("1 Alabama \n9 Florida X", true);
+    });
+
+    expect(batchSpy).toHaveBeenCalledWith(["Florida"], "pk.test", "us");
+    expect(result.current.pinnedPlaces).toEqual([
+      {
+        query: "Florida",
+        name: "Florida, USA",
+        lng: -81.5,
+        lat: 27.7,
+        category: "visited",
+      },
+    ]);
+  });
+
+  it("does not apply a country filter when checklistMode is false", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({ pinned: [], failed: [] });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("Paris", false);
+    });
+
+    expect(batchSpy).toHaveBeenCalledWith(["Paris"], "pk.test", undefined);
+  });
+
+  it("retry re-runs the last call in the same mode it was originally called with", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockRejectedValueOnce(new Error("All geocoding requests failed"))
+      .mockResolvedValueOnce({
+        pinned: [
+          { query: "Florida", name: "Florida, USA", lng: -81.5, lat: 27.7 },
+        ],
+        failed: [],
+      });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("9 Florida X", true);
+    });
+    expect(result.current.error).not.toBeNull();
+
+    await act(async () => {
+      await result.current.retry();
+    });
+
+    expect(batchSpy).toHaveBeenNthCalledWith(2, ["Florida"], "pk.test", "us");
+    expect(result.current.pinnedPlaces[0]).toMatchObject({
+      category: "visited",
+    });
+  });
+});
