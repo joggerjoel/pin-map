@@ -200,7 +200,11 @@ describe("useGeocoder in checklist mode", () => {
       await result.current.pinPlaces("1 Alabama \n9 Florida X", true);
     });
 
-    expect(batchSpy).toHaveBeenCalledWith(["Florida"], "pk.test", "us");
+    expect(batchSpy).toHaveBeenCalledWith(
+      [{ query: "Florida", country: "us" }],
+      "pk.test",
+      undefined,
+    );
     expect(result.current.pinnedPlaces).toEqual([
       {
         query: "Florida",
@@ -223,7 +227,29 @@ describe("useGeocoder in checklist mode", () => {
       await result.current.pinPlaces("Paris", false);
     });
 
-    expect(batchSpy).toHaveBeenCalledWith(["Paris"], "pk.test", undefined);
+    expect(batchSpy).toHaveBeenCalledWith(
+      [{ query: "Paris", country: undefined }],
+      "pk.test",
+      undefined,
+    );
+  });
+
+  it("detects a per-line country for non-checklist mode geocoding", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({ pinned: [], failed: [] });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("Dublin, Ireland", false);
+    });
+
+    expect(batchSpy).toHaveBeenCalledWith(
+      [{ query: "Dublin, Ireland", country: "ie" }],
+      "pk.test",
+      undefined,
+    );
   });
 
   it("passes a continent's bbox to geocodeBatch when provided", async () => {
@@ -238,9 +264,8 @@ describe("useGeocoder in checklist mode", () => {
     });
 
     expect(batchSpy).toHaveBeenCalledWith(
-      ["Paris"],
+      [{ query: "Paris", country: undefined }],
       "pk.test",
-      undefined,
       [-25, 34, 45, 72],
     );
   });
@@ -267,7 +292,12 @@ describe("useGeocoder in checklist mode", () => {
       await result.current.retry();
     });
 
-    expect(batchSpy).toHaveBeenNthCalledWith(2, ["Florida"], "pk.test", "us");
+    expect(batchSpy).toHaveBeenNthCalledWith(
+      2,
+      [{ query: "Florida", country: "us" }],
+      "pk.test",
+      undefined,
+    );
     expect(result.current.pinnedPlaces[0]).toMatchObject({
       category: "visited",
     });

@@ -4,11 +4,12 @@ import {
   geocodeBatch,
   parseLines,
 } from "../lib/geocoder";
-import type { GeocodeResult } from "../lib/geocoder";
+import type { GeocodeQuery, GeocodeResult } from "../lib/geocoder";
 import { parseChecklist } from "../lib/checklist";
 import type { PlaceCategory } from "../lib/checklist";
 import { getContinentBbox } from "../lib/continents";
 import type { Continent } from "../lib/continents";
+import { detectCountryFromLine } from "../lib/countryNames";
 
 export interface PinnedPlace extends GeocodeResult {
   category?: PlaceCategory;
@@ -84,18 +85,11 @@ export function useGeocoder(token: string): UseGeocoderResult {
       try {
         const bbox =
           !checklistMode && continent ? getContinentBbox(continent) : undefined;
-        const batch = bbox
-          ? await geocodeBatch(
-              newLines,
-              token,
-              checklistMode ? "us" : undefined,
-              bbox,
-            )
-          : await geocodeBatch(
-              newLines,
-              token,
-              checklistMode ? "us" : undefined,
-            );
+        const entries: GeocodeQuery[] = newLines.map((line) => ({
+          query: line,
+          country: checklistMode ? "us" : detectCountryFromLine(line),
+        }));
+        const batch = await geocodeBatch(entries, token, bbox);
         const succeededKeys = new Set(
           batch.pinned.map((place) => place.query.toLowerCase()),
         );
