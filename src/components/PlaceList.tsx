@@ -40,6 +40,7 @@ export function PlaceList({
   const itemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [filterText, setFilterText] = useState("");
   // Drag-and-drop handlers fire in rapid succession (dragstart then drop)
   // with no guarantee React has re-rendered in between, so onDrop can't rely
   // on `draggedIndex` from the closure without risking a stale read. A ref
@@ -53,10 +54,26 @@ export function PlaceList({
     setExpandedQuery(highlightedQuery);
   }, [highlightedQuery]);
 
+  const indexedPlaces = pinnedPlaces.map((place, index) => ({ place, index }));
+  const visiblePlaces =
+    filterText.trim() === ""
+      ? indexedPlaces
+      : indexedPlaces.filter(({ place }) =>
+          place.name.toLowerCase().includes(filterText.trim().toLowerCase()),
+        );
+
   return (
     <div className="place-list">
+      <input
+        type="text"
+        className="place-list__filter"
+        aria-label="Filter places"
+        placeholder="Filter places..."
+        value={filterText}
+        onChange={(event) => setFilterText(event.target.value)}
+      />
       <ul>
-        {pinnedPlaces.map((place, index) => (
+        {visiblePlaces.map(({ place, index }) => (
           <li
             key={place.query}
             ref={(el) => {
@@ -186,6 +203,11 @@ export function PlaceList({
           </li>
         ))}
       </ul>
+      {visiblePlaces.length === 0 && pinnedPlaces.length > 0 && (
+        <p className="place-list__no-matches">
+          No places match "{filterText.trim()}"
+        </p>
+      )}
       {failedLines.length > 0 && (
         <div className="place-list__failed">
           <h2>Couldn't find</h2>

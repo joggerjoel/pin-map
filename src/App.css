@@ -138,6 +138,17 @@ body {
   padding: 0;
 }
 
+.place-list__filter {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 0.5rem;
+}
+
+.place-list__no-matches {
+  color: #888;
+  font-size: 0.9rem;
+}
+
 .place-list__row {
   display: flex;
   align-items: center;

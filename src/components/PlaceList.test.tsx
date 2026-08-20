@@ -451,6 +451,184 @@ describe("PlaceList", () => {
     expect(onSetLocation).toHaveBeenCalledWith("Paris", 48.8566, 2.3522);
   });
 
+  it("filters the visible places by a case-insensitive name substring", async () => {
+    const athens: PinnedPlace = {
+      query: "Athens",
+      name: "Athens, Greece",
+      lng: 23.73,
+      lat: 37.98,
+    };
+    const berlin: PinnedPlace = {
+      query: "Berlin",
+      name: "Berlin, Germany",
+      lng: 13.4,
+      lat: 52.52,
+    };
+    const user = userEvent.setup();
+    render(
+      <PlaceList
+        pinnedPlaces={[athens, berlin]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Filter places"), "ATH");
+
+    expect(screen.getByText("Athens, Greece")).toBeInTheDocument();
+    expect(screen.queryByText("Berlin, Germany")).not.toBeInTheDocument();
+  });
+
+  it("restores the full list when the filter text is cleared", async () => {
+    const athens: PinnedPlace = {
+      query: "Athens",
+      name: "Athens, Greece",
+      lng: 23.73,
+      lat: 37.98,
+    };
+    const berlin: PinnedPlace = {
+      query: "Berlin",
+      name: "Berlin, Germany",
+      lng: 13.4,
+      lat: 52.52,
+    };
+    const user = userEvent.setup();
+    render(
+      <PlaceList
+        pinnedPlaces={[athens, berlin]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+      />,
+    );
+
+    const filterInput = screen.getByLabelText("Filter places");
+    await user.type(filterInput, "ATH");
+    expect(screen.queryByText("Berlin, Germany")).not.toBeInTheDocument();
+
+    await user.clear(filterInput);
+
+    expect(screen.getByText("Athens, Greece")).toBeInTheDocument();
+    expect(screen.getByText("Berlin, Germany")).toBeInTheDocument();
+  });
+
+  it("shows a no-matches hint when the filter matches nothing", async () => {
+    const user = userEvent.setup();
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Filter places"), "zzz-no-match");
+
+    expect(
+      screen.getByText('No places match "zzz-no-match"'),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show the no-matches hint when there are no pinned places at all", () => {
+    render(
+      <PlaceList
+        pinnedPlaces={[]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/No places match/)).not.toBeInTheDocument();
+  });
+
+  it("reorders using true original indices when dragging while filtered", async () => {
+    const athens: PinnedPlace = {
+      query: "Athens",
+      name: "Athens",
+      lng: 23.73,
+      lat: 37.98,
+    };
+    const berlin: PinnedPlace = {
+      query: "Berlin",
+      name: "Berlin",
+      lng: 13.4,
+      lat: 52.52,
+    };
+    const cairo: PinnedPlace = {
+      query: "Cairo",
+      name: "Cairo",
+      lng: 31.24,
+      lat: 30.04,
+    };
+    const onReorder = vi.fn();
+    const user = userEvent.setup();
+    const { container } = render(
+      <PlaceList
+        pinnedPlaces={[athens, berlin, cairo]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        onChangeTag={vi.fn()}
+        highlightedQuery={null}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        onReorder={onReorder}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+      />,
+    );
+
+    // Filter to a substring that only matches Athens and Cairo, hiding
+    // Berlin (the middle item) — so the visible list has 2 items whose
+    // true indices in pinnedPlaces are 0 and 2.
+    await user.type(screen.getByLabelText("Filter places"), "a");
+    expect(screen.getByText("Athens")).toBeInTheDocument();
+    expect(screen.queryByText("Berlin")).not.toBeInTheDocument();
+    expect(screen.getByText("Cairo")).toBeInTheDocument();
+
+    const handles = container.querySelectorAll(".place-list__drag-handle");
+    expect(handles).toHaveLength(2);
+
+    const dragStartEvent = new Event("dragstart", { bubbles: true });
+    handles[0]?.dispatchEvent(dragStartEvent);
+
+    const dropEvent = new Event("drop", { bubbles: true });
+    handles[1]?.dispatchEvent(dropEvent);
+
+    expect(onReorder).toHaveBeenCalledWith(0, 2);
+  });
+
   it("calls onRelocate when free text is submitted", async () => {
     const onRelocate = vi.fn();
     const user = userEvent.setup();
