@@ -2,8 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearMapboxToken,
   getMapboxToken,
+  getPersonalMapboxToken,
   setMapboxToken,
 } from "./lib/mapboxToken";
+import { fetchTokenUsage, shouldForcePersonalToken } from "./lib/tokenUsage";
+import type { TokenUsage } from "./lib/tokenUsage";
 import { useGeocoder } from "./hooks/useGeocoder";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
 import { useAuth } from "./hooks/useAuth";
@@ -38,6 +41,10 @@ import {
 
 export function App() {
   const [token, setToken] = useState<string | null>(() => getMapboxToken());
+  const [personalToken, setPersonalToken] = useState<string | null>(() =>
+    getPersonalMapboxToken(),
+  );
+  const [usage, setUsage] = useState<TokenUsage | null>(null);
   const [selection, setSelection] = useState<MapSelection | null>(null);
   const [highlightedQuery, setHighlightedQuery] = useState<string | null>(null);
   const [lastRemoval, setLastRemoval] = useState<{
@@ -80,7 +87,34 @@ export function App() {
     };
   }, [userId]);
 
-  const geocoder = useGeocoder(token ?? "", {
+  useEffect(() => {
+    if (userId === null) {
+      setUsage(null);
+      return;
+    }
+    let cancelled = false;
+    fetchTokenUsage(userId).then((result) => {
+      if (!cancelled) {
+        setUsage(result);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  // Everyone but the owner is limited to the shared/bundled Mapbox token up
+  // to PLACES_PINNED_LIMIT/LOGIN_LIMIT (see tokenUsage.ts) to protect the
+  // owner's Mapbox quota; past that they must supply their own token, same
+  // as the "Change token" flow already requires.
+  const isForcedOffSharedToken =
+    userId !== null &&
+    userId !== ownerUserId &&
+    usage !== null &&
+    shouldForcePersonalToken(usage);
+  const effectiveToken = isForcedOffSharedToken ? personalToken : token;
+
+  const geocoder = useGeocoder(effectiveToken ?? "", {
     userId,
     ownerUserId,
     customTags,
@@ -126,12 +160,13 @@ export function App() {
     setSelection({ query, nonce: selectionNonceRef.current });
   }, []);
 
-  if (token === null) {
+  if (effectiveToken === null) {
     return (
       <TokenSetup
         onSubmit={(newToken) => {
           setMapboxToken(newToken);
           setToken(newToken);
+          setPersonalToken(newToken);
         }}
       />
     );
@@ -185,6 +220,7 @@ export function App() {
             onClick={() => {
               clearMapboxToken();
               setToken(null);
+              setPersonalToken(null);
             }}
           >
             Change token
@@ -254,7 +290,7 @@ export function App() {
       />
       <main className="app__map">
         <MapView
-          token={token}
+          token={effectiveToken}
           places={geocoder.pinnedPlaces}
           selection={selection}
           onMarkerClick={setHighlightedQuery}

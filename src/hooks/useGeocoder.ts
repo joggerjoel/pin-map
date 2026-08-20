@@ -21,6 +21,7 @@ import {
   updatePinFields,
   deletePin,
 } from "../lib/pinsRepository";
+import { incrementPlacesPinned } from "../lib/tokenUsage";
 
 export interface PinnedPlace extends GeocodeResult {
   category?: PlaceCategory;
@@ -242,6 +243,7 @@ export function useGeocoder(
               date: processed.date,
             })),
           );
+          void incrementPlacesPinned(explicitLines.length);
         }
       }
 
@@ -280,6 +282,7 @@ export function useGeocoder(
         setPinnedPlaces((prev) => [...prev, ...newlyPinned]);
         if (userId !== null) {
           void upsertPins(userId, newlyPinned);
+          void incrementPlacesPinned(newlyPinned.length);
         }
         setFailedLines((prev) => {
           const survivors = prev.filter(
@@ -352,6 +355,7 @@ export function useGeocoder(
         setPinnedPlaces((prev) => [...prev, { ...result, ...tag }]);
         if (userId !== null) {
           void upsertPins(userId, [{ ...result, ...tag }]);
+          void incrementPlacesPinned(1);
         }
       } catch (err) {
         if (err instanceof GeocodeAllFailedError && err.isAuthError) {

@@ -18,8 +18,45 @@ vi.mock("./lib/supabaseClient", () => ({
       verifyOtp: vi.fn().mockResolvedValue({ error: null }),
       signOut: vi.fn().mockResolvedValue({ error: null }),
     },
+    from: vi.fn(),
   },
 }));
+
+interface FromChainResult {
+  data: unknown;
+  error: unknown;
+}
+
+function createFromChain(result: FromChainResult) {
+  const chain = {
+    select: vi.fn(() => chain),
+    eq: vi.fn(() => chain),
+    limit: vi.fn(() => chain),
+    maybeSingle: vi.fn(() => chain),
+    then: (
+      resolve: (value: FromChainResult) => void,
+      reject?: (reason: unknown) => void,
+    ) => {
+      void reject;
+      resolve(result);
+    },
+  };
+  return chain;
+}
+
+// Routes supabase.from(table) to a per-table result, defaulting to an empty
+// row for any table not listed — matches the fail-soft default every
+// repository function already falls back to on a missing/errored row.
+function mockSupabaseFrom(tableResults: Record<string, FromChainResult>) {
+  vi.mocked(supabaseModule.supabase.from).mockImplementation(
+    (table: string) => {
+      const result = tableResults[table] ?? { data: null, error: null };
+      return createFromChain(result) as unknown as ReturnType<
+        typeof supabaseModule.supabase.from
+      >;
+    },
+  );
+}
 
 const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
   vi.hoisted(() => {
@@ -167,10 +204,12 @@ beforeEach(() => {
   } as unknown as Awaited<
     ReturnType<typeof supabaseModule.supabase.auth.signOut>
   >);
+  mockSupabaseFrom({});
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("App", () => {
@@ -481,5 +520,94 @@ describe("App auth gating", () => {
     await user.click(signOutButton);
 
     expect(supabaseModule.supabase.auth.signOut).toHaveBeenCalled();
+  });
+});
+
+describe("App Mapbox quota limiter", () => {
+  it("forces a non-owner signed-in user back to token setup once they've pinned the limit", async () => {
+    vi.stubEnv("VITE_MAPBOX_TOKEN", "pk.env-token");
+    vi.mocked(supabaseModule.supabase.auth.getSession).mockResolvedValueOnce({
+      data: { session: null },
+    } as unknown as Awaited<
+      ReturnType<typeof supabaseModule.supabase.auth.getSession>
+    >);
+    let capturedCallback:
+      ((event: string, session: Session | null) => void) | undefined;
+    vi.mocked(
+      supabaseModule.supabase.auth.onAuthStateChange,
+    ).mockImplementationOnce((callback) => {
+      capturedCallback = callback as (
+        event: string,
+        session: Session | null,
+      ) => void;
+      return {
+        data: { subscription: { unsubscribe: vi.fn() } },
+      } as unknown as ReturnType<
+        typeof supabaseModule.supabase.auth.onAuthStateChange
+      >;
+    });
+    mockSupabaseFrom({
+      pinmap_owner: { data: { user_id: "owner-1" }, error: null },
+      pinmap_token_usage: {
+        data: { places_pinned_count: 50, login_count: 0 },
+        error: null,
+      },
+    });
+
+    render(<App />);
+    await screen.findByLabelText("Email");
+
+    capturedCallback?.("SIGNED_IN", {
+      user: { id: "visitor-1", email: "visitor@example.com" },
+    } as unknown as Session);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Paste a Mapbox access token to get started/),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("does not force the owner off the shared token even past the usage limit", async () => {
+    vi.stubEnv("VITE_MAPBOX_TOKEN", "pk.env-token");
+    vi.mocked(supabaseModule.supabase.auth.getSession).mockResolvedValueOnce({
+      data: { session: null },
+    } as unknown as Awaited<
+      ReturnType<typeof supabaseModule.supabase.auth.getSession>
+    >);
+    let capturedCallback:
+      ((event: string, session: Session | null) => void) | undefined;
+    vi.mocked(
+      supabaseModule.supabase.auth.onAuthStateChange,
+    ).mockImplementationOnce((callback) => {
+      capturedCallback = callback as (
+        event: string,
+        session: Session | null,
+      ) => void;
+      return {
+        data: { subscription: { unsubscribe: vi.fn() } },
+      } as unknown as ReturnType<
+        typeof supabaseModule.supabase.auth.onAuthStateChange
+      >;
+    });
+    mockSupabaseFrom({
+      pinmap_owner: { data: { user_id: "owner-1" }, error: null },
+      pinmap_token_usage: {
+        data: { places_pinned_count: 999, login_count: 999 },
+        error: null,
+      },
+    });
+
+    render(<App />);
+    await screen.findByLabelText("Email");
+
+    capturedCallback?.("SIGNED_IN", {
+      user: { id: "owner-1", email: "owner@example.com" },
+    } as unknown as Session);
+
+    expect(await screen.findByLabelText("Add a pin")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Paste a Mapbox access token to get started/),
+    ).not.toBeInTheDocument();
   });
 });

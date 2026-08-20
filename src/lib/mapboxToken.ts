@@ -8,6 +8,13 @@ export function getMapboxToken(): string | null {
   return window.localStorage.getItem(STORAGE_KEY);
 }
 
+// Unlike getMapboxToken, ignores the bundled env token entirely — used to
+// resolve the token for an account that's been forced off the shared token
+// (see tokenUsage.ts), where only a token the user personally entered counts.
+export function getPersonalMapboxToken(): string | null {
+  return window.localStorage.getItem(STORAGE_KEY);
+}
+
 export function setMapboxToken(token: string): void {
   window.localStorage.setItem(STORAGE_KEY, token);
 }

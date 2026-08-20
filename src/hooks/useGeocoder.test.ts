@@ -5,12 +5,17 @@ import * as geocoderModule from "../lib/geocoder";
 import { GeocodeAllFailedError } from "../lib/geocoder";
 import type { GeocodeResult } from "../lib/geocoder";
 import * as pinsRepositoryModule from "../lib/pinsRepository";
+import * as tokenUsageModule from "../lib/tokenUsage";
 
 vi.mock("../lib/pinsRepository", () => ({
   fetchPins: vi.fn(),
   upsertPins: vi.fn(),
   updatePinFields: vi.fn(),
   deletePin: vi.fn(),
+}));
+
+vi.mock("../lib/tokenUsage", () => ({
+  incrementPlacesPinned: vi.fn(),
 }));
 
 afterEach(() => {
@@ -1126,6 +1131,58 @@ describe("useGeocoder persistence", () => {
         category: "visited",
       },
     ]);
+  });
+
+  it("pinPlace calls incrementPlacesPinned(1) when userId is set", async () => {
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue([]);
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+
+    expect(tokenUsageModule.incrementPlacesPinned).toHaveBeenCalledWith(1);
+  });
+
+  it("pinPlaces calls incrementPlacesPinned with the geocoded count when userId is set", async () => {
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue([]);
+    vi.spyOn(geocoderModule, "geocodeBatch").mockResolvedValue({
+      pinned: [paris],
+      failed: [],
+    });
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    await act(async () => {
+      await result.current.pinPlaces("Paris");
+    });
+
+    expect(tokenUsageModule.incrementPlacesPinned).toHaveBeenCalledWith(1);
+  });
+
+  it("pinPlaces calls incrementPlacesPinned with the explicit-coordinate count when userId is set", async () => {
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue([]);
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    await act(async () => {
+      await result.current.pinPlaces("Somewhere, 25.28,51.36");
+    });
+
+    expect(tokenUsageModule.incrementPlacesPinned).toHaveBeenCalledWith(1);
   });
 
   it("pinPlace does not call upsertPins when there is no userId", async () => {

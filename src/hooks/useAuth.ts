@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabaseClient";
+import { incrementLogin } from "../lib/tokenUsage";
 
 export type AuthStatus = "loading" | "signed-out" | "signed-in";
 
@@ -45,11 +46,14 @@ export function useAuth(): UseAuthResult {
   }, []);
 
   const verifyOtp = useCallback(async (email: string, code: string) => {
-    const { error } = await supabase.auth.verifyOtp({
+    const { data, error } = await supabase.auth.verifyOtp({
       email,
       token: code,
       type: "email",
     });
+    if (!error && data.session) {
+      void incrementLogin();
+    }
     return { error: error ? error.message : null };
   }, []);
 
