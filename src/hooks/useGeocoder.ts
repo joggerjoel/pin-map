@@ -160,21 +160,73 @@ export function useGeocoder(
         .map((line) => processLine(line))
         .filter((processed): processed is ProcessedLine => processed !== null);
 
-      const pinnedKeys = new Set(
-        pinnedPlacesRef.current.map((place) => place.query.toLowerCase()),
+      const pinnedByKey = new Map(
+        pinnedPlacesRef.current.map((place) => [
+          place.query.toLowerCase(),
+          place,
+        ]),
       );
       const failedKeys = new Set(
         failedLinesRef.current.map((line) => line.toLowerCase()),
       );
+      // A re-pasted line for an already-pinned place is normally a no-op
+      // (avoids re-geocoding on every resubmit of the same text), but if it
+      // carries a *different* tag than the place currently has, that's a
+      // deliberate re-tag request (e.g. adding "(ski)" to a place pinned
+      // before that tag existed) — apply it without re-geocoding, since the
+      // coordinates are already known.
+      const tagUpdates: { existingQuery: string; processed: ProcessedLine }[] =
+        [];
       const newProcessedLines = processedLines.filter((processed) => {
         if (processed.explicitCoords !== undefined) {
           return true;
         }
         const key = processed.query.toLowerCase();
-        if (pinnedKeys.has(key)) return false;
+        const existing = pinnedByKey.get(key);
+        if (existing !== undefined) {
+          const hasTag =
+            processed.category !== undefined || processed.icon !== undefined;
+          if (
+            hasTag &&
+            (existing.category !== processed.category ||
+              existing.icon !== processed.icon)
+          ) {
+            tagUpdates.push({ existingQuery: existing.query, processed });
+          }
+          return false;
+        }
         if (!isRetry && failedKeys.has(key)) return false;
         return true;
       });
+
+      if (tagUpdates.length > 0) {
+        setPinnedPlaces((prev) =>
+          prev.map((place) => {
+            const match = tagUpdates.find(
+              (update) => update.existingQuery === place.query,
+            );
+            if (match === undefined) {
+              return place;
+            }
+            return {
+              ...place,
+              category: match.processed.category,
+              icon: match.processed.icon,
+              customTag: undefined,
+            };
+          }),
+        );
+        if (userId !== null) {
+          for (const { existingQuery, processed } of tagUpdates) {
+            void updatePinFields(userId, existingQuery, {
+              category: processed.category ?? null,
+              icon: processed.icon ?? null,
+              custom_tag_id: null,
+            });
+          }
+        }
+      }
+
       if (newProcessedLines.length === 0) {
         return;
       }

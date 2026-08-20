@@ -1,4 +1,5 @@
-export type IconShape = "house" | "triathlete" | "airplane" | "ski" | "none";
+export type IconShape =
+  "house" | "triathlete" | "airplane" | "ski" | "run" | "none";
 
 export interface TagAppearance {
   color: string;
@@ -6,7 +7,14 @@ export interface TagAppearance {
 }
 
 export type BuiltinTagKey =
-  "visited" | "lived" | "hometown" | "ironman" | "airport" | "current" | "ski";
+  | "visited"
+  | "lived"
+  | "hometown"
+  | "ironman"
+  | "airport"
+  | "current"
+  | "ski"
+  | "run";
 
 export const BUILTIN_TAG_KEYS: BuiltinTagKey[] = [
   "visited",
@@ -16,6 +24,7 @@ export const BUILTIN_TAG_KEYS: BuiltinTagKey[] = [
   "airport",
   "current",
   "ski",
+  "run",
 ];
 
 export const BUILTIN_TAG_LABELS: Record<BuiltinTagKey, string> = {
@@ -26,6 +35,7 @@ export const BUILTIN_TAG_LABELS: Record<BuiltinTagKey, string> = {
   airport: "Airport",
   current: "Current",
   ski: "Ski",
+  run: "Run",
 };
 
 export const BUILTIN_APPEARANCE_DEFAULTS: Record<BuiltinTagKey, TagAppearance> =
@@ -37,6 +47,7 @@ export const BUILTIN_APPEARANCE_DEFAULTS: Record<BuiltinTagKey, TagAppearance> =
     airport: { color: "#0891b2", iconShape: "airplane" },
     current: { color: "#16a34a", iconShape: "house" },
     ski: { color: "#0ea5e9", iconShape: "ski" },
+    run: { color: "#f43f5e", iconShape: "run" },
   };
 
 const STORAGE_KEY = "pin-map:tag-appearance-overrides";
@@ -47,6 +58,7 @@ function isIconShape(value: unknown): value is IconShape {
     value === "triathlete" ||
     value === "airplane" ||
     value === "ski" ||
+    value === "run" ||
     value === "none"
   );
 }

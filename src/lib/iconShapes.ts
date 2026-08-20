@@ -9,3 +9,6 @@ export const AIRPLANE_ICON_PATH =
 
 export const SKI_ICON_PATH =
   "M3.6 21.6 L21.6 3.6 L20.4 2.4 L2.4 20.4 Z M3.6 2.4 L21.6 20.4 L20.4 21.6 L2.4 3.6 Z";
+
+export const RUN_ICON_PATH =
+  "M4 6 L10 5 L15 7 L21 11 L22 14 L19 17 L3 17 L2 12 Z";

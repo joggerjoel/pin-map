@@ -10,6 +10,7 @@ import { toGeoJsonStateName } from "../lib/stateNames";
 import {
   AIRPLANE_ICON_PATH,
   HOUSE_ICON_PATH,
+  RUN_ICON_PATH,
   SKI_ICON_PATH,
   TRIATHLETE_ICON_BODY_PATH,
   TRIATHLETE_ICON_HEAD,
@@ -84,6 +85,21 @@ function createSkiIconSvg(): SVGSVGElement {
 
   const path = document.createElementNS(SVG_NS, "path");
   path.setAttribute("d", SKI_ICON_PATH);
+  path.setAttribute("fill", "#ffffff");
+  path.setAttribute("fill-opacity", "1");
+
+  svg.appendChild(path);
+  return svg;
+}
+
+function createRunIconSvg(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "16");
+  svg.setAttribute("height", "16");
+
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", RUN_ICON_PATH);
   path.setAttribute("fill", "#ffffff");
   path.setAttribute("fill-opacity", "1");
 
@@ -195,6 +211,7 @@ function resolveBuiltinKey(place: PinnedPlace): BuiltinTagKey | undefined {
   if (place.icon === "house-current") return "current";
   if (place.icon === "airplane") return "airport";
   if (place.icon === "ski") return "ski";
+  if (place.icon === "run") return "run";
   if (place.category) return place.category;
   return undefined;
 }
@@ -226,6 +243,11 @@ function buildMarkerOptionsFromAppearance(
   if (appearance.iconShape === "ski") {
     return {
       element: createIconBadgeElement(appearance.color, createSkiIconSvg()),
+    };
+  }
+  if (appearance.iconShape === "run") {
+    return {
+      element: createIconBadgeElement(appearance.color, createRunIconSvg()),
     };
   }
   return { color: appearance.color };

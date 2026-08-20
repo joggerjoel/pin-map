@@ -444,6 +444,7 @@ describe("TagPicker reordering", () => {
       "icon:airplane",
       "icon:house-current",
       "icon:ski",
+      "icon:run",
     ]);
   });
 

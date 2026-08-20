@@ -407,6 +407,88 @@ describe("useGeocoder explicit-coordinate corrections", () => {
     expect(result.current.pinnedPlaces).toEqual([tokyo]);
   });
 
+  it("applies a new tag to an already-pinned place without re-geocoding when re-pasted with a different tag", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({ pinned: [], failed: [] });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("Niseko, Japan, 42.8,140.6");
+    });
+    batchSpy.mockClear();
+
+    await act(async () => {
+      await result.current.pinPlaces("Niseko, Japan (ski)");
+    });
+
+    expect(batchSpy).not.toHaveBeenCalled();
+    expect(result.current.pinnedPlaces).toEqual([
+      expect.objectContaining({
+        query: "Niseko, Japan",
+        lat: 42.8,
+        lng: 140.6,
+        icon: "ski",
+      }),
+    ]);
+  });
+
+  it("persists a re-tag of an already-pinned place via updatePinFields, keyed on the stored query", async () => {
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue([]);
+    vi.spyOn(geocoderModule, "geocodeBatch").mockResolvedValue({
+      pinned: [],
+      failed: [],
+    });
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.pinPlaces("Niseko, Japan, 42.8,140.6");
+    });
+    await act(async () => {
+      await result.current.pinPlaces("Niseko, Japan (ski)");
+    });
+
+    expect(pinsRepositoryModule.updatePinFields).toHaveBeenCalledWith(
+      "user-1",
+      "Niseko, Japan",
+      { category: null, icon: "ski", custom_tag_id: null },
+    );
+  });
+
+  it("does not re-tag when the re-pasted line carries the same tag as before", async () => {
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue([]);
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({ pinned: [], failed: [] });
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.pinPlaces("Niseko, Japan (ski), 42.8,140.6");
+    });
+    batchSpy.mockClear();
+    vi.mocked(pinsRepositoryModule.updatePinFields).mockClear();
+
+    await act(async () => {
+      await result.current.pinPlaces("Niseko, Japan (ski)");
+    });
+
+    expect(batchSpy).not.toHaveBeenCalled();
+    expect(pinsRepositoryModule.updatePinFields).not.toHaveBeenCalled();
+  });
+
   it("replaces category/icon/date entirely from the new line when updating a pinned place", async () => {
     const batchSpy = vi.spyOn(geocoderModule, "geocodeBatch");
 
