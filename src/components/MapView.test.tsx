@@ -1418,7 +1418,13 @@ describe("MapView declutter", () => {
     expect(afterSecondMove).toEqual(afterFirstMove);
   });
 
-  it("skips decluttering and resets any nudge below the minimum zoom", async () => {
+  it("still declutters a genuinely close pair at a low (globe-view) zoom", async () => {
+    // A dense local cluster (e.g. several pins in Europe) must stay
+    // clickable even at the initial globe view — decluttering used to be
+    // disabled below zoom 4 specifically to avoid chaining pins across
+    // continents, but computeDeclutterOffsets already guards against that
+    // via MAX_CLUSTER_MEMBERS/MAX_CLUSTER_DIAGONAL, so the zoom cutoff was
+    // only ever hiding genuinely nearby pins from each other too.
     render(
       <MapView
         token="pk.test"
@@ -1433,9 +1439,6 @@ describe("MapView declutter", () => {
       />,
     );
     const map = instances[0];
-    // Confirm the pair actually got nudged at the default (zoomed-in) test
-    // zoom, so the assertions below are a real before/after, not a no-op.
-    expect(markerInstances[0]?.lngLat).not.toEqual([closeA.lng, closeA.lat]);
 
     if (map) map.zoom = 2;
     map?.triggerMove();
@@ -1446,12 +1449,12 @@ describe("MapView declutter", () => {
     // native rAF callback fires. Wait comfortably longer than that instead.
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    expect(markerInstances[0]?.lngLat).toEqual([closeA.lng, closeA.lat]);
-    expect(markerInstances[1]?.lngLat).toEqual([closeB.lng, closeB.lat]);
+    expect(markerInstances[0]?.lngLat).not.toEqual([closeA.lng, closeA.lat]);
+    expect(markerInstances[1]?.lngLat).not.toEqual([closeB.lng, closeB.lat]);
     const lineSource = map?.getSource("declutter-lines");
     const lastCall = lineSource?.dataCalls.at(-1) as
       { features: unknown[] } | undefined;
-    expect(lastCall?.features).toEqual([]);
+    expect(lastCall?.features.length).toBeGreaterThan(0);
   });
 });
 

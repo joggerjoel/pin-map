@@ -22,8 +22,6 @@ import type { BuiltinTagKey, TagAppearance } from "../lib/tagAppearance";
 import { computeDeclutterOffsets } from "../lib/markerDeclutter";
 import type { ScreenPoint } from "../lib/markerDeclutter";
 
-const MIN_DECLUTTER_ZOOM = 4;
-
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 // A stable reference for the default, rather than a fresh `{}` literal in
@@ -572,16 +570,6 @@ export function MapView({
       }
       const visiblePlaces = updateMarkerVisibility(currentMap);
       if (!declutterEnabled) {
-        clearDeclutter(currentMap);
-        return;
-      }
-      // Screen-pixel collision doesn't know about real-world distance — at a
-      // zoomed-out view (the whole world, or a whole continent), pins on
-      // opposite sides of the globe can land within the collision radius
-      // just because everything is visually compressed. Below this zoom,
-      // decluttering would connect places that aren't actually near each
-      // other, so skip it and leave markers at their true positions.
-      if (currentMap.getZoom() < MIN_DECLUTTER_ZOOM) {
         clearDeclutter(currentMap);
         return;
       }
