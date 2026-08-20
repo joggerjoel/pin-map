@@ -15,7 +15,7 @@ describe("PlaceInput", () => {
     );
     await user.click(screen.getByRole("button", { name: "Pin Places" }));
 
-    expect(onSubmit).toHaveBeenCalledWith("Paris\nTokyo", false);
+    expect(onSubmit).toHaveBeenCalledWith("Paris\nTokyo", false, null);
   });
 
   it("does not call onSubmit when the textarea is empty", async () => {
@@ -45,6 +45,37 @@ describe("PlaceInput", () => {
     );
     await user.click(screen.getByRole("button", { name: "Pin Places" }));
 
-    expect(onSubmit).toHaveBeenCalledWith("9 Florida X", true);
+    expect(onSubmit).toHaveBeenCalledWith("9 Florida X", true, null);
+  });
+
+  it("submits the selected continent when not in checklist mode", async () => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(<PlaceInput onSubmit={onSubmit} isLoading={false} />);
+
+    await user.selectOptions(screen.getByLabelText(/Continent/i), "europe");
+    await user.type(
+      screen.getByLabelText("Paste places, one per line"),
+      "Paris",
+    );
+    await user.click(screen.getByRole("button", { name: "Pin Places" }));
+
+    expect(onSubmit).toHaveBeenCalledWith("Paris", false, "europe");
+  });
+
+  it("ignores a selected continent when checklist mode is on", async () => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(<PlaceInput onSubmit={onSubmit} isLoading={false} />);
+
+    await user.selectOptions(screen.getByLabelText(/Continent/i), "europe");
+    await user.click(screen.getByLabelText(/Checklist mode/i));
+    await user.type(
+      screen.getByLabelText("Paste places, one per line"),
+      "9 Florida X",
+    );
+    await user.click(screen.getByRole("button", { name: "Pin Places" }));
+
+    expect(onSubmit).toHaveBeenCalledWith("9 Florida X", true, null);
   });
 });

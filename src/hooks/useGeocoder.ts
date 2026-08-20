@@ -7,6 +7,8 @@ import {
 import type { GeocodeResult } from "../lib/geocoder";
 import { parseChecklist } from "../lib/checklist";
 import type { PlaceCategory } from "../lib/checklist";
+import { getContinentBbox } from "../lib/continents";
+import type { Continent } from "../lib/continents";
 
 export interface PinnedPlace extends GeocodeResult {
   category?: PlaceCategory;
@@ -17,7 +19,11 @@ export interface UseGeocoderResult {
   failedLines: string[];
   isLoading: boolean;
   error: string | null;
-  pinPlaces: (raw: string, checklistMode?: boolean) => Promise<void>;
+  pinPlaces: (
+    raw: string,
+    checklistMode?: boolean,
+    continent?: Continent | null,
+  ) => Promise<void>;
   removePlace: (query: string) => void;
   retry: () => void;
 }
@@ -31,6 +37,7 @@ export function useGeocoder(token: string): UseGeocoderResult {
   const failedLinesRef = useRef<string[]>([]);
   const lastRawInput = useRef<string>("");
   const lastChecklistMode = useRef<boolean>(false);
+  const lastContinent = useRef<Continent | null>(null);
 
   pinnedPlacesRef.current = pinnedPlaces;
   failedLinesRef.current = failedLines;
@@ -40,9 +47,15 @@ export function useGeocoder(token: string): UseGeocoderResult {
   // a normal re-submission of the same text must not re-append duplicates,
   // but retry() must still be able to re-attempt them.
   const runPinPlaces = useCallback(
-    async (raw: string, checklistMode: boolean, isRetry: boolean) => {
+    async (
+      raw: string,
+      checklistMode: boolean,
+      continent: Continent | null,
+      isRetry: boolean,
+    ) => {
       lastRawInput.current = raw;
       lastChecklistMode.current = checklistMode;
+      lastContinent.current = continent;
 
       const checklistEntries = checklistMode ? parseChecklist(raw) : [];
       const lines = checklistMode
@@ -69,11 +82,20 @@ export function useGeocoder(token: string): UseGeocoderResult {
       setError(null);
 
       try {
-        const batch = await geocodeBatch(
-          newLines,
-          token,
-          checklistMode ? "us" : undefined,
-        );
+        const bbox =
+          !checklistMode && continent ? getContinentBbox(continent) : undefined;
+        const batch = bbox
+          ? await geocodeBatch(
+              newLines,
+              token,
+              checklistMode ? "us" : undefined,
+              bbox,
+            )
+          : await geocodeBatch(
+              newLines,
+              token,
+              checklistMode ? "us" : undefined,
+            );
         const succeededKeys = new Set(
           batch.pinned.map((place) => place.query.toLowerCase()),
         );
@@ -115,8 +137,8 @@ export function useGeocoder(token: string): UseGeocoderResult {
   );
 
   const pinPlaces = useCallback(
-    (raw: string, checklistMode = false) =>
-      runPinPlaces(raw, checklistMode, false),
+    (raw: string, checklistMode = false, continent: Continent | null = null) =>
+      runPinPlaces(raw, checklistMode, continent, false),
     [runPinPlaces],
   );
 
@@ -125,7 +147,12 @@ export function useGeocoder(token: string): UseGeocoderResult {
   }, []);
 
   const retry = useCallback(() => {
-    void runPinPlaces(lastRawInput.current, lastChecklistMode.current, true);
+    void runPinPlaces(
+      lastRawInput.current,
+      lastChecklistMode.current,
+      lastContinent.current,
+      true,
+    );
   }, [runPinPlaces]);
 
   return {

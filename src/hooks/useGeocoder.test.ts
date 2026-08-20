@@ -226,6 +226,25 @@ describe("useGeocoder in checklist mode", () => {
     expect(batchSpy).toHaveBeenCalledWith(["Paris"], "pk.test", undefined);
   });
 
+  it("passes a continent's bbox to geocodeBatch when provided", async () => {
+    const batchSpy = vi
+      .spyOn(geocoderModule, "geocodeBatch")
+      .mockResolvedValue({ pinned: [], failed: [] });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlaces("Paris", false, "europe");
+    });
+
+    expect(batchSpy).toHaveBeenCalledWith(
+      ["Paris"],
+      "pk.test",
+      undefined,
+      [-25, 34, 45, 72],
+    );
+  });
+
   it("retry re-runs the last call in the same mode it was originally called with", async () => {
     const batchSpy = vi
       .spyOn(geocoderModule, "geocodeBatch")
