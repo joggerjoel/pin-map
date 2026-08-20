@@ -536,6 +536,7 @@ body {
   width: 80px;
   height: 80px;
   object-fit: cover;
+  object-position: top;
   border-radius: 4px;
   background: #374151;
 }
@@ -692,6 +693,7 @@ body {
   width: 220px;
   height: 220px;
   object-fit: cover;
+  object-position: top;
   border-radius: 8px;
   cursor: default;
 }
