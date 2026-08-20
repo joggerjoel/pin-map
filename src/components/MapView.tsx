@@ -6,6 +6,34 @@ import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PlaceCategory } from "../lib/checklist";
 import { toGeoJsonStateName } from "../lib/stateNames";
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function createTriathleteIconSvg(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+
+  const head = document.createElementNS(SVG_NS, "circle");
+  head.setAttribute("cx", "14.5");
+  head.setAttribute("cy", "4");
+  head.setAttribute("r", "2.1");
+  head.setAttribute("fill", "#ffffff");
+  head.setAttribute("fill-opacity", "1");
+
+  const body = document.createElementNS(SVG_NS, "path");
+  body.setAttribute(
+    "d",
+    "M13.6 7.4 L9.6 9.2 L10.4 13.2 L7.2 19.6 L9.4 20.6 L12.6 14.6 L14.4 16.4 L15.8 20.6 L18 19.8 L15.8 13.6 L16.6 9.4 Z",
+  );
+  body.setAttribute("fill", "#ffffff");
+  body.setAttribute("fill-opacity", "1");
+
+  svg.appendChild(head);
+  svg.appendChild(body);
+  return svg;
+}
+
 function createTriathleteMarkerElement(): HTMLDivElement {
   const el = document.createElement("div");
   el.style.width = "32px";
@@ -15,10 +43,9 @@ function createTriathleteMarkerElement(): HTMLDivElement {
   el.style.display = "flex";
   el.style.alignItems = "center";
   el.style.justifyContent = "center";
-  el.style.fontSize = "18px";
   el.style.border = "2px solid white";
   el.style.boxShadow = "0 1px 4px rgba(0, 0, 0, 0.3)";
-  el.textContent = "🏊";
+  el.appendChild(createTriathleteIconSvg());
   return el;
 }
 
