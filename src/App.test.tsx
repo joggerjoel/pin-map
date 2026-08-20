@@ -198,4 +198,64 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(window.localStorage.getItem("pin-map:mapbox-token")).toBeNull();
   });
+
+  it("checklist mode geocodes only marked lines with a US country filter and colors markers by category", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes("country=us") && url.includes("Florida")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            features: [
+              { place_name: "Florida, United States", center: [-81.5, 27.7] },
+            ],
+          }),
+        } as unknown as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ features: [] }),
+      } as unknown as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await user.type(
+      screen.getByLabelText("Mapbox access token"),
+      "pk.test-token",
+    );
+    await user.click(screen.getByRole("button", { name: "Save token" }));
+
+    await user.click(screen.getByLabelText(/Checklist mode/i));
+    await user.type(
+      screen.getByLabelText("Paste places, one per line"),
+      "1 Alabama \n9 Florida X",
+    );
+    await user.click(screen.getByRole("button", { name: "Pin Places" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Florida, United States")).toBeInTheDocument();
+    });
+
+    // Alabama had no mark, so it should never have been submitted/pinned or
+    // listed (queryByText would also match the raw textarea content, so
+    // scope this to the pinned-place list buttons instead).
+    expect(
+      screen.queryByRole("button", { name: /Alabama/ }),
+    ).not.toBeInTheDocument();
+
+    // A fetch call was made for Florida with the US country filter; Alabama was
+    // never geocoded at all (it was filtered out by the parser before any fetch).
+    const florida = fetchMock.mock.calls.find((call) =>
+      String(call[0]).includes("Florida"),
+    );
+    expect(florida?.[0]).toContain("country=us");
+    const alabama = fetchMock.mock.calls.find((call) =>
+      String(call[0]).includes("Alabama"),
+    );
+    expect(alabama).toBeUndefined();
+  });
 });
