@@ -1,8 +1,16 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TagPicker } from "./TagPicker";
 import { getTagOrder, saveTagOrder } from "../lib/tagOrder";
+import { BUILTIN_APPEARANCE_DEFAULTS } from "../lib/tagAppearance";
+import {
+  AIRPLANE_ICON_PATH,
+  HOUSE_ICON_PATH,
+  TRIATHLETE_ICON_BODY_PATH,
+} from "../lib/iconShapes";
+
+const TEST_BUILTIN_APPEARANCE = BUILTIN_APPEARANCE_DEFAULTS;
 
 describe("TagPicker", () => {
   it("renders one button per tag option", () => {
@@ -12,6 +20,9 @@ describe("TagPicker", () => {
         onSelect={vi.fn()}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
     expect(screen.getByRole("button", { name: "Visited" })).toBeInTheDocument();
@@ -29,6 +40,9 @@ describe("TagPicker", () => {
         onSelect={vi.fn()}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
     expect(screen.getByRole("button", { name: "Hometown" })).toHaveAttribute(
@@ -48,6 +62,9 @@ describe("TagPicker", () => {
         onSelect={vi.fn()}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
     for (const name of ["Visited", "Lived", "Hometown", "Ironman"]) {
@@ -67,6 +84,9 @@ describe("TagPicker", () => {
         onSelect={onSelect}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 
@@ -83,8 +103,18 @@ describe("TagPicker", () => {
       <TagPicker
         selectedTag={null}
         onSelect={vi.fn()}
-        customTags={[{ id: "marathon", label: "Marathon", color: "#8b5cf6" }]}
+        customTags={[
+          {
+            id: "marathon",
+            label: "Marathon",
+            color: "#8b5cf6",
+            iconShape: "none",
+          },
+        ]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
     expect(
@@ -93,13 +123,21 @@ describe("TagPicker", () => {
   });
 
   it("marks a custom tag as selected when it matches selectedTag", () => {
-    const marathon = { id: "marathon", label: "Marathon", color: "#8b5cf6" };
+    const marathon = {
+      id: "marathon",
+      label: "Marathon",
+      color: "#8b5cf6",
+      iconShape: "none" as const,
+    };
     render(
       <TagPicker
         selectedTag={{ kind: "custom", value: marathon }}
         onSelect={vi.fn()}
         customTags={[marathon]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
     expect(screen.getByRole("button", { name: "Marathon" })).toHaveAttribute(
@@ -110,7 +148,12 @@ describe("TagPicker", () => {
 
   it("calls onSelect with the clicked custom tag", async () => {
     const onSelect = vi.fn();
-    const marathon = { id: "marathon", label: "Marathon", color: "#8b5cf6" };
+    const marathon = {
+      id: "marathon",
+      label: "Marathon",
+      color: "#8b5cf6",
+      iconShape: "none" as const,
+    };
     const user = userEvent.setup();
     render(
       <TagPicker
@@ -118,6 +161,9 @@ describe("TagPicker", () => {
         onSelect={onSelect}
         customTags={[marathon]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 
@@ -135,6 +181,9 @@ describe("TagPicker", () => {
         onSelect={vi.fn()}
         customTags={[]}
         onCreateCustomTag={onCreateCustomTag}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 
@@ -147,6 +196,7 @@ describe("TagPicker", () => {
     expect(onCreateCustomTag).toHaveBeenCalledWith(
       "Marathon",
       expect.any(String),
+      "none",
     );
   });
 
@@ -159,6 +209,9 @@ describe("TagPicker", () => {
         onSelect={vi.fn()}
         customTags={[]}
         onCreateCustomTag={onCreateCustomTag}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 
@@ -168,6 +221,164 @@ describe("TagPicker", () => {
     await user.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onCreateCustomTag).not.toHaveBeenCalled();
+  });
+
+  it("renders an Airport swatch (built-in #5) alongside the existing 4", () => {
+    render(
+      <TagPicker
+        selectedTag={null}
+        onSelect={vi.fn()}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
+      />,
+    );
+    for (const name of ["Visited", "Lived", "Hometown", "Ironman", "Airport"]) {
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    }
+  });
+
+  it("renders a built-in swatch's icon shape from the builtinAppearance prop", () => {
+    const appearance = {
+      ...TEST_BUILTIN_APPEARANCE,
+      hometown: { color: "#eab308", iconShape: "airplane" as const },
+    };
+    render(
+      <TagPicker
+        selectedTag={null}
+        onSelect={vi.fn()}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        builtinAppearance={appearance}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
+      />,
+    );
+    const hometownButton = screen.getByRole("button", { name: "Hometown" });
+    const path = hometownButton.querySelector("path");
+    expect(path?.getAttribute("d")).toBe(AIRPLANE_ICON_PATH);
+    expect(path?.getAttribute("d")).not.toBe(HOUSE_ICON_PATH);
+  });
+
+  it("edits a built-in tag's color and icon shape via its edit form", async () => {
+    const onEditBuiltinTag = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <TagPicker
+        selectedTag={null}
+        onSelect={vi.fn()}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={onEditBuiltinTag}
+        onEditCustomTag={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit Hometown" }));
+    const nameInput = screen.getByLabelText("Hometown name");
+    expect(nameInput).toBeDisabled();
+
+    const colorInput = screen.getByLabelText("Hometown color");
+    fireEvent.change(colorInput, { target: { value: "#123456" } });
+    const shapeSelect = screen.getByLabelText("Hometown icon shape");
+    fireEvent.change(shapeSelect, { target: { value: "airplane" } });
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onEditBuiltinTag).toHaveBeenCalledWith("hometown", {
+      color: "#123456",
+      iconShape: "airplane",
+    });
+  });
+
+  it("edits a custom tag's label, color, and icon shape via its edit form", async () => {
+    const onEditCustomTag = vi.fn();
+    const user = userEvent.setup();
+    const marathon = {
+      id: "marathon",
+      label: "Marathon",
+      color: "#8b5cf6",
+      iconShape: "none" as const,
+    };
+    render(
+      <TagPicker
+        selectedTag={null}
+        onSelect={vi.fn()}
+        customTags={[marathon]}
+        onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={onEditCustomTag}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit Marathon" }));
+    const nameInput = screen.getByLabelText("Marathon name");
+    expect(nameInput).not.toBeDisabled();
+
+    await user.clear(nameInput);
+    await user.type(nameInput, "Ultra Marathon");
+    fireEvent.change(screen.getByLabelText("Marathon color"), {
+      target: { value: "#111111" },
+    });
+    fireEvent.change(screen.getByLabelText("Marathon icon shape"), {
+      target: { value: "house" },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onEditCustomTag).toHaveBeenCalledWith("marathon", {
+      label: "Ultra Marathon",
+      color: "#111111",
+      iconShape: "house",
+    });
+  });
+
+  it("closes the edit form without calling either edit callback when Cancel is clicked", async () => {
+    const onEditBuiltinTag = vi.fn();
+    const onEditCustomTag = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <TagPicker
+        selectedTag={null}
+        onSelect={vi.fn()}
+        customTags={[]}
+        onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={onEditBuiltinTag}
+        onEditCustomTag={onEditCustomTag}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit Hometown" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByLabelText("Hometown color")).not.toBeInTheDocument();
+    expect(onEditBuiltinTag).not.toHaveBeenCalled();
+    expect(onEditCustomTag).not.toHaveBeenCalled();
+  });
+
+  it("renders a custom tag's icon shape in its swatch", () => {
+    render(
+      <TagPicker
+        selectedTag={null}
+        onSelect={vi.fn()}
+        customTags={[
+          { id: "x", label: "X", color: "#000", iconShape: "triathlete" },
+        ]}
+        onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
+      />,
+    );
+    const xButton = screen.getByRole("button", { name: "X" });
+    expect(xButton.querySelector("circle")).not.toBeNull();
+    const path = xButton.querySelector("path");
+    expect(path?.getAttribute("d")).toBe(TRIATHLETE_ICON_BODY_PATH);
   });
 });
 
@@ -184,6 +395,9 @@ describe("TagPicker reordering", () => {
         onSelect={vi.fn()}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
     const buttons = screen
@@ -204,6 +418,9 @@ describe("TagPicker reordering", () => {
         onSelect={vi.fn()}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 
@@ -218,23 +435,32 @@ describe("TagPicker reordering", () => {
     // Dragging "visited" (index 0) and dropping on "hometown" (index 2)
     // removes "visited" first, then re-inserts it at index 2 of the
     // now-shorter array — landing it directly after "hometown", ahead of
-    // "ironman". "lived" (untouched) stays in front.
+    // "ironman"/"airport". "lived" (untouched) stays in front.
     expect(getTagOrder()).toEqual([
       "category:lived",
       "category:hometown",
       "category:visited",
       "icon:triathlete",
+      "icon:airplane",
     ]);
   });
 
   it("places a custom tag's swatch after existing built-ins by default (no saved order)", () => {
-    const marathon = { id: "marathon", label: "Marathon", color: "#8b5cf6" };
+    const marathon = {
+      id: "marathon",
+      label: "Marathon",
+      color: "#8b5cf6",
+      iconShape: "none" as const,
+    };
     render(
       <TagPicker
         selectedTag={null}
         onSelect={vi.fn()}
         customTags={[marathon]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
     expect(

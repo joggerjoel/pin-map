@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AddPin } from "./AddPin";
 import * as geocoderModule from "../lib/geocoder";
 import * as mapboxTokenModule from "../lib/mapboxToken";
+import { BUILTIN_APPEARANCE_DEFAULTS } from "../lib/tagAppearance";
+
+const TEST_BUILTIN_APPEARANCE = BUILTIN_APPEARANCE_DEFAULTS;
 
 describe("AddPin", () => {
   it("defaults to the Visited icon and submits city + category", async () => {
@@ -15,6 +18,9 @@ describe("AddPin", () => {
         isLoading={false}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 
@@ -36,6 +42,9 @@ describe("AddPin", () => {
         isLoading={false}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 
@@ -58,6 +67,9 @@ describe("AddPin", () => {
         isLoading={false}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 
@@ -74,6 +86,9 @@ describe("AddPin", () => {
         isLoading={false}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 
@@ -90,6 +105,9 @@ describe("AddPin", () => {
         isLoading={true}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
     expect(screen.getByRole("button", { name: "Pinning..." })).toBeDisabled();
@@ -118,6 +136,9 @@ describe("AddPin autocomplete", () => {
         isLoading={false}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 
@@ -140,6 +161,9 @@ describe("AddPin autocomplete", () => {
         isLoading={false}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 
@@ -168,6 +192,9 @@ describe("AddPin autocomplete", () => {
         isLoading={false}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 
@@ -196,6 +223,9 @@ describe("AddPin autocomplete", () => {
         isLoading={false}
         customTags={[]}
         onCreateCustomTag={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        onEditBuiltinTag={vi.fn()}
+        onEditCustomTag={vi.fn()}
       />,
     );
 

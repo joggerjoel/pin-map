@@ -8,10 +8,13 @@ import { buildGoogleMapsUrl } from "../lib/googleMaps";
 import { resolveLocationInput } from "../lib/locationInput";
 import { toGeoJsonStateName } from "../lib/stateNames";
 import {
+  AIRPLANE_ICON_PATH,
   HOUSE_ICON_PATH,
   TRIATHLETE_ICON_BODY_PATH,
   TRIATHLETE_ICON_HEAD,
 } from "../lib/iconShapes";
+import { BUILTIN_TAG_LABELS } from "../lib/tagAppearance";
+import type { BuiltinTagKey, TagAppearance } from "../lib/tagAppearance";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -46,6 +49,21 @@ function createHouseIconSvg(): SVGSVGElement {
 
   const path = document.createElementNS(SVG_NS, "path");
   path.setAttribute("d", HOUSE_ICON_PATH);
+  path.setAttribute("fill", "#ffffff");
+  path.setAttribute("fill-opacity", "1");
+
+  svg.appendChild(path);
+  return svg;
+}
+
+function createAirplaneIconSvg(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "16");
+  svg.setAttribute("height", "16");
+
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", AIRPLANE_ICON_PATH);
   path.setAttribute("fill", "#ffffff");
   path.setAttribute("fill-opacity", "1");
 
@@ -136,66 +154,77 @@ export interface MapViewProps {
   onMarkerClick: (query: string) => void;
   onRelocate: (query: string, searchText: string) => void;
   onSetLocation: (query: string, lat: number, lng: number) => void;
+  builtinAppearance: Record<BuiltinTagKey, TagAppearance>;
 }
 
-const CATEGORY_COLORS: Record<PlaceCategory, string> = {
-  visited: "#3b82f6",
-  lived: "#f97316",
-  hometown: "#eab308",
-};
+function resolveBuiltinKey(place: PinnedPlace): BuiltinTagKey | undefined {
+  if (place.icon === "triathlete") return "ironman";
+  if (place.icon === "house-home") return "hometown";
+  if (place.icon === "house-live") return "lived";
+  if (place.icon === "airplane") return "airport";
+  if (place.category) return place.category;
+  return undefined;
+}
+
+function buildMarkerOptionsFromAppearance(
+  appearance: TagAppearance,
+): { element: HTMLDivElement } | { color: string } {
+  if (appearance.iconShape === "house") {
+    return {
+      element: createIconBadgeElement(appearance.color, createHouseIconSvg()),
+    };
+  }
+  if (appearance.iconShape === "triathlete") {
+    return {
+      element: createIconBadgeElement(
+        appearance.color,
+        createTriathleteIconSvg(),
+      ),
+    };
+  }
+  if (appearance.iconShape === "airplane") {
+    return {
+      element: createIconBadgeElement(
+        appearance.color,
+        createAirplaneIconSvg(),
+      ),
+    };
+  }
+  return { color: appearance.color };
+}
 
 function createMarkerOptions(
   place: PinnedPlace,
+  builtinAppearance: Record<BuiltinTagKey, TagAppearance>,
 ): { element: HTMLDivElement } | { color: string } | undefined {
-  if (place.icon === "triathlete") {
-    return {
-      element: createIconBadgeElement("#dc2626", createTriathleteIconSvg()),
-    };
-  }
-  if (place.icon === "house-live") {
-    return {
-      element: createIconBadgeElement(
-        CATEGORY_COLORS.visited,
-        createHouseIconSvg(),
-      ),
-    };
-  }
-  if (place.icon === "house-home" || place.category === "hometown") {
-    return {
-      element: createIconBadgeElement(
-        CATEGORY_COLORS.hometown,
-        createHouseIconSvg(),
-      ),
-    };
-  }
   if (place.customTag) {
-    return { color: place.customTag.color };
+    return buildMarkerOptionsFromAppearance({
+      color: place.customTag.color,
+      iconShape: place.customTag.iconShape,
+    });
   }
-  return place.category
-    ? { color: CATEGORY_COLORS[place.category] }
-    : undefined;
+  const builtinKey = resolveBuiltinKey(place);
+  if (builtinKey === undefined) {
+    return undefined;
+  }
+  return buildMarkerOptionsFromAppearance(builtinAppearance[builtinKey]);
 }
-
-const CATEGORY_LABELS: Record<PlaceCategory, string> = {
-  visited: "Visited",
-  lived: "Lived",
-  hometown: "Hometown",
-};
 
 const CATEGORY_ORDER: PlaceCategory[] = ["visited", "lived", "hometown"];
 
 function getPinTypeLabel(place: PinnedPlace): string | undefined {
   if (place.customTag) return place.customTag.label;
-  if (place.icon === "triathlete") return "Ironman";
-  if (place.icon === "house-home") return "Hometown";
-  if (place.icon === "house-live") return "Lived";
-  if (place.category) return CATEGORY_LABELS[place.category];
-  return undefined;
+  const builtinKey = resolveBuiltinKey(place);
+  return builtinKey ? BUILTIN_TAG_LABELS[builtinKey] : undefined;
 }
 
 type MapboxMatchExpression = ExpressionSpecification;
 
-function applyStateColors(map: mapboxgl.Map, places: PinnedPlace[]): void {
+function applyStateColors(
+  map: mapboxgl.Map,
+  places: PinnedPlace[],
+  builtinAppearance: Record<BuiltinTagKey, TagAppearance>,
+): void {
   if (!map.getLayer("us-states-fill")) return;
 
   const categorizedByState = new Map<string, PlaceCategory>();
@@ -214,7 +243,7 @@ function applyStateColors(map: mapboxgl.Map, places: PinnedPlace[]): void {
   const fillMatch: MapboxMatchExpression = ["match", ["get", "name"]];
   const outlineMatch: MapboxMatchExpression = ["match", ["get", "name"]];
   categorizedByState.forEach((category, stateName) => {
-    fillMatch.push(stateName, CATEGORY_COLORS[category]);
+    fillMatch.push(stateName, builtinAppearance[category].color);
     outlineMatch.push(stateName, "#1f2937");
   });
   fillMatch.push("rgba(0, 0, 0, 0)");
@@ -231,12 +260,16 @@ export function MapView({
   onMarkerClick,
   onRelocate,
   onSetLocation,
+  builtinAppearance,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const placesRef = useRef<PinnedPlace[]>(places);
   placesRef.current = places;
+  const builtinAppearanceRef =
+    useRef<Record<BuiltinTagKey, TagAppearance>>(builtinAppearance);
+  builtinAppearanceRef.current = builtinAppearance;
 
   const presentCategories = CATEGORY_ORDER.filter((category) =>
     places.some((place) => place.category === category),
@@ -275,7 +308,7 @@ export function MapView({
           "line-width": 1.5,
         },
       });
-      applyStateColors(map, placesRef.current);
+      applyStateColors(map, placesRef.current, builtinAppearanceRef.current);
     });
     return () => {
       map.remove();
@@ -299,7 +332,9 @@ export function MapView({
     const orderedPlaces = [...places].sort((a, b) => a.lng - b.lng);
 
     orderedPlaces.forEach((place) => {
-      const marker = new mapboxgl.Marker(createMarkerOptions(place));
+      const marker = new mapboxgl.Marker(
+        createMarkerOptions(place, builtinAppearance),
+      );
       marker
         .setLngLat([place.lng, place.lat])
         .setPopup(
@@ -327,11 +362,11 @@ export function MapView({
     }
 
     if (map.isStyleLoaded()) {
-      applyStateColors(map, places);
+      applyStateColors(map, places, builtinAppearance);
     } else {
-      map.once("load", () => applyStateColors(map, places));
+      map.once("load", () => applyStateColors(map, places, builtinAppearance));
     }
-  }, [places]);
+  }, [places, builtinAppearance]);
 
   // Depends only on `selection`, never on `places` — otherwise pinning a new
   // place would re-fire this effect and fly back to the last selection,
@@ -356,9 +391,9 @@ export function MapView({
             <div className="map-legend__item" key={category}>
               <span
                 className="map-legend__swatch"
-                style={{ backgroundColor: CATEGORY_COLORS[category] }}
+                style={{ backgroundColor: builtinAppearance[category].color }}
               />
-              <span>{CATEGORY_LABELS[category]}</span>
+              <span>{BUILTIN_TAG_LABELS[category]}</span>
             </div>
           ))}
         </div>

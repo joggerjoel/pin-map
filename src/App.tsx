@@ -13,8 +13,17 @@ import { PlaceList } from "./components/PlaceList";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { MapView } from "./components/MapView";
 import type { MapSelection } from "./components/MapView";
-import { getCustomTags, addCustomTag } from "./lib/customTags";
+import { getCustomTags, addCustomTag, updateCustomTag } from "./lib/customTags";
 import type { CustomTag } from "./lib/customTags";
+import {
+  getResolvedBuiltinAppearance,
+  saveTagAppearanceOverride,
+} from "./lib/tagAppearance";
+import type {
+  BuiltinTagKey,
+  IconShape,
+  TagAppearance,
+} from "./lib/tagAppearance";
 
 export function App() {
   const [token, setToken] = useState<string | null>(() => getMapboxToken());
@@ -27,13 +36,32 @@ export function App() {
   const [customTags, setCustomTags] = useState<CustomTag[]>(() =>
     getCustomTags(),
   );
+  const [builtinAppearance, setBuiltinAppearance] = useState<
+    Record<BuiltinTagKey, TagAppearance>
+  >(() => getResolvedBuiltinAppearance());
   const selectionNonceRef = useRef(0);
   const removalNonce = useRef(0);
   const geocoder = useGeocoder(token ?? "");
   const sidebarLayout = useSidebarLayout();
 
-  function handleCreateCustomTag(label: string, color: string) {
-    setCustomTags(addCustomTag(label, color));
+  function handleCreateCustomTag(
+    label: string,
+    color: string,
+    iconShape: IconShape,
+  ) {
+    setCustomTags(addCustomTag(label, color, iconShape));
+  }
+
+  function handleEditBuiltinTag(key: BuiltinTagKey, appearance: TagAppearance) {
+    saveTagAppearanceOverride(key, appearance);
+    setBuiltinAppearance(getResolvedBuiltinAppearance());
+  }
+
+  function handleEditCustomTag(
+    id: string,
+    updates: { label: string; color: string; iconShape: IconShape },
+  ) {
+    setCustomTags(updateCustomTag(id, updates));
   }
 
   // Selecting a place is modeled as a one-shot event (a nonce, not just the
@@ -104,6 +132,9 @@ export function App() {
           isLoading={geocoder.isLoading}
           customTags={customTags}
           onCreateCustomTag={handleCreateCustomTag}
+          builtinAppearance={builtinAppearance}
+          onEditBuiltinTag={handleEditBuiltinTag}
+          onEditCustomTag={handleEditCustomTag}
         />
         <PlaceInput
           onSubmit={geocoder.pinPlaces}
@@ -129,6 +160,9 @@ export function App() {
           onReorder={geocoder.reorderPlaces}
           onRelocate={geocoder.relocatePlace}
           onSetLocation={geocoder.setLocation}
+          builtinAppearance={builtinAppearance}
+          onEditBuiltinTag={handleEditBuiltinTag}
+          onEditCustomTag={handleEditCustomTag}
         />
       </aside>
       <div
@@ -146,6 +180,7 @@ export function App() {
           onMarkerClick={setHighlightedQuery}
           onRelocate={geocoder.relocatePlace}
           onSetLocation={geocoder.setLocation}
+          builtinAppearance={builtinAppearance}
         />
       </main>
     </div>

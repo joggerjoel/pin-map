@@ -50,4 +50,13 @@ describe("extractPlaceIcon", () => {
       icon: "house-live",
     });
   });
+
+  it("extracts the air tag and strips it from the query", () => {
+    expect(
+      extractPlaceIcon("Newark Liberty International Airport, USA (air)"),
+    ).toEqual({
+      query: "Newark Liberty International Airport, USA",
+      icon: "airplane",
+    });
+  });
 });

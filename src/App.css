@@ -230,6 +230,37 @@ body {
   border-color: #ffffff;
 }
 
+.tag-picker__option {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.tag-picker__edit {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: #444;
+  color: #fff;
+  font-size: 0.6rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin-left: -6px;
+}
+
+.tag-picker__edit-form {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0;
+}
+
+.tag-picker__edit-form input[type="text"] {
+  width: 80px;
+}
+
 .tag-picker__add {
   width: 28px;
   height: 28px;

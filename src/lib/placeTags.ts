@@ -1,9 +1,10 @@
-export type PlaceIcon = "triathlete" | "house-home" | "house-live";
+export type PlaceIcon = "triathlete" | "house-home" | "house-live" | "airplane";
 
 const TAG_ICONS: Record<string, PlaceIcon> = {
   ironman: "triathlete",
   home: "house-home",
   live: "house-live",
+  air: "airplane",
 };
 
 export interface ParsedTag {

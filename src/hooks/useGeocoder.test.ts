@@ -831,7 +831,7 @@ describe("changeTag", () => {
       lat: 42.36,
     });
 
-    const marathon = { id: "marathon", label: "Marathon", color: "#8b5cf6" };
+    const marathon = { id: "marathon", label: "Marathon", color: "#8b5cf6", iconShape: "none" as const };
     const { result } = renderHook(() => useGeocoder("pk.test"));
 
     await act(async () => {

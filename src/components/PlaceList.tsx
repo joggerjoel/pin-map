@@ -6,6 +6,11 @@ import type { CustomTag } from "../lib/customTags";
 import { buildGoogleMapsUrl } from "../lib/googleMaps";
 import { resolveLocationInput } from "../lib/locationInput";
 import { TagPicker } from "./TagPicker";
+import type {
+  BuiltinTagKey,
+  IconShape,
+  TagAppearance,
+} from "../lib/tagAppearance";
 
 export interface PlaceListProps {
   pinnedPlaces: PinnedPlace[];
@@ -18,10 +23,20 @@ export interface PlaceListProps {
   ) => void;
   highlightedQuery: string | null;
   customTags: CustomTag[];
-  onCreateCustomTag: (label: string, color: string) => void;
+  onCreateCustomTag: (
+    label: string,
+    color: string,
+    iconShape: IconShape,
+  ) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
   onRelocate: (query: string, searchText: string) => void;
   onSetLocation: (query: string, lat: number, lng: number) => void;
+  builtinAppearance: Record<BuiltinTagKey, TagAppearance>;
+  onEditBuiltinTag: (key: BuiltinTagKey, appearance: TagAppearance) => void;
+  onEditCustomTag: (
+    id: string,
+    updates: { label: string; color: string; iconShape: IconShape },
+  ) => void;
 }
 
 export function PlaceList({
@@ -36,6 +51,9 @@ export function PlaceList({
   onReorder,
   onRelocate,
   onSetLocation,
+  builtinAppearance,
+  onEditBuiltinTag,
+  onEditCustomTag,
 }: PlaceListProps) {
   const itemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null);
@@ -172,6 +190,9 @@ export function PlaceList({
                 }}
                 customTags={customTags}
                 onCreateCustomTag={onCreateCustomTag}
+                builtinAppearance={builtinAppearance}
+                onEditBuiltinTag={onEditBuiltinTag}
+                onEditCustomTag={onEditCustomTag}
               />
             )}
             {expandedQuery === place.query && (

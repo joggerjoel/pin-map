@@ -2,6 +2,10 @@ import { fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MapView } from "./MapView";
 import type { GeocodeResult } from "../lib/geocoder";
+import { BUILTIN_APPEARANCE_DEFAULTS } from "../lib/tagAppearance";
+import { AIRPLANE_ICON_PATH, HOUSE_ICON_PATH } from "../lib/iconShapes";
+
+const TEST_BUILTIN_APPEARANCE = BUILTIN_APPEARANCE_DEFAULTS;
 
 const {
   instances,
@@ -160,6 +164,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     expect(instances).toHaveLength(1);
@@ -174,6 +179,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     expect(instances[0]?.flyToCalls).toEqual([
@@ -190,6 +196,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     expect(instances[0]?.fitBoundsCalls).toHaveLength(1);
@@ -204,6 +211,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const flyToCalls = instances[0]?.flyToCalls ?? [];
@@ -222,6 +230,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
@@ -234,6 +243,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
 
@@ -250,6 +260,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
@@ -268,6 +279,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
 
@@ -285,6 +297,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     expect(markerInstances[0]?.element.title).toBe("Hometown");
@@ -293,7 +306,12 @@ describe("MapView", () => {
   it("sets the marker's title to a custom tag's label", () => {
     const tagged = {
       ...paris,
-      customTag: { id: "marathon", label: "Marathon", color: "#8b5cf6" },
+      customTag: {
+        id: "marathon",
+        label: "Marathon",
+        color: "#8b5cf6",
+        iconShape: "none" as const,
+      },
     };
     render(
       <MapView
@@ -303,6 +321,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     expect(markerInstances[0]?.element.title).toBe("Marathon");
@@ -317,6 +336,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     expect(markerInstances[0]?.element.title).toBe("");
@@ -332,6 +352,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     expect(markerInstances[0]?.options).toEqual({ color: "#3b82f6" });
@@ -347,6 +368,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const marker = markerInstances[0];
@@ -364,6 +386,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const marker = markerInstances[0];
@@ -371,7 +394,10 @@ describe("MapView", () => {
     expect(marker?.options?.color).toBeUndefined();
   });
 
-  it("renders a custom house marker element for a place tagged with the live icon", () => {
+  it("colors a marker with the 'lived' appearance for a place tagged with the live icon", () => {
+    // "house-live" resolves to the "lived" builtin key, whose default
+    // appearance has iconShape "none" — so it renders as a plain colored
+    // dot (the lived color), not a house-badge element.
     const tagged = { ...paris, icon: "house-live" as const };
     render(
       <MapView
@@ -381,11 +407,13 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const marker = markerInstances[0];
-    expect(marker?.options?.element).toBeInstanceOf(HTMLElement);
-    expect(marker?.options?.color).toBeUndefined();
+    expect(marker?.options).toEqual({
+      color: TEST_BUILTIN_APPEARANCE.lived.color,
+    });
   });
 
   it("renders a custom house marker element for a hometown place", () => {
@@ -398,6 +426,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const marker = markerInstances[0];
@@ -408,7 +437,12 @@ describe("MapView", () => {
   it("colors a marker using a custom tag's color", () => {
     const tagged = {
       ...paris,
-      customTag: { id: "marathon", label: "Marathon", color: "#8b5cf6" },
+      customTag: {
+        id: "marathon",
+        label: "Marathon",
+        color: "#8b5cf6",
+        iconShape: "none" as const,
+      },
     };
     render(
       <MapView
@@ -418,6 +452,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     expect(markerInstances[0]?.options).toEqual({ color: "#8b5cf6" });
@@ -433,6 +468,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     expect(container.textContent).toContain("Visited");
@@ -449,6 +485,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     expect(container.querySelector(".map-legend")).toBeNull();
@@ -464,6 +501,7 @@ describe("MapView", () => {
         onMarkerClick={onMarkerClick}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
 
@@ -482,6 +520,7 @@ describe("MapView", () => {
         onMarkerClick={onMarkerClick}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
@@ -508,6 +547,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const map = instances[0];
@@ -521,6 +561,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
 
@@ -548,6 +589,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const map = instances[0];
@@ -569,6 +611,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     // Tokyo (lng 139.69) is listed first, Paris (lng 2.35) second — but Paris
@@ -587,6 +630,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     expect(markerInstances[0]?.lngLat).toEqual([paris.lng, paris.lat]);
@@ -602,6 +646,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const marker = markerInstances[0];
@@ -624,6 +669,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={vi.fn()}
         onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const marker = markerInstances[0];
@@ -646,6 +692,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={onRelocate}
         onSetLocation={onSetLocation}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const marker = markerInstances[0];
@@ -676,6 +723,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={onRelocate}
         onSetLocation={onSetLocation}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const marker = markerInstances[0];
@@ -701,6 +749,7 @@ describe("MapView", () => {
         onMarkerClick={vi.fn()}
         onRelocate={onRelocate}
         onSetLocation={onSetLocation}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
       />,
     );
     const marker = markerInstances[0];
@@ -713,5 +762,118 @@ describe("MapView", () => {
 
     expect(onRelocate).not.toHaveBeenCalled();
     expect(onSetLocation).not.toHaveBeenCalled();
+  });
+
+  it("renders a place's marker using a custom builtinAppearance prop's color/iconShape", () => {
+    const home = { ...paris, category: "hometown" as const };
+    const customAppearance = {
+      ...TEST_BUILTIN_APPEARANCE,
+      hometown: { color: "#123456", iconShape: "airplane" as const },
+    };
+    render(
+      <MapView
+        token="pk.test"
+        places={[home]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={customAppearance}
+      />,
+    );
+    const marker = markerInstances[0];
+    const element = marker?.options?.element as HTMLDivElement;
+    expect(element.style.background).toContain("18, 52, 86");
+    const path = element.querySelector("path");
+    expect(path?.getAttribute("d")).toBe(AIRPLANE_ICON_PATH);
+    expect(path?.getAttribute("d")).not.toBe(HOUSE_ICON_PATH);
+  });
+
+  it("re-renders an existing marker's appearance when builtinAppearance changes", () => {
+    const home = { ...paris, category: "hometown" as const };
+    const { rerender } = render(
+      <MapView
+        token="pk.test"
+        places={[home]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    const originalElement = markerInstances[0]?.options
+      ?.element as HTMLDivElement;
+    const originalBackground = originalElement.style.background;
+
+    const changedAppearance = {
+      ...TEST_BUILTIN_APPEARANCE,
+      hometown: { color: "#654321", iconShape: "house" as const },
+    };
+    rerender(
+      <MapView
+        token="pk.test"
+        places={[home]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={changedAppearance}
+      />,
+    );
+
+    const updatedElement = markerInstances[markerInstances.length - 1]?.options
+      ?.element as HTMLDivElement;
+    expect(updatedElement.style.background).not.toBe(originalBackground);
+    expect(updatedElement.style.background).toContain("101, 67, 33");
+  });
+
+  it("renders a place with icon 'airplane' using the airport key's appearance, with title Airport", () => {
+    const tagged = { ...paris, icon: "airplane" as const };
+    render(
+      <MapView
+        token="pk.test"
+        places={[tagged]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    const marker = markerInstances[0];
+    const element = marker?.options?.element as HTMLDivElement;
+    const path = element.querySelector("path");
+    expect(path?.getAttribute("d")).toBe(AIRPLANE_ICON_PATH);
+    expect(marker?.element.title).toBe("Airport");
+  });
+
+  it("renders a custom tag's badge with its color and icon glyph when it has an iconShape", () => {
+    const tagged = {
+      ...paris,
+      customTag: {
+        id: "x",
+        label: "X",
+        color: "#00ff00",
+        iconShape: "triathlete" as const,
+      },
+    };
+    render(
+      <MapView
+        token="pk.test"
+        places={[tagged]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+      />,
+    );
+    const marker = markerInstances[0];
+    const element = marker?.options?.element as HTMLDivElement;
+    expect(element).toBeInstanceOf(HTMLElement);
+    expect(element.style.background).toContain("0, 255, 0");
+    expect(element.querySelector("circle")).not.toBeNull();
+    expect(marker?.options?.color).toBeUndefined();
   });
 });

@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { TagPicker, TAG_OPTIONS } from "./TagPicker";
+import { TagPicker, DEFAULT_TAG } from "./TagPicker";
 import type { PinTag } from "./TagPicker";
 import { searchPlaces } from "../lib/geocoder";
 import type { GeocodeResult } from "../lib/geocoder";
 import { getMapboxToken } from "../lib/mapboxToken";
 import type { CustomTag } from "../lib/customTags";
+import type {
+  BuiltinTagKey,
+  IconShape,
+  TagAppearance,
+} from "../lib/tagAppearance";
 
 export type { PinTag };
 
@@ -13,7 +18,17 @@ export interface AddPinProps {
   onAdd: (city: string, tag: PinTag) => void;
   isLoading: boolean;
   customTags: CustomTag[];
-  onCreateCustomTag: (label: string, color: string) => void;
+  onCreateCustomTag: (
+    label: string,
+    color: string,
+    iconShape: IconShape,
+  ) => void;
+  builtinAppearance: Record<BuiltinTagKey, TagAppearance>;
+  onEditBuiltinTag: (key: BuiltinTagKey, appearance: TagAppearance) => void;
+  onEditCustomTag: (
+    id: string,
+    updates: { label: string; color: string; iconShape: IconShape },
+  ) => void;
 }
 
 export function AddPin({
@@ -21,9 +36,12 @@ export function AddPin({
   isLoading,
   customTags,
   onCreateCustomTag,
+  builtinAppearance,
+  onEditBuiltinTag,
+  onEditCustomTag,
 }: AddPinProps) {
   const [city, setCity] = useState("");
-  const [selectedTag, setSelectedTag] = useState<PinTag>(TAG_OPTIONS[0].tag);
+  const [selectedTag, setSelectedTag] = useState<PinTag>(DEFAULT_TAG);
   const [suggestions, setSuggestions] = useState<GeocodeResult[]>([]);
   const latestQueryRef = useRef("");
   const suppressNextFetchRef = useRef(false);
@@ -108,6 +126,9 @@ export function AddPin({
         onSelect={setSelectedTag}
         customTags={customTags}
         onCreateCustomTag={onCreateCustomTag}
+        builtinAppearance={builtinAppearance}
+        onEditBuiltinTag={onEditBuiltinTag}
+        onEditCustomTag={onEditCustomTag}
       />
       <button type="submit" disabled={isLoading}>
         {isLoading ? "Pinning..." : "Pin it"}
