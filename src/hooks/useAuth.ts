@@ -7,6 +7,7 @@ export type AuthStatus = "loading" | "signed-out" | "signed-in";
 export interface UseAuthResult {
   status: AuthStatus;
   email: string | null;
+  userId: string | null;
   sendOtp: (email: string) => Promise<{ error: string | null }>;
   verifyOtp: (email: string, code: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -59,6 +60,7 @@ export function useAuth(): UseAuthResult {
   return {
     status,
     email: session?.user.email ?? null,
+    userId: session?.user.id ?? null,
     sendOtp,
     verifyOtp,
     signOut,

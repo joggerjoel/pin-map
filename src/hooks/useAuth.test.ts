@@ -16,8 +16,8 @@ vi.mock("../lib/supabaseClient", () => ({
   },
 }));
 
-function mockSession(email: string): Session {
-  return { user: { email } } as unknown as Session;
+function mockSession(email: string, id = "user-1"): Session {
+  return { user: { email, id } } as unknown as Session;
 }
 
 function defaultOnAuthStateChange() {
@@ -41,6 +41,7 @@ describe("useAuth", () => {
       expect(result.current.status).toBe("signed-out");
     });
     expect(result.current.email).toBeNull();
+    expect(result.current.userId).toBeNull();
   });
 
   it("resolves to signed-in with the session's user email when a session exists", async () => {
@@ -55,6 +56,7 @@ describe("useAuth", () => {
       expect(result.current.status).toBe("signed-in");
     });
     expect(result.current.email).toBe("a@b.com");
+    expect(result.current.userId).toBe("user-1");
   });
 
   it("updates status and email when onAuthStateChange fires with a new session", async () => {
@@ -82,11 +84,12 @@ describe("useAuth", () => {
     });
 
     act(() => {
-      capturedCallback?.("SIGNED_IN", mockSession("c@d.com"));
+      capturedCallback?.("SIGNED_IN", mockSession("c@d.com", "user-2"));
     });
 
     expect(result.current.status).toBe("signed-in");
     expect(result.current.email).toBe("c@d.com");
+    expect(result.current.userId).toBe("user-2");
   });
 
   it("sendOtp calls signInWithOtp with shouldCreateUser and returns no error on success", async () => {

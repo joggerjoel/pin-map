@@ -4,6 +4,14 @@ import { useGeocoder } from "./useGeocoder";
 import * as geocoderModule from "../lib/geocoder";
 import { GeocodeAllFailedError } from "../lib/geocoder";
 import type { GeocodeResult } from "../lib/geocoder";
+import * as pinsRepositoryModule from "../lib/pinsRepository";
+
+vi.mock("../lib/pinsRepository", () => ({
+  fetchPins: vi.fn(),
+  upsertPins: vi.fn(),
+  updatePinFields: vi.fn(),
+  deletePin: vi.fn(),
+}));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -831,7 +839,12 @@ describe("changeTag", () => {
       lat: 42.36,
     });
 
-    const marathon = { id: "marathon", label: "Marathon", color: "#8b5cf6", iconShape: "none" as const };
+    const marathon = {
+      id: "marathon",
+      label: "Marathon",
+      color: "#8b5cf6",
+      iconShape: "none" as const,
+    };
     const { result } = renderHook(() => useGeocoder("pk.test"));
 
     await act(async () => {
@@ -1028,5 +1041,209 @@ describe("reorderPlaces", () => {
     });
 
     expect(result.current.pinnedPlaces.map((p) => p.query)).toEqual(["Paris"]);
+  });
+});
+
+describe("useGeocoder persistence", () => {
+  it("calls fetchPins with the signed-in userId on mount and reflects the resolved places", async () => {
+    const fixture: GeocodeResult[] = [paris];
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue(fixture);
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(pinsRepositoryModule.fetchPins).toHaveBeenCalledWith("user-1", []);
+    expect(result.current.pinnedPlaces).toEqual(fixture);
+  });
+
+  it("falls back to the owner id when the visitor is anonymous", async () => {
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue([paris]);
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: null, ownerUserId: "owner-1" }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(pinsRepositoryModule.fetchPins).toHaveBeenCalledWith("owner-1", []);
+    expect(result.current.pinnedPlaces).toEqual([paris]);
+  });
+
+  it("never calls fetchPins and stays empty with no userId or ownerUserId", async () => {
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: null, ownerUserId: null }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(pinsRepositoryModule.fetchPins).not.toHaveBeenCalled();
+    expect(result.current.pinnedPlaces).toEqual([]);
+  });
+
+  it("does not call fetchPins when no options are passed at all", async () => {
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(pinsRepositoryModule.fetchPins).not.toHaveBeenCalled();
+    expect(result.current.pinnedPlaces).toEqual([]);
+  });
+
+  it("pinPlace calls upsertPins with the new place when userId is set", async () => {
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue([]);
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+
+    expect(pinsRepositoryModule.upsertPins).toHaveBeenCalledWith("user-1", [
+      {
+        query: "Paris",
+        name: "Paris, France",
+        lng: 2.35,
+        lat: 48.86,
+        category: "visited",
+      },
+    ]);
+  });
+
+  it("pinPlace does not call upsertPins when there is no userId", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+
+    const { result } = renderHook(() => useGeocoder("pk.test"));
+
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+
+    expect(pinsRepositoryModule.upsertPins).not.toHaveBeenCalled();
+  });
+
+  it("removePlace calls deletePin with the userId and query", async () => {
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue([]);
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+    act(() => {
+      result.current.removePlace("Paris");
+    });
+
+    expect(pinsRepositoryModule.deletePin).toHaveBeenCalledWith(
+      "user-1",
+      "Paris",
+    );
+  });
+
+  it("changeTag calls updatePinFields with category/icon/custom_tag_id", async () => {
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue([]);
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+    act(() => {
+      result.current.changeTag("Paris", { category: "hometown" });
+    });
+
+    expect(pinsRepositoryModule.updatePinFields).toHaveBeenCalledWith(
+      "user-1",
+      "Paris",
+      { category: "hometown", icon: null, custom_tag_id: null },
+    );
+  });
+
+  it("setLocation calls updatePinFields with lat/lng", async () => {
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue([]);
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    await act(async () => {
+      await result.current.pinPlace("Paris", { category: "visited" });
+    });
+    act(() => {
+      result.current.setLocation("Paris", 10, 20);
+    });
+
+    expect(pinsRepositoryModule.updatePinFields).toHaveBeenCalledWith(
+      "user-1",
+      "Paris",
+      { lat: 10, lng: 20 },
+    );
+  });
+
+  it("re-fetches pins when userId changes across a re-render", async () => {
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue([]);
+
+    const { rerender } = renderHook(
+      ({ userId }: { userId: string | null }) =>
+        useGeocoder("pk.test", { userId }),
+      { initialProps: { userId: "user-1" } },
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(pinsRepositoryModule.fetchPins).toHaveBeenCalledWith("user-1", []);
+
+    rerender({ userId: "user-2" });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(pinsRepositoryModule.fetchPins).toHaveBeenCalledWith("user-2", []);
   });
 });

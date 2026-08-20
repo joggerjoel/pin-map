@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearMapboxToken,
   getMapboxToken,
@@ -7,6 +7,7 @@ import {
 import { useGeocoder } from "./hooks/useGeocoder";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
 import { useAuth } from "./hooks/useAuth";
+import { fetchOwnerId } from "./lib/pinsRepository";
 import { TokenSetup } from "./components/TokenSetup";
 import { LoginForm } from "./components/LoginForm";
 import { AddPin } from "./components/AddPin";
@@ -48,11 +49,21 @@ export function App() {
   const [declutterEnabled, setDeclutterEnabled] = useState<boolean>(() =>
     getDeclutterEnabled(),
   );
+  const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
   const selectionNonceRef = useRef(0);
   const removalNonce = useRef(0);
-  const geocoder = useGeocoder(token ?? "");
   const sidebarLayout = useSidebarLayout();
   const auth = useAuth();
+
+  useEffect(() => {
+    fetchOwnerId().then(setOwnerUserId);
+  }, []);
+
+  const geocoder = useGeocoder(token ?? "", {
+    userId: auth.status === "signed-in" ? auth.userId : null,
+    ownerUserId,
+    customTags,
+  });
 
   function handleCreateCustomTag(
     label: string,

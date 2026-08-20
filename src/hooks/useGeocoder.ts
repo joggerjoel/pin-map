@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   GeocodeAllFailedError,
   geocodeBatch,
@@ -15,6 +15,12 @@ import type { PlaceIcon } from "../lib/placeTags";
 import type { CustomTag } from "../lib/customTags";
 import { extractDatePrefix } from "../lib/datePrefix";
 import { resolvePlainLineName } from "../lib/plainLineName";
+import {
+  fetchPins,
+  upsertPins,
+  updatePinFields,
+  deletePin,
+} from "../lib/pinsRepository";
 
 export interface PinnedPlace extends GeocodeResult {
   category?: PlaceCategory;
@@ -99,7 +105,17 @@ export interface UseGeocoderResult {
   setLocation: (query: string, lat: number, lng: number) => void;
 }
 
-export function useGeocoder(token: string): UseGeocoderResult {
+export interface UseGeocoderOptions {
+  userId?: string | null;
+  ownerUserId?: string | null;
+  customTags?: CustomTag[];
+}
+
+export function useGeocoder(
+  token: string,
+  options: UseGeocoderOptions = {},
+): UseGeocoderResult {
+  const { userId = null, ownerUserId = null, customTags = [] } = options;
   const [pinnedPlaces, setPinnedPlaces] = useState<PinnedPlace[]>([]);
   const [failedLines, setFailedLines] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -111,6 +127,24 @@ export function useGeocoder(token: string): UseGeocoderResult {
 
   pinnedPlacesRef.current = pinnedPlaces;
   failedLinesRef.current = failedLines;
+
+  useEffect(() => {
+    const targetUserId = userId ?? ownerUserId;
+    if (targetUserId === null) {
+      setPinnedPlaces([]);
+      return;
+    }
+    let cancelled = false;
+    fetchPins(targetUserId, customTags).then((fetched) => {
+      if (!cancelled) {
+        setPinnedPlaces(fetched);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, ownerUserId]);
 
   // Shared by pinPlaces (normal submission) and retry (re-attempts failures).
   // `isRetry` controls whether lines already in failedLines are skipped:
@@ -195,6 +229,20 @@ export function useGeocoder(token: string): UseGeocoderResult {
         setFailedLines((prev) =>
           prev.filter((line) => !explicitKeys.has(line.toLowerCase())),
         );
+        if (userId !== null) {
+          void upsertPins(
+            userId,
+            explicitLines.map((processed) => ({
+              query: processed.query,
+              name: processed.query,
+              lat: processed.explicitCoords.lat,
+              lng: processed.explicitCoords.lng,
+              category: processed.category,
+              icon: processed.icon,
+              date: processed.date,
+            })),
+          );
+        }
       }
 
       if (linesToGeocode.length === 0) {
@@ -230,6 +278,9 @@ export function useGeocoder(token: string): UseGeocoderResult {
           };
         });
         setPinnedPlaces((prev) => [...prev, ...newlyPinned]);
+        if (userId !== null) {
+          void upsertPins(userId, newlyPinned);
+        }
         setFailedLines((prev) => {
           const survivors = prev.filter(
             (line) => !succeededKeys.has(line.toLowerCase()),
@@ -254,7 +305,7 @@ export function useGeocoder(token: string): UseGeocoderResult {
         setIsLoading(false);
       }
     },
-    [token],
+    [token, userId],
   );
 
   const pinPlaces = useCallback(
@@ -299,6 +350,9 @@ export function useGeocoder(token: string): UseGeocoderResult {
           return;
         }
         setPinnedPlaces((prev) => [...prev, { ...result, ...tag }]);
+        if (userId !== null) {
+          void upsertPins(userId, [{ ...result, ...tag }]);
+        }
       } catch (err) {
         if (err instanceof GeocodeAllFailedError && err.isAuthError) {
           setError("That Mapbox token was rejected — check it and try again.");
@@ -311,12 +365,18 @@ export function useGeocoder(token: string): UseGeocoderResult {
         setIsLoading(false);
       }
     },
-    [token],
+    [token, userId],
   );
 
-  const removePlace = useCallback((query: string) => {
-    setPinnedPlaces((prev) => prev.filter((place) => place.query !== query));
-  }, []);
+  const removePlace = useCallback(
+    (query: string) => {
+      setPinnedPlaces((prev) => prev.filter((place) => place.query !== query));
+      if (userId !== null) {
+        void deletePin(userId, query);
+      }
+    },
+    [userId],
+  );
 
   const changeTag = useCallback(
     (
@@ -339,8 +399,15 @@ export function useGeocoder(token: string): UseGeocoderResult {
             : place,
         ),
       );
+      if (userId !== null) {
+        void updatePinFields(userId, query, {
+          category: tag.category ?? null,
+          icon: tag.icon ?? null,
+          custom_tag_id: tag.customTag?.id ?? null,
+        });
+      }
     },
-    [],
+    [userId],
   );
 
   const reorderPlaces = useCallback((fromIndex: number, toIndex: number) => {
@@ -365,13 +432,19 @@ export function useGeocoder(token: string): UseGeocoderResult {
     void runPinPlaces(lastRawInput.current, lastContinent.current, true);
   }, [runPinPlaces]);
 
-  const setLocation = useCallback((query: string, lat: number, lng: number) => {
-    setPinnedPlaces((prev) =>
-      prev.map((place) =>
-        place.query === query ? { ...place, lat, lng } : place,
-      ),
-    );
-  }, []);
+  const setLocation = useCallback(
+    (query: string, lat: number, lng: number) => {
+      setPinnedPlaces((prev) =>
+        prev.map((place) =>
+          place.query === query ? { ...place, lat, lng } : place,
+        ),
+      );
+      if (userId !== null) {
+        void updatePinFields(userId, query, { lat, lng });
+      }
+    },
+    [userId],
+  );
 
   const relocatePlace = useCallback(
     async (query: string, searchText: string) => {
@@ -399,6 +472,13 @@ export function useGeocoder(token: string): UseGeocoderResult {
               : place,
           ),
         );
+        if (userId !== null) {
+          void updatePinFields(userId, query, {
+            name: result.name,
+            lat: result.lat,
+            lng: result.lng,
+          });
+        }
       } catch (err) {
         if (err instanceof GeocodeAllFailedError && err.isAuthError) {
           setError("That Mapbox token was rejected — check it and try again.");
@@ -411,7 +491,7 @@ export function useGeocoder(token: string): UseGeocoderResult {
         setIsLoading(false);
       }
     },
-    [token],
+    [token, userId],
   );
 
   return {
