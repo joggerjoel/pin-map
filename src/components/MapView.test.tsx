@@ -34,6 +34,12 @@ const {
 
   class MockMarker {
     options: unknown;
+    clickHandler: (() => void) | null = null;
+    element = {
+      addEventListener: (event: string, handler: () => void) => {
+        if (event === "click") this.clickHandler = handler;
+      },
+    };
 
     constructor(options?: unknown) {
       this.options = options;
@@ -49,6 +55,9 @@ const {
       return this;
     }
     remove(): void {}
+    getElement(): MockMarker["element"] {
+      return this.element;
+    }
   }
 
   class MockPopup {
@@ -103,12 +112,26 @@ beforeEach(() => {
 
 describe("MapView", () => {
   it("creates a map on mount", () => {
-    render(<MapView token="pk.test" places={[]} selection={null} />);
+    render(
+      <MapView
+        token="pk.test"
+        places={[]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
     expect(instances).toHaveLength(1);
   });
 
   it("flies to the single place when there is exactly one", () => {
-    render(<MapView token="pk.test" places={[paris]} selection={null} />);
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
     expect(instances[0]?.flyToCalls).toEqual([
       { center: [paris.lng, paris.lat], zoom: 10 },
     ]);
@@ -116,7 +139,12 @@ describe("MapView", () => {
 
   it("fits bounds to all places when there is more than one", () => {
     render(
-      <MapView token="pk.test" places={[paris, tokyo]} selection={null} />,
+      <MapView
+        token="pk.test"
+        places={[paris, tokyo]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
     );
     expect(instances[0]?.fitBoundsCalls).toHaveLength(1);
   });
@@ -127,6 +155,7 @@ describe("MapView", () => {
         token="pk.test"
         places={[paris, tokyo]}
         selection={{ query: "tokyo", nonce: 1 }}
+        onMarkerClick={vi.fn()}
       />,
     );
     const flyToCalls = instances[0]?.flyToCalls ?? [];
@@ -142,6 +171,7 @@ describe("MapView", () => {
         token="pk.test"
         places={[paris, tokyo]}
         selection={{ query: "tokyo", nonce: 1 }}
+        onMarkerClick={vi.fn()}
       />,
     );
     const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
@@ -151,6 +181,7 @@ describe("MapView", () => {
         token="pk.test"
         places={[paris, tokyo]}
         selection={{ query: "tokyo", nonce: 2 }}
+        onMarkerClick={vi.fn()}
       />,
     );
 
@@ -160,7 +191,12 @@ describe("MapView", () => {
   it("does not re-fly to the selection when places changes but the selection doesn't", () => {
     const selection = { query: "tokyo", nonce: 1 };
     const { rerender } = render(
-      <MapView token="pk.test" places={[paris, tokyo]} selection={selection} />,
+      <MapView
+        token="pk.test"
+        places={[paris, tokyo]}
+        selection={selection}
+        onMarkerClick={vi.fn()}
+      />,
     );
     const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
 
@@ -175,6 +211,7 @@ describe("MapView", () => {
         token="pk.test"
         places={[paris, tokyo, mountainView]}
         selection={selection}
+        onMarkerClick={vi.fn()}
       />,
     );
 
@@ -184,14 +221,26 @@ describe("MapView", () => {
 
   it("colors a marker according to its category", () => {
     const visited = { ...paris, category: "visited" as const };
-    render(<MapView token="pk.test" places={[visited]} selection={null} />);
+    render(
+      <MapView
+        token="pk.test"
+        places={[visited]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
+    );
     expect(markerInstances[0]?.options).toEqual({ color: "#3b82f6" });
   });
 
   it("shows a legend only for categories actually present", () => {
     const visited = { ...paris, category: "visited" as const };
     const { container } = render(
-      <MapView token="pk.test" places={[visited]} selection={null} />,
+      <MapView
+        token="pk.test"
+        places={[visited]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
     );
     expect(container.textContent).toContain("Visited");
     expect(container.textContent).not.toContain("Hometown");
@@ -200,8 +249,48 @@ describe("MapView", () => {
 
   it("shows no legend when no place has a category", () => {
     const { container } = render(
-      <MapView token="pk.test" places={[paris]} selection={null} />,
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+      />,
     );
     expect(container.querySelector(".map-legend")).toBeNull();
+  });
+
+  it("calls onMarkerClick with the place's query when its marker is clicked", () => {
+    const onMarkerClick = vi.fn();
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={onMarkerClick}
+      />,
+    );
+
+    markerInstances[0]?.clickHandler?.();
+
+    expect(onMarkerClick).toHaveBeenCalledWith("paris");
+  });
+
+  it("does not move the camera when a marker is clicked", () => {
+    const onMarkerClick = vi.fn();
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris, tokyo]}
+        selection={null}
+        onMarkerClick={onMarkerClick}
+      />,
+    );
+    const flyToCallsBefore = instances[0]?.flyToCalls.length ?? 0;
+    const fitBoundsCallsBefore = instances[0]?.fitBoundsCalls.length ?? 0;
+
+    markerInstances[0]?.clickHandler?.();
+
+    expect(instances[0]?.flyToCalls.length).toBe(flyToCallsBefore);
+    expect(instances[0]?.fitBoundsCalls.length).toBe(fitBoundsCallsBefore);
   });
 });

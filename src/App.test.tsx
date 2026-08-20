@@ -29,6 +29,8 @@ const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
     }
 
     class MockMarker {
+      element = { addEventListener: (): void => {} };
+
       setLngLat(): MockMarker {
         return this;
       }
@@ -39,6 +41,9 @@ const { instances, MockMap, MockMarker, MockPopup, MockLngLatBounds } =
         return this;
       }
       remove(): void {}
+      getElement(): MockMarker["element"] {
+        return this.element;
+      }
     }
 
     class MockPopup {

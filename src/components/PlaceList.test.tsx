@@ -19,6 +19,7 @@ describe("PlaceList", () => {
         failedLines={[]}
         onSelect={vi.fn()}
         onRemove={vi.fn()}
+        highlightedQuery={null}
       />,
     );
     expect(screen.getByText("Paris, France")).toBeInTheDocument();
@@ -33,6 +34,7 @@ describe("PlaceList", () => {
         failedLines={[]}
         onSelect={onSelect}
         onRemove={vi.fn()}
+        highlightedQuery={null}
       />,
     );
 
@@ -50,6 +52,7 @@ describe("PlaceList", () => {
         failedLines={[]}
         onSelect={vi.fn()}
         onRemove={onRemove}
+        highlightedQuery={null}
       />,
     );
 
@@ -65,6 +68,7 @@ describe("PlaceList", () => {
         failedLines={[]}
         onSelect={vi.fn()}
         onRemove={vi.fn()}
+        highlightedQuery={null}
       />,
     );
     expect(screen.queryByText("Couldn't find")).not.toBeInTheDocument();
@@ -75,9 +79,38 @@ describe("PlaceList", () => {
         failedLines={["Nowhereville"]}
         onSelect={vi.fn()}
         onRemove={vi.fn()}
+        highlightedQuery={null}
       />,
     );
     expect(screen.getByText("Couldn't find")).toBeInTheDocument();
     expect(screen.getByText("Nowhereville")).toBeInTheDocument();
+  });
+
+  it("adds a highlight class to the matching item", () => {
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        highlightedQuery="Paris"
+      />,
+    );
+    const item = screen.getByText("Paris, France").closest("li");
+    expect(item).toHaveClass("place-list__item--highlighted");
+  });
+
+  it("does not highlight anything when highlightedQuery is null", () => {
+    render(
+      <PlaceList
+        pinnedPlaces={[paris]}
+        failedLines={[]}
+        onSelect={vi.fn()}
+        onRemove={vi.fn()}
+        highlightedQuery={null}
+      />,
+    );
+    const item = screen.getByText("Paris, France").closest("li");
+    expect(item).not.toHaveClass("place-list__item--highlighted");
   });
 });

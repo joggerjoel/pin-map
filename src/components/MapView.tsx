@@ -19,6 +19,7 @@ export interface MapViewProps {
   token: string;
   places: PinnedPlace[];
   selection: MapSelection | null;
+  onMarkerClick: (query: string) => void;
 }
 
 const CATEGORY_COLORS: Record<PlaceCategory, string> = {
@@ -35,7 +36,12 @@ const CATEGORY_LABELS: Record<PlaceCategory, string> = {
 
 const CATEGORY_ORDER: PlaceCategory[] = ["visited", "lived", "hometown"];
 
-export function MapView({ token, places, selection }: MapViewProps) {
+export function MapView({
+  token,
+  places,
+  selection,
+  onMarkerClick,
+}: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
@@ -76,6 +82,9 @@ export function MapView({ token, places, selection }: MapViewProps) {
         .setLngLat([place.lng, place.lat])
         .setPopup(new mapboxgl.Popup().setText(place.name))
         .addTo(map);
+      marker.getElement().addEventListener("click", () => {
+        onMarkerClick(place.query);
+      });
       markersRef.current.set(place.query, marker);
     });
 

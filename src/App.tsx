@@ -15,6 +15,7 @@ import type { MapSelection } from "./components/MapView";
 export function App() {
   const [token, setToken] = useState<string | null>(() => getMapboxToken());
   const [selection, setSelection] = useState<MapSelection | null>(null);
+  const [highlightedQuery, setHighlightedQuery] = useState<string | null>(null);
   const selectionNonceRef = useRef(0);
   const geocoder = useGeocoder(token ?? "");
 
@@ -66,6 +67,7 @@ export function App() {
           failedLines={geocoder.failedLines}
           onSelect={handleSelect}
           onRemove={geocoder.removePlace}
+          highlightedQuery={highlightedQuery}
         />
       </aside>
       <main className="app__map">
@@ -73,6 +75,7 @@ export function App() {
           token={token}
           places={geocoder.pinnedPlaces}
           selection={selection}
+          onMarkerClick={setHighlightedQuery}
         />
       </main>
     </div>

@@ -40,3 +40,9 @@ if (!window.localStorage) {
     writable: true,
   });
 }
+
+// jsdom doesn't implement scrollIntoView; stub it so components that call it
+// (e.g. to scroll a highlighted item into view) don't throw in tests.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}

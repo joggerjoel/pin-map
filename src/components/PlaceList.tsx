@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { GeocodeResult } from "../lib/geocoder";
 
 export interface PlaceListProps {
@@ -5,6 +6,7 @@ export interface PlaceListProps {
   failedLines: string[];
   onSelect: (query: string) => void;
   onRemove: (query: string) => void;
+  highlightedQuery: string | null;
 }
 
 export function PlaceList({
@@ -12,12 +14,32 @@ export function PlaceList({
   failedLines,
   onSelect,
   onRemove,
+  highlightedQuery,
 }: PlaceListProps) {
+  const itemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
+
+  useEffect(() => {
+    if (highlightedQuery === null) return;
+    const el = itemRefs.current.get(highlightedQuery);
+    el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [highlightedQuery]);
+
   return (
     <div className="place-list">
       <ul>
         {pinnedPlaces.map((place) => (
-          <li key={place.query}>
+          <li
+            key={place.query}
+            ref={(el) => {
+              if (el) itemRefs.current.set(place.query, el);
+              else itemRefs.current.delete(place.query);
+            }}
+            className={
+              place.query === highlightedQuery
+                ? "place-list__item--highlighted"
+                : undefined
+            }
+          >
             <button
               type="button"
               className="place-list__select"
