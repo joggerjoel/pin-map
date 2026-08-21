@@ -226,6 +226,18 @@ above (§ Where the money comes from) — a live reunion is close to exactly
 the `$99–299 per event/group` case described there, not just a features
 testbed.
 
+**Until there are outside groups, reunion classmates ARE the whole current
+market** — not a beachhead sitting alongside some other active user base.
+That cuts the other way too: it's a reason _not_ to build the NOW/commerce
+layer (live-event discovery, ticket intelligence) yet either. That layer's
+"real customers" — people discovering concerts/events wherever their travel
+takes them — don't exist in the product yet. Building it now would be
+building for a market that isn't there, which is exactly the kind of
+speculative build this project avoids elsewhere. It becomes worth building
+once outside groups (a second class, a family reunion, an alumni org)
+actually broaden the user base past "one reunion's classmates" — not
+before.
+
 Practical implication: keep executing `todo.md` as written (class tenancy →
 `timeline_event` → QR badge / reunion mobile work). Treat this doc's
 roadmap as what the reunion work is _building toward architecturally_ —
