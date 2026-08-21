@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ClassMeetupMapView } from "./ClassMeetupMapView";
 import type { ClassMeetup } from "../lib/classMeetupsRepository";
 import type { RosterPerson } from "../lib/classRosterRepository";
-import type { RosterPersonPhoto } from "../lib/classRosterPhotosRepository";
 
 const { mapInstances, markerInstances, MockMap, MockMarker, MockPopup } =
   vi.hoisted(() => {
@@ -383,78 +382,6 @@ describe("ClassMeetupMapView", () => {
     expect(window.localStorage.getItem("pin-map:class-declutter-enabled")).toBe(
       "false",
     );
-  });
-
-  it("shows a Photos toggle defaulting to Original", () => {
-    render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[jane]} />);
-
-    expect(
-      screen.getByRole("button", { name: "Photos: Original" }),
-    ).toBeInTheDocument();
-  });
-
-  it("uses the official portrait for the avatar marker by default", () => {
-    const recentPhoto: RosterPersonPhoto = {
-      id: "photo-1",
-      personId: jane.id,
-      storagePath: "user-1/class-roster/belding1989/1/a.jpg",
-      year: null,
-      url: "https://cdn.example.com/recent.jpg",
-    };
-    render(
-      <ClassMeetupMapView
-        token="pk.test"
-        meetups={[]}
-        people={[jane]}
-        photosByPersonId={{ [jane.id]: [recentPhoto] }}
-      />,
-    );
-
-    const img = markerInstances[0]?.element?.querySelector("img");
-    expect(img?.src).toBe(jane.imageUrl);
-  });
-
-  it("swaps the avatar marker to the recent personal photo when toggled to Personal", async () => {
-    const recentPhoto: RosterPersonPhoto = {
-      id: "photo-1",
-      personId: jane.id,
-      storagePath: "user-1/class-roster/belding1989/1/a.jpg",
-      year: null,
-      url: "https://cdn.example.com/recent.jpg",
-    };
-    const user = userEvent.setup();
-    render(
-      <ClassMeetupMapView
-        token="pk.test"
-        meetups={[]}
-        people={[jane]}
-        photosByPersonId={{ [jane.id]: [recentPhoto] }}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Photos: Original" }));
-
-    expect(
-      screen.getByRole("button", { name: "Photos: Personal" }),
-    ).toBeInTheDocument();
-    const img =
-      markerInstances[markerInstances.length - 1]?.element?.querySelector(
-        "img",
-      );
-    expect(img?.src).toBe(recentPhoto.url);
-  });
-
-  it("falls back to the official portrait in Personal mode when no personal photo exists", async () => {
-    const user = userEvent.setup();
-    render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[jane]} />);
-
-    await user.click(screen.getByRole("button", { name: "Photos: Original" }));
-
-    const img =
-      markerInstances[markerInstances.length - 1]?.element?.querySelector(
-        "img",
-      );
-    expect(img?.src).toBe(jane.imageUrl);
   });
 
   it("links back to the travel map, labeled Personal Travel", () => {

@@ -3,7 +3,6 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { ClassMeetup } from "../lib/classMeetupsRepository";
 import type { RosterPerson } from "../lib/classRosterRepository";
-import type { RosterPersonPhoto } from "../lib/classRosterPhotosRepository";
 import { displayName } from "../lib/rosterName";
 import {
   CLASS_MAP_INITIAL_CENTER,
@@ -22,17 +21,6 @@ export interface ClassMeetupMapViewProps {
   people: RosterPerson[];
   activePersonId?: number | null;
   onAvatarClick?: (person: RosterPerson | null) => void;
-  photosByPersonId?: Record<number, RosterPersonPhoto[]>;
-}
-
-// A photo uploaded with no year attached represents "how they look now" —
-// same convention PersonPhotoModal's hover-swap uses.
-function recentPhotoUrl(
-  photosByPersonId: Record<number, RosterPersonPhoto[]> | undefined,
-  personId: number,
-): string | null {
-  const photos = photosByPersonId?.[personId] ?? [];
-  return photos.find((photo) => photo.year === null)?.url ?? null;
 }
 
 type PersonWithLivingLocation = RosterPerson & {
@@ -75,14 +63,13 @@ function createPopupContent(meetup: ClassMeetup): HTMLDivElement {
 function createAvatarMarkerElement(
   person: RosterPerson,
   isActive: boolean,
-  photoUrl: string,
 ): HTMLDivElement {
   const el = document.createElement("div");
   el.className = isActive
     ? "class-meetup-map__avatar-marker class-meetup-map__avatar-marker--active"
     : "class-meetup-map__avatar-marker";
   const img = document.createElement("img");
-  img.src = photoUrl;
+  img.src = person.imageUrl;
   img.alt = displayName(person);
   el.appendChild(img);
   return el;
@@ -109,7 +96,6 @@ export function ClassMeetupMapView({
   people,
   activePersonId = null,
   onAvatarClick,
-  photosByPersonId,
 }: ClassMeetupMapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -118,7 +104,6 @@ export function ClassMeetupMapView({
   const [declutterEnabled, setDeclutterEnabled] = useState(() =>
     getClassDeclutterEnabled(),
   );
-  const [showPersonalPhotos, setShowPersonalPhotos] = useState(false);
 
   useEffect(() => {
     if (containerRef.current === null) return;
@@ -185,13 +170,9 @@ export function ClassMeetupMapView({
     avatarMarkersRef.current.forEach((marker) => marker.remove());
     const next = new Map<string, mapboxgl.Marker>();
     people.filter(hasLivingLocation).forEach((person) => {
-      const photoUrl = showPersonalPhotos
-        ? (recentPhotoUrl(photosByPersonId, person.id) ?? person.imageUrl)
-        : person.imageUrl;
       const element = createAvatarMarkerElement(
         person,
         person.id === activePersonId,
-        photoUrl,
       );
       const marker = new mapboxgl.Marker({ element })
         .setLngLat([person.livingLng, person.livingLat])
@@ -205,13 +186,7 @@ export function ClassMeetupMapView({
       next.set(String(person.id), marker);
     });
     avatarMarkersRef.current = next;
-  }, [
-    people,
-    activePersonId,
-    onAvatarClick,
-    showPersonalPhotos,
-    photosByPersonId,
-  ]);
+  }, [people, activePersonId, onAvatarClick]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -253,14 +228,6 @@ export function ClassMeetupMapView({
           onClick={toggleDeclutter}
         >
           {declutterEnabled ? "Spider: On" : "Spider: Off"}
-        </button>
-        <button
-          type="button"
-          className="class-map__declutter-toggle"
-          aria-pressed={showPersonalPhotos}
-          onClick={() => setShowPersonalPhotos((prev) => !prev)}
-        >
-          {showPersonalPhotos ? "Photos: Personal" : "Photos: Original"}
         </button>
         <a href="/" className="class-map__declutter-toggle">
           Personal Travel

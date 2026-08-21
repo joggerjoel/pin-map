@@ -128,7 +128,6 @@ export function ClassMeetupBoard({
         people={people}
         activePersonId={activeMapPersonId}
         onAvatarClick={handleAvatarClick}
-        photosByPersonId={photosByPersonId}
       />
       <div className="class-meetup-board__drawer">
         <RosterGrid
