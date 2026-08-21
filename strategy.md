@@ -14,7 +14,7 @@ people love Pin Map.**
 That last part matters a lot. Not every emotionally valuable feature needs
 to be monetized. Some things should exist precisely because they make
 someone think: _this is where my life is, I don't want to lose this._ That
-bond is worth more than squeezing another $4.99/month out of them.
+bond is worth more than squeezing another $5/month out of them.
 
 Internally, Pin Map isn't fundamentally a mapping product — the map is the
 interface, not the product. What it's building is **a personal geographic
@@ -76,23 +76,27 @@ below for why the underlying tense axis matters more than the label does.
 
 ### How the layers map to what's already built
 
-These three layers aren't a wishlist — two of them are already live or
-already proven elsewhere, across the repos that make up this one product
-(see `mobile-infra-plan.md`'s "One product, multiple repos"):
+These three layers aren't a wishlist — each has something live or proven
+elsewhere already, across the repos that make up this one product (see
+`mobile-infra-plan.md`'s "One product, multiple repos"):
 
 - **Me** — `pin-map`'s personal travel map. Live today.
 - **People** — the class-reunion surface (live: shared meetup map, roster,
-  declutter) plus `pin-map-ios`, planned as a fork of `ivr-contacts-ios`.
+  declutter — auto-spreading overlapping pins apart so no marker hides
+  another) plus `pin-map-ios`, planned as a fork of `ivr-contacts-ios`.
   That repo's `Contact`/`ContactCircle` model (a "Circle" is conceptually a
   "Class"), its `SyncOutbox` offline write queue, `AvatarLoader`, and —
   notably — `ContactTimelineItem` are not analogues to build from scratch;
   `ContactTimelineItem` already _is_ the Person Timeline / voice-memo
   concept described elsewhere in `plan.md`. See
   `ivr-contacts-ios/pin-map-plan.md` for the full reuse plan.
-- **Now** — nothing pin-map-specific exists yet (see "Sequencing" above —
+- **Now** — nothing pin-map-specific exists yet (see "Sequencing" below —
   deliberately not building this yet), but `realtime-ivr`'s
   `voice-platform` service already runs a grounded-LLM concierge engine
-  (system prompt + grounded event inventory + LLM), proven out live via its
+  (system prompt + grounded event inventory + LLM — its replies are
+  constrained to that supplied inventory of real data rather than the
+  model's free-form knowledge, which greatly reduces — not eliminates — the
+  chance it invents an event that doesn't exist), proven out live via its
   `/ivr/simulator`. That's the shape a future "you're in NYC, here's what's
   worth going to" concierge needs — it's working today, just pointed at
   voice calls instead of trip context. `voice-platform`'s Telnyx voice
@@ -109,9 +113,9 @@ Deliberately avoid depending primarily on subscriptions.
 ### 1. Transaction revenue
 
 Live entertainment discovery creates ticket purchases — potentially the
-largest revenue source, since Pin Map is already economically involved in
-ticket markets. Surface "Great deal tonight — $42," someone buys. Revenue
-through: inventory, affiliate/referral economics, marketplace
+largest revenue source, since a trip-planning flow sits naturally upstream
+of a ticket purchase. Surface "Great deal tonight — $42," someone buys.
+Revenue through: inventory, affiliate/referral economics, marketplace
 relationships, eventually transaction fees. The user doesn't need to pay
 Pin Map anything — that's powerful.
 
@@ -135,9 +139,11 @@ Not: _"give us $5/month to put pins on a map."_ That's weak.
 ### 4. Physical products
 
 Books can exist later, but as an output of the memory system, not the
-business model. A 40-year reunion book generated automatically from
+business model. A 45-year reunion book generated automatically from
 then/now portraits, where everyone lives, reunion photos, memories, and
 the meetup map could sell extremely well — but it's ancillary revenue.
+(45 lands on the every-other-year cadence from 2026; see `plan.md` §14's
+Time Capsule for the matching "August 15, 2034" example.)
 
 ## The killer loop
 
@@ -148,10 +154,16 @@ Not isolated features — a sequence:
 3. _"6 people you know are there."_
 4. _"23 live events match your interests during your trip."_
 5. _"Two have unusually good ticket prices."_
-6. _"Lana is 1.8 miles from one of them."_
+6. _"Lana (who's opted into nearby-friend visibility) is close to one of
+   them."_ — approximate, opt-in only, per the privacy rules in `plan.md`
+   §9 (no exact live coordinates by default).
 7. Afterward: _"Add this night to your trip?"_ — tap yes.
-8. The show, person, photographs, and location permanently join your life
-   map.
+8. The show, person, photographs, and location join your life map, subject
+   to the visibility controls (`plan.md` §1.4) any location-bearing data
+   gets, and deletable per `plan.md` §16's baseline account/data-deletion
+   item. (Full data export is a separate, later capability — the Premium
+   personal archive revenue stream above — this step doesn't promise that
+   ahead of it.)
 
 ```
 PLAN
@@ -197,7 +209,10 @@ model, not nine features:
 | ---------- | ---------------- | ---------------- | ----------------- |
 | **Me**     | Places I've been | Where I am       | Upcoming trips    |
 | **People** | Who I met        | Who's nearby     | Who will be there |
-| **Events** | What I attended  | What's happening | What's scheduled  |
+| **Now**    | What I attended  | What's happening | What's scheduled  |
+
+(The Now-row × Now-column cell is deliberately the same word twice — that
+intersection literally means "what's happening right now.")
 
 Most mapping products represent _where_. Pin Map represents **where +
 when** — which is what lets it answer "what happened here?" (past),
@@ -217,11 +232,8 @@ That's distinctive. Ten million random people isn't the goal — 40
 meaningful people may be more valuable.
 
 Concretely, this means no generic `user follows user` edge in the data
-model either — every connection should carry the reason it exists
-(`relationship.context_type` / `context_id`, see `plan.md` §1.2). That also
-unlocks a query a generic social graph answers poorly: _why do I know this
-person?_ — "You met twice: Belding reunion — 2026, Chicago trip — 2031" is
-closer to externalized human memory than a friends list.
+model either — every connection should carry the reason it exists. Full
+schema and example in `plan.md` §1.2.
 
 ## Don't make the heat map the product either
 
@@ -267,30 +279,60 @@ travel map."
 
 Not DAU — this isn't TikTok, and optimizing for daily opens would push the
 product toward exactly the feed/notification patterns "Don't build a
-generic social network" above rules out. The metric that actually tracks
-the moat is something like **Life Graph Density**: how many meaningful
-connections a user has accumulated across people ↔ places ↔ events ↔
-memories. A user with 300 pins, 0 people, and 0 memories has a shallow
-graph; a user with 40 places, 18 people, 12 events, and 14 memories is
-plausibly far more attached to the product, even with fewer total pins.
+generic social network" above rules out.
 
-Candidate metric: **Connected Memories per Active User**, or **Meaningful
-Connections per User**. The hypothesis to test: retention increases as a
-user's life graph becomes more interconnected, not as raw activity
-increases. If that holds, it's a durable growth lever a competitor can't
-shortcut by copying a heat map or a UI.
+Milestone 1's actual near-term signal is simpler than a graph metric: did
+someone add a new photo, memory, or meetup 60+ days after the reunion date
+— not just log in. That's still no new instrumentation to build: photos,
+memories, and meetups already carry `created_at`, so it's a query against
+data that already exists once Milestone 1 is underway, not a raw
+login/auth-timestamp check.
+
+**Life Graph Density** is the longer-term metric this graduates into, once
+there's more than one reunion's worth of data to make it meaningful.
+Canonical name: **Life Graph Density**, tracked as **Meaningful Connections
+per User** — the count of _cross-type_ links a user has accumulated (a
+place tied to a person, a person tied to an event, a memory tied to a
+place), not a raw pin count. A user with 300 pins and nothing else attached
+to any of them has a shallow graph even though every pin is technically a
+place-connection; a user with 40 places where 18 are also tied to a person,
+12 to an event, and 14 carry a memory has a denser, more valuable graph
+with far fewer total pins. The hypothesis to test: retention tracks graph
+density, not raw activity. This gets built once Milestone 2 is in view and
+there's a second group's data to compare against — not before (`plan.md`
+§1.5).
 
 ## What to build next (reduced roadmap)
 
-1. **Personal future travel dates.** A pin/trip needs `arrive_at` /
-   `leave_at`. This is the bridge to commercial discovery.
+See "Sequencing" below for why this list's _commercial_ form doesn't start
+before Milestone 3 (item 4's classmate-scoped precedent is scheduled sooner,
+per build order item 18 — not built yet either, just not gated on
+Milestone 3). Read this list as "what Milestone 3 eventually pilots," not a
+current to-do list.
+
+1. **Personal future travel dates.** Uses `timeline_event`'s existing
+   `event_date`/`event_end_date` (`plan.md` §3), not a separate
+   `arrive_at`/`leave_at` pair. This is a genuine Milestone 3 prerequisite
+   — the funnel there starts with "trip created," and this is what creates
+   one. Not the same thing as Crossing Paths' classmate-proximity dates
+   (`plan.md` §9), which serve a different, separately-scheduled purpose
+   (see item 4 below).
 2. **Live events around current/future locations.** Not every feature —
    just: _"You're in NYC October 8–12. Here are the genuinely interesting
-   things happening."_
+   things happening."_ Genuinely new infrastructure, deferred to Milestone
+   3 (`plan.md` §1.5).
 3. **Ticket intelligence.** Tag each event: Great value / Fair / Expensive.
+   Depends on event inventory, pricing data, and an affiliate/marketplace
+   relationship that doesn't exist yet — an open business-development
+   question to resolve before attempting this (see `plan.md` §18's note:
+   it's a precondition for entering Milestone 3, not a scheduled build
+   task).
 4. **People intersection.** _"3 people you know are nearby."_ This is
-   where Pin Map starts to feel magical.
-5. **Automatic memory creation afterward.** _"You attended Fred again with
+   where Pin Map starts to feel magical. The classmate-scoped version is
+   scheduled as part of Crossing Paths' "who's around?" workflow (`plan.md`
+   §9, build order item 18 — not built yet, but not gated on Milestone 3
+   either); the commercial/general-public version is what's deferred here.
+5. **Automatic memory creation afterward.** _"You attended a show with
    Michelle in Brooklyn on Oct 10. Add it to your map?"_ This creates the
    permanent history.
 
@@ -309,10 +351,10 @@ classmates who already reconnect every other year**. That's a warm,
 recurring, known user base to build and validate against right now, not a
 hypothetical one to acquire later.
 
-It also doubles as the first real test of the "Paid groups" revenue stream
-above (§ Where the money comes from) — a live reunion is close to exactly
-the `$99–299 per event/group` case described there, not just a features
-testbed.
+It also exercises the "Paid groups" revenue stream's pricing and packaging
+operationally (§ Where the money comes from — the `$99–299 per event/group`
+case) — though, per the gap noted below, that's rehearsal, not proof that
+groups will actually pay.
 
 **Until there are outside groups, reunion classmates ARE the whole current
 market** — not a beachhead sitting alongside some other active user base.
@@ -327,7 +369,8 @@ actually broaden the user base past "one reunion's classmates" — not
 before.
 
 Practical implication: keep executing `todo.md` as written (class tenancy →
-`timeline_event` → QR badge / reunion mobile work). Treat this doc's
+role-based admin → `timeline_event` → QR badge), with `pin-map-ios` work
+running in parallel rather than after it (`plan.md` §18). Treat this doc's
 roadmap as what the reunion work is _building toward architecturally_ —
 the `timeline_event` model, the People layer, and eventually trip
 dates/discovery should all be designed so the reunion feature and this
@@ -360,9 +403,10 @@ come back after the actual reunion
 ```
 
 The last one matters most. If everyone disappears after reunion weekend,
-that's excellent event software. If people keep returning months later,
-that's the beginning of the memory network this product is actually
-betting on.
+that's excellent event software. If people keep returning months later —
+concretely, at least one new photo, memory, or meetup added 60+ days after
+the reunion date, not just an idle login — that's the beginning of the memory network
+this product is actually betting on.
 
 ### Milestone 2 — Group #2 test
 
@@ -383,22 +427,36 @@ invite members
 collect current photos/location information
 use meetup/memory functionality
 administer access
-get meaningful participation
-pay, or demonstrate credible willingness to pay
+get meaningful participation (proxy: a majority of members who joined —
+  not invited, joined — log at least one meetup or memory)
+pay, or demonstrate credible willingness to pay (a signed agreement, a
+  deposit, or an accepted invoice — "pay" does not require building
+  checkout/billing infrastructure first; `plan.md` §1.5 still applies to
+  Milestone 2 itself)
 ```
 
-This is exactly where the class-tenancy/RLS work (`plan.md` §2) stops being
-optional infrastructure and starts being the thing the whole business model
-depends on. If Milestone 2 passes, the reunion system stops being a custom
-Belding application and becomes a product.
+`plan.md` §2 already treats class-tenancy/RLS as an immediate architectural
+priority, ahead of proof it's needed — an intentional exception to §1.5,
+made because Milestone 2 depends on it entirely. This is where that bet pays
+off or doesn't: if Milestone 2 passes, the reunion system stops being a
+custom Belding application and becomes a product.
 
 ### Milestone 3 — One commercial intersection
 
-Only after Milestone 2 — not the full NOW layer, a tiny pilot of it:
+Only after Milestone 2. "Milestone 3" covers two steps, not one: first
+build items 1–2–3 above (trip dates, live-event discovery, ticket
+intelligence — the actual entry gate), then run the pilot below using
+them. Item 4 doesn't gate entry, since its classmate-scoped form is
+separately scheduled via Crossing Paths (`plan.md` §9) rather than tied to
+this milestone — though the general/commercial version this pilot needs is
+still new work, same as items 1–3.
 
 > You're visiting New York Oct 8–12. See what's happening.
 
 Measured as a funnel: trip created → events viewed → event opened → price
 checked → ticket clicked → transaction. That funnel is what tells you
 whether commerce can actually pay for Pin Map, rather than assuming it will
-because this document says it should.
+because this document says it should. The funnel's instrumentation, like
+Life Graph Density above, gets built when Milestone 3 is actually being
+attempted (`plan.md` §1.5) — not stood up speculatively while still on
+Milestone 1.
