@@ -22,9 +22,11 @@ Priority legend matches `todo.md`: **P0** architectural/security prerequisite,
 
 ## P0 — New REST API Service
 
-- [ ] Scaffold `pin-map-api` — bun/TypeScript, new repo or new directory
-      (decide which; leaning new repo to match the "different toolchain,
-      different deploy" reasoning already used for `pin-map-ios`).
+- [ ] Scaffold `pin-map-api` as its own repo (decided — see
+      `mobile-infra-plan.md`: mirrors `realtime-ivr`, which houses
+      `voice-platform` as a standalone repo, own `deploy/` and
+      `ansible.cfg`, decoupled from `ivr-contacts-ios`. Same shape here:
+      `pin-map-api` separate from both `pin-map` and `pin-map-ios`).
 - [ ] `POST /v1/auth/otp` — wraps Supabase Auth OTP send.
 - [ ] `POST /v1/auth/verify` — wraps Supabase Auth OTP verify, returns a
       bearer token (decide raw Supabase session token vs. service-issued —

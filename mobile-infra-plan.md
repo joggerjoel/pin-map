@@ -54,6 +54,13 @@ its **own** process, own container, own deploy path, sharing nothing with
 
 ## Architecture
 
+- **Its own repo**, not a directory inside `pin-map`. Precedent:
+  `realtime-ivr` — the Go monorepo housing `voice-platform` (`cmd/`,
+  `internal/`, `store/`, its own `deploy/` and `ansible.cfg`) — is a
+  standalone repo, separate from `ivr-contacts-ios` (the mobile client).
+  Client and backend-services living in separate repos is a pattern
+  already proven out in production for a directly comparable system;
+  `pin-map`/`pin-map-api`/`pin-map-ios` follows the same shape.
 - **New service**, working name `pin-map-api`. bun/TypeScript, matching this
   session's stack posture.
 - **Docker container**, own image, own name (`pin-map-api`, not to be
