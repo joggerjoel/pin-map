@@ -4,6 +4,10 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { ClassMeetup } from "../lib/classMeetupsRepository";
 import type { RosterPerson } from "../lib/classRosterRepository";
 import { displayName } from "../lib/rosterName";
+import {
+  CLASS_MAP_INITIAL_CENTER,
+  CLASS_MAP_INITIAL_ZOOM,
+} from "../lib/classMapDefaults";
 
 export interface ClassMeetupMapViewProps {
   token: string;
@@ -98,8 +102,8 @@ export function ClassMeetupMapView({
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: "mapbox://styles/mapbox/streets-v12",
-      center: [0, 20],
-      zoom: 1.5,
+      center: CLASS_MAP_INITIAL_CENTER,
+      zoom: CLASS_MAP_INITIAL_ZOOM,
     });
     mapRef.current = map;
     const resizeObserver = new ResizeObserver(() => {

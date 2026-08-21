@@ -2,6 +2,10 @@ import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { PublicRosterLocation } from "../lib/classPublicRosterRepository";
+import {
+  CLASS_MAP_INITIAL_CENTER,
+  CLASS_MAP_INITIAL_ZOOM,
+} from "../lib/classMapDefaults";
 
 export interface ClassPublicMapViewProps {
   token: string;
@@ -43,8 +47,8 @@ export function ClassPublicMapView({ token, people }: ClassPublicMapViewProps) {
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: "mapbox://styles/mapbox/streets-v12",
-      center: [0, 20],
-      zoom: 1.5,
+      center: CLASS_MAP_INITIAL_CENTER,
+      zoom: CLASS_MAP_INITIAL_ZOOM,
     });
     mapRef.current = map;
     const resizeObserver = new ResizeObserver(() => {
