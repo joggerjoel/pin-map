@@ -1,0 +1,76 @@
+---
+# Deploy pin-map to production. Wraps the exact rsync + docker build +
+# docker run steps used throughout development — same mechanics, just
+# moved out of ad-hoc shell commands and into a playbook that can only
+# ever target the `pinmap_prod` group.
+#
+# Needs inventory.local.yml with your production host under group
+# `pinmap_prod` (see inventory.example.yml — copy it and fill in your
+# real host).
+#
+#   Deploy:    cd ansible && ansible-playbook deploy.yml
+#   Dry run:   ansible-playbook deploy.yml --check --diff
+#
+# There is deliberately no "dev" target anywhere in this directory — local
+# development is `bun run dev` on your own machine, entirely outside this
+# playbook. The only host deploy.yml can ever touch is whatever's listed
+# under pinmap_prod in your inventory.
+- name: Deploy pin-map to production
+  hosts: pinmap_prod
+  gather_facts: true
+  vars:
+    remote_project_dir: "{{ ansible_env.HOME }}/Documents/Projects/pin-map"
+    local_project_dir: "{{ playbook_dir }}/.."
+    container_name: pin-map-web
+    image_name: pin-map-web:latest
+    container_port: 8090
+  tasks:
+    - name: Sync source to the server (excludes build artifacts and secrets)
+      # Explicit -e "ssh ..." (rather than relying on the control machine's
+      # ~/.ssh/config) so this works the same way regardless of local SSH
+      # config state — same reasoning as ansible_ssh_common_args below.
+      delegate_to: localhost
+      ansible.builtin.command:
+        cmd: >-
+          rsync -az --delete
+          --exclude node_modules --exclude dist --exclude .git --exclude '*.log'
+          -e "ssh {{ ansible_ssh_common_args | default('') }}"
+          {{ local_project_dir }}/
+          {{ ansible_user }}@{{ ansible_host }}:{{ remote_project_dir }}/
+      changed_when: true
+
+    - name: Build the Docker image
+      ansible.builtin.command:
+        cmd: docker build -t {{ image_name }} .
+        chdir: "{{ remote_project_dir }}"
+      changed_when: true
+
+    - name: Remove the previous container (if any)
+      ansible.builtin.command:
+        cmd: docker rm -f {{ container_name }}
+      register: rm_result
+      failed_when: false
+      changed_when: rm_result.rc == 0
+
+    - name: Start the new container
+      ansible.builtin.command:
+        cmd: >-
+          docker run -d --name {{ container_name }}
+          --restart unless-stopped
+          -p 127.0.0.1:{{ container_port }}:80
+          {{ image_name }}
+      changed_when: true
+
+  post_tasks:
+    - name: Wait for the container to answer locally
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ container_port }}/"
+        status_code: 200
+      register: health
+      retries: 10
+      delay: 2
+      until: health.status == 200
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: "pin-map deployed and healthy on 127.0.0.1:{{ container_port }}"

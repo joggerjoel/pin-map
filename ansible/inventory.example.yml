@@ -1,0 +1,25 @@
+# Example inventory — copy to inventory.local.yml and fill in your host.
+# inventory.local.yml is gitignored: real IPs, jump hosts, and usernames
+# never belong in the tracked repo (this repo is public).
+#
+#   cp inventory.example.yml inventory.local.yml
+#
+# The IP below is a documentation placeholder (RFC 5737 TEST-NET).
+#
+# There is deliberately no "dev" group here. Local development is
+# `bun run dev` on your own machine — entirely outside this inventory, so
+# there is nothing a playbook run could ever point at by mistake. The only
+# host any playbook in this directory can touch is whatever you list under
+# pinmap_prod.
+pinmap_prod:
+  hosts:
+    prodserver: { ansible_host: 192.0.2.10 }
+  vars:
+    ansible_user: youruser
+    # ProxyJump is optional — drop the line if you reach the host directly.
+    # Baking it in here (rather than relying on ~/.ssh/config) means this
+    # inventory works regardless of local SSH config state.
+    ansible_ssh_common_args: >-
+      -o ProxyJump=203.0.113.1
+      -o ConnectTimeout=15
+      -o StrictHostKeyChecking=accept-new
