@@ -7,8 +7,8 @@ import {
   CLASS_MAP_INITIAL_ZOOM,
 } from "../lib/classMapDefaults";
 import {
-  getDeclutterEnabled,
-  saveDeclutterEnabled,
+  getClassDeclutterEnabled,
+  saveClassDeclutterEnabled,
 } from "../lib/declutterSettings";
 import { useMarkerDeclutter } from "../hooks/useMarkerDeclutter";
 import type { DeclutterPoint } from "../hooks/useMarkerDeclutter";
@@ -47,7 +47,7 @@ export function ClassPublicMapView({ token, people }: ClassPublicMapViewProps) {
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const [declutterEnabled, setDeclutterEnabled] = useState(() =>
-    getDeclutterEnabled(),
+    getClassDeclutterEnabled(),
   );
 
   useEffect(() => {
@@ -101,7 +101,7 @@ export function ClassPublicMapView({ token, people }: ClassPublicMapViewProps) {
   function toggleDeclutter() {
     setDeclutterEnabled((prev) => {
       const next = !prev;
-      saveDeclutterEnabled(next);
+      saveClassDeclutterEnabled(next);
       return next;
     });
   }

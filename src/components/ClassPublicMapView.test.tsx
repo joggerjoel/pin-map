@@ -145,11 +145,11 @@ describe("ClassPublicMapView", () => {
     expect(markerInstances[0]?.removed).toBe(true);
   });
 
-  it("shows a Spider toggle defaulting to off, available without signing in", () => {
+  it("shows a Spider toggle defaulting to on, available without signing in", () => {
     render(<ClassPublicMapView token="pk.test" people={[jane]} />);
 
     expect(
-      screen.getByRole("button", { name: "Spider: Off" }),
+      screen.getByRole("button", { name: "Spider: On" }),
     ).toBeInTheDocument();
   });
 
@@ -157,13 +157,13 @@ describe("ClassPublicMapView", () => {
     const user = userEvent.setup();
     render(<ClassPublicMapView token="pk.test" people={[jane]} />);
 
-    await user.click(screen.getByRole("button", { name: "Spider: Off" }));
+    await user.click(screen.getByRole("button", { name: "Spider: On" }));
 
     expect(
-      screen.getByRole("button", { name: "Spider: On" }),
+      screen.getByRole("button", { name: "Spider: Off" }),
     ).toBeInTheDocument();
-    expect(window.localStorage.getItem("pin-map:declutter-enabled")).toBe(
-      "true",
+    expect(window.localStorage.getItem("pin-map:class-declutter-enabled")).toBe(
+      "false",
     );
   });
 });

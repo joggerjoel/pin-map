@@ -362,11 +362,11 @@ describe("ClassMeetupMapView", () => {
     expect(mapInstances[0]?.flyToCalls).toHaveLength(0);
   });
 
-  it("shows a Spider toggle defaulting to off", () => {
+  it("shows a Spider toggle defaulting to on", () => {
     render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[]} />);
 
     expect(
-      screen.getByRole("button", { name: "Spider: Off" }),
+      screen.getByRole("button", { name: "Spider: On" }),
     ).toBeInTheDocument();
   });
 
@@ -374,13 +374,13 @@ describe("ClassMeetupMapView", () => {
     const user = userEvent.setup();
     render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[]} />);
 
-    await user.click(screen.getByRole("button", { name: "Spider: Off" }));
+    await user.click(screen.getByRole("button", { name: "Spider: On" }));
 
     expect(
-      screen.getByRole("button", { name: "Spider: On" }),
+      screen.getByRole("button", { name: "Spider: Off" }),
     ).toBeInTheDocument();
-    expect(window.localStorage.getItem("pin-map:declutter-enabled")).toBe(
-      "true",
+    expect(window.localStorage.getItem("pin-map:class-declutter-enabled")).toBe(
+      "false",
     );
   });
 });

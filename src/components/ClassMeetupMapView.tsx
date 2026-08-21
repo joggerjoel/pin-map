@@ -9,8 +9,8 @@ import {
   CLASS_MAP_INITIAL_ZOOM,
 } from "../lib/classMapDefaults";
 import {
-  getDeclutterEnabled,
-  saveDeclutterEnabled,
+  getClassDeclutterEnabled,
+  saveClassDeclutterEnabled,
 } from "../lib/declutterSettings";
 import { useMarkerDeclutter } from "../hooks/useMarkerDeclutter";
 import type { DeclutterPoint } from "../hooks/useMarkerDeclutter";
@@ -102,7 +102,7 @@ export function ClassMeetupMapView({
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const avatarMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const [declutterEnabled, setDeclutterEnabled] = useState(() =>
-    getDeclutterEnabled(),
+    getClassDeclutterEnabled(),
   );
 
   useEffect(() => {
@@ -213,7 +213,7 @@ export function ClassMeetupMapView({
   function toggleDeclutter() {
     setDeclutterEnabled((prev) => {
       const next = !prev;
-      saveDeclutterEnabled(next);
+      saveClassDeclutterEnabled(next);
       return next;
     });
   }
