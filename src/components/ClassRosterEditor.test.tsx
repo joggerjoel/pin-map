@@ -84,10 +84,10 @@ describe("ClassRosterEditor", () => {
       "Jane Smith Johnson",
     );
     expect(screen.getByLabelText("Hometown")).toHaveValue("Belding, Michigan");
-    expect(screen.getByLabelText("Living")).toHaveValue(
+    expect(screen.getByLabelText("Current Residence")).toHaveValue(
       "Grand Rapids, Michigan",
     );
-    expect(screen.getByLabelText("Current location")).toHaveValue(
+    expect(screen.getByLabelText("Current Location")).toHaveValue(
       "Chicago, Illinois",
     );
   });
@@ -120,8 +120,8 @@ describe("ClassRosterEditor", () => {
       await screen.findByLabelText("Current name"),
       "  Bob Leeson  ",
     );
-    await user.type(screen.getByLabelText("Living"), "  Detroit  ");
-    await user.type(screen.getByLabelText("Current location"), "  Chicago  ");
+    await user.type(screen.getByLabelText("Current Residence"), "  Detroit  ");
+    await user.type(screen.getByLabelText("Current Location"), "  Chicago  ");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -158,7 +158,7 @@ describe("ClassRosterEditor", () => {
     await user.click(
       await screen.findByRole("button", { name: "Select Bob Lee" }),
     );
-    await user.type(await screen.findByLabelText("Living"), "Detroit");
+    await user.type(await screen.findByLabelText("Current Residence"), "Detroit");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -214,7 +214,7 @@ describe("ClassRosterEditor", () => {
     await user.click(
       await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
     );
-    await user.clear(await screen.findByLabelText("Living"));
+    await user.clear(await screen.findByLabelText("Current Residence"));
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {

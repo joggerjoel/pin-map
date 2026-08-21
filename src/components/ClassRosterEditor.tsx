@@ -188,7 +188,7 @@ export function ClassRosterEditor({
             />
           </label>
           <label>
-            Living
+            Current Residence
             <input
               type="text"
               value={form.living}
@@ -198,7 +198,7 @@ export function ClassRosterEditor({
             />
           </label>
           <label>
-            Current location
+            Current Location
             <input
               type="text"
               value={form.currentLocation}
