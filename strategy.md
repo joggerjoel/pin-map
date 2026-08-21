@@ -18,6 +18,9 @@ bond is worth more than squeezing another $4.99/month out of them.
 
 ## The unique core
 
+> Pin Map's moat is the longitudinal graph connecting people, places,
+> events, and memories across a user's past, present, and future.
+
 Most competitors own one piece:
 
 - **FindPenguins** — where I went
@@ -31,7 +34,8 @@ Pin Map can connect them:
 **Where I've been → where I'm going → who I know there → what's happening
 there → whether it's worth going.**
 
-That combination is the moat.
+That combination — captured over time, not at a single moment — is what
+makes it a graph and not a snapshot.
 
 Travel history isn't the business by itself — it's the user's accumulated
 investment in Pin Map. After two years, Pin Map might know: 480 places
