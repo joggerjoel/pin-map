@@ -121,11 +121,16 @@ export function ClassMeetupMapView({
     const map = mapRef.current;
     if (map === null) return;
 
-    // Clicking a marker doesn't bubble to the map's own click handler (the
-    // markers live outside the canvas element), so this only fires for a
-    // genuine click on open map background — the "click away to deselect"
-    // gesture.
-    function handleBackgroundClick() {
+    // mapbox-gl-js fires the map's own "click" event even when the click
+    // originated on a marker (markers sit in the same canvas container the
+    // map listens on, and the event bubbles) — so without this guard, every
+    // avatar click immediately triggered this "click away to deselect"
+    // handler right after selecting, undoing it.
+    function handleBackgroundClick(event: mapboxgl.MapMouseEvent) {
+      const target = event.originalEvent.target;
+      if (target instanceof Element && target.closest(".mapboxgl-marker")) {
+        return;
+      }
       onAvatarClick?.(null);
     }
     map.on("click", handleBackgroundClick);

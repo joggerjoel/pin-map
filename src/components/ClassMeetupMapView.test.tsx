@@ -10,21 +10,27 @@ const { mapInstances, markerInstances, MockMap, MockMarker, MockPopup } =
     const mapInstances: InstanceType<typeof MockMap>[] = [];
 
     class MockMap {
-      handlers: Record<string, Array<() => void>> = {};
+      handlers: Record<string, Array<(event?: unknown) => void>> = {};
       flyToCalls: unknown[] = [];
       constructor(public options: unknown) {
         mapInstances.push(this);
       }
-      on(event: string, handler: () => void): void {
+      on(event: string, handler: (event?: unknown) => void): void {
         (this.handlers[event] ??= []).push(handler);
       }
-      off(event: string, handler: () => void): void {
+      off(event: string, handler: (event?: unknown) => void): void {
         this.handlers[event] = (this.handlers[event] ?? []).filter(
           (h) => h !== handler,
         );
       }
-      triggerClick(): void {
-        (this.handlers.click ?? []).forEach((handler) => handler());
+      // mapbox-gl-js fires the map's own click handlers even when the click
+      // originated on a marker (default target: a plain element, standing
+      // in for real map background — pass a marker's element to simulate
+      // the click having bubbled up from that marker instead).
+      triggerClick(target: unknown = document.createElement("div")): void {
+        (this.handlers.click ?? []).forEach((handler) =>
+          handler({ originalEvent: { target } }),
+        );
       }
       flyTo(options: unknown): void {
         this.flyToCalls.push(options);
@@ -58,6 +64,10 @@ const { mapInstances, markerInstances, MockMap, MockMarker, MockPopup } =
         return this;
       }
       addTo(): MockMarker {
+        // Real mapbox-gl-js always adds this class, whether or not a
+        // custom element was supplied — production code relies on it to
+        // tell a marker click apart from a genuine background click.
+        this.element?.classList.add("mapboxgl-marker");
         return this;
       }
       remove(): void {
@@ -173,9 +183,11 @@ describe("ClassMeetupMapView", () => {
       jane.livingLng,
       jane.livingLat,
     ]);
-    expect(markerInstances[0]?.element?.className).toBe(
-      "class-meetup-map__avatar-marker",
-    );
+    expect(
+      markerInstances[0]?.element?.classList.contains(
+        "class-meetup-map__avatar-marker",
+      ),
+    ).toBe(true);
     const img = markerInstances[0]?.element?.querySelector("img");
     expect(img?.src).toBe(jane.imageUrl);
     expect(img?.alt).toBe("Jane Smith Johnson");
@@ -246,6 +258,31 @@ describe("ClassMeetupMapView", () => {
     expect(onAvatarClick).toHaveBeenCalledWith(null);
   });
 
+  it("does not deselect when a marker click bubbles up to the map's own click handler", () => {
+    // Regression: mapbox-gl-js fires the map's "click" event for a click
+    // that originated on a marker too (markers share the canvas
+    // container the map listens on). Without filtering those out here,
+    // every avatar click immediately triggered the background-click
+    // deselect right after selecting, undoing it — this is what "click
+    // on avatar stopped working" turned out to be.
+    const onAvatarClick = vi.fn();
+    render(
+      <ClassMeetupMapView
+        token="pk.test"
+        meetups={[]}
+        people={[jane]}
+        onAvatarClick={onAvatarClick}
+      />,
+    );
+    const markerElement = markerInstances[0]?.element as HTMLElement;
+
+    markerElement.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    mapInstances[0]?.triggerClick(markerElement);
+
+    expect(onAvatarClick).toHaveBeenCalledWith(jane);
+    expect(onAvatarClick).not.toHaveBeenCalledWith(null);
+  });
+
   it("marks the active person's marker with the active class", () => {
     render(
       <ClassMeetupMapView
@@ -256,9 +293,11 @@ describe("ClassMeetupMapView", () => {
       />,
     );
 
-    expect(markerInstances[0]?.element?.className).toBe(
-      "class-meetup-map__avatar-marker class-meetup-map__avatar-marker--active",
-    );
+    expect(
+      markerInstances[0]?.element?.classList.contains(
+        "class-meetup-map__avatar-marker--active",
+      ),
+    ).toBe(true);
   });
 
   it("flies to the active person's cached location", () => {
