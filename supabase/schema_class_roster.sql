@@ -22,21 +22,24 @@ create table if not exists public.pinmap_class_roster (
 
 alter table public.pinmap_class_roster enable row level security;
 
+-- These reference pinmap_class_user_can_read/_can_write, defined in
+-- schema_class_access_control.sql — apply that file first on a fresh
+-- install.
 create policy "pinmap_class_roster_select_authenticated"
   on public.pinmap_class_roster for select
   to authenticated
-  using (true);
+  using (public.pinmap_class_user_can_read(class_slug));
 
 create policy "pinmap_class_roster_upsert_authenticated"
   on public.pinmap_class_roster for insert
   to authenticated
-  with check (true);
+  with check (public.pinmap_class_user_can_write(class_slug));
 
 create policy "pinmap_class_roster_update_authenticated"
   on public.pinmap_class_roster for update
   to authenticated
-  using (true)
-  with check (true);
+  using (public.pinmap_class_user_can_write(class_slug))
+  with check (public.pinmap_class_user_can_write(class_slug));
 
 grant usage on schema public to authenticated;
 grant select, insert, update on public.pinmap_class_roster to authenticated;

@@ -17,20 +17,29 @@ create table if not exists public.pinmap_class_roster_photos (
 
 alter table public.pinmap_class_roster_photos enable row level security;
 
+-- These reference pinmap_class_user_can_read/_can_write, defined in
+-- schema_class_access_control.sql — apply that file first on a fresh
+-- install.
 create policy "pinmap_class_roster_photos_select_authenticated"
   on public.pinmap_class_roster_photos for select
   to authenticated
-  using (true);
+  using (public.pinmap_class_user_can_read(class_slug));
 
 create policy "pinmap_class_roster_photos_insert_own"
   on public.pinmap_class_roster_photos for insert
   to authenticated
-  with check (auth.uid() = uploaded_by);
+  with check (
+    auth.uid() = uploaded_by
+    and public.pinmap_class_user_can_write(class_slug)
+  );
 
 create policy "pinmap_class_roster_photos_delete_own"
   on public.pinmap_class_roster_photos for delete
   to authenticated
-  using (auth.uid() = uploaded_by);
+  using (
+    auth.uid() = uploaded_by
+    and public.pinmap_class_user_can_write(class_slug)
+  );
 
 grant usage on schema public to authenticated;
 grant select, insert, delete on public.pinmap_class_roster_photos to authenticated;

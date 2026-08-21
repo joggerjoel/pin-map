@@ -677,6 +677,45 @@ body {
   color: #fff;
 }
 
+.class-reunion__read-only-banner {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  background: #78350f;
+  color: #fef3c7;
+  font-size: 0.85rem;
+}
+
+.class-reunion__blocked {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: #111827;
+  color: #f9fafb;
+}
+
+.class-admin-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem;
+  background: #111827;
+  color: #f9fafb;
+}
+
+.class-admin-panel__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.class-admin-panel__table th,
+.class-admin-panel__table td {
+  padding: 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid #374151;
+}
+
 .class-meetup-board {
   display: flex;
   flex-direction: column;

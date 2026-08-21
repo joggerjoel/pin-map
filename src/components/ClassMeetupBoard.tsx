@@ -15,6 +15,7 @@ export interface ClassMeetupBoardProps {
   token: string;
   userId: string;
   userEmail: string;
+  readOnly?: boolean;
   photosByPersonId?: Record<number, RosterPersonPhoto[]>;
   onAddPhoto?: (personId: number, file: File, year: number | null) => void;
 }
@@ -24,6 +25,7 @@ export function ClassMeetupBoard({
   token,
   userId,
   userEmail,
+  readOnly = false,
   photosByPersonId,
   onAddPhoto,
 }: ClassMeetupBoardProps) {
@@ -73,6 +75,9 @@ export function ClassMeetupBoard({
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    if (readOnly) {
+      return;
+    }
     if (selectedPerson === null) {
       setSubmitError("Pick who you met first.");
       return;
@@ -164,7 +169,7 @@ export function ClassMeetupBoard({
               placeholder="MM/YYYY"
             />
           </label>
-          <button type="submit" disabled={isSubmitting}>
+          <button type="submit" disabled={isSubmitting || readOnly}>
             {isSubmitting ? "Saving…" : "Log meetup"}
           </button>
           {submitError !== null && <span role="alert">{submitError}</span>}

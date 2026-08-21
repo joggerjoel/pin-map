@@ -9,6 +9,7 @@ import { RosterGrid } from "./RosterGrid";
 export interface ClassRosterEditorProps {
   classSlug: string;
   token?: string | null;
+  readOnly?: boolean;
   photosByPersonId?: Record<number, RosterPersonPhoto[]>;
   onAddPhoto?: (personId: number, file: File, year: number | null) => void;
 }
@@ -46,6 +47,7 @@ type SaveStatus = "idle" | "saving" | "saved" | "error";
 export function ClassRosterEditor({
   classSlug,
   token,
+  readOnly = false,
   photosByPersonId,
   onAddPhoto,
 }: ClassRosterEditorProps) {
@@ -205,7 +207,11 @@ export function ClassRosterEditor({
               }
             />
           </label>
-          <button type="button" onClick={() => void handleSave()}>
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={readOnly}
+          >
             Save
           </button>
           {saveStatus === "saving" && <span>Saving…</span>}
