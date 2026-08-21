@@ -55,6 +55,34 @@ comedy, nightlife, selected events. This is the commercial engine.
 User experience: **Me → People → Now.** Extremely understandable concepts,
 and every one reinforces the others.
 
+### How the layers map to what's already built
+
+These three layers aren't a wishlist — two of them are already live or
+already proven elsewhere, across the repos that make up this one product
+(see `mobile-infra-plan.md`'s "One product, multiple repos"):
+
+- **Me** — `pin-map`'s personal travel map. Live today.
+- **People** — the class-reunion surface (live: shared meetup map, roster,
+  declutter) plus `pin-map-ios`, planned as a fork of `ivr-contacts-ios`.
+  That repo's `Contact`/`ContactCircle` model (a "Circle" is conceptually a
+  "Class"), its `SyncOutbox` offline write queue, `AvatarLoader`, and —
+  notably — `ContactTimelineItem` are not analogues to build from scratch;
+  `ContactTimelineItem` already _is_ the Person Timeline / voice-memo
+  concept described elsewhere in `plan.md`. See
+  `ivr-contacts-ios/pin-map-plan.md` for the full reuse plan.
+- **Now** — nothing pin-map-specific exists yet (see "Sequencing" above —
+  deliberately not building this yet), but `realtime-ivr`'s
+  `voice-platform` service already runs a grounded-LLM concierge engine
+  (system prompt + grounded event inventory + LLM), proven out live via its
+  `/ivr/simulator`. That's the shape a future "you're in NYC, here's what's
+  worth going to" concierge needs — it's working today, just pointed at
+  voice calls instead of trip context. `voice-platform`'s Telnyx voice
+  channel is also sitting there if a spoken interface is ever worth adding.
+
+Practical implication: when Now eventually gets built, the starting point
+is adapting `voice-platform`'s existing concierge pattern, not designing a
+recommendation engine from zero.
+
 ## Where the money comes from
 
 Deliberately avoid depending primarily on subscriptions.
