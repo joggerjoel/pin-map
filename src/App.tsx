@@ -171,11 +171,17 @@ export function App() {
   // public-by-default view.
   if (classSlug !== null) {
     if (auth.status === "loading") {
-      return <p>Loading…</p>;
+      return (
+        <div className="class-login-page">
+          <p>Loading…</p>
+        </div>
+      );
     }
     if (auth.status === "signed-out") {
       return (
-        <LoginForm onSendOtp={auth.sendOtp} onVerifyOtp={auth.verifyOtp} />
+        <div className="class-login-page">
+          <LoginForm onSendOtp={auth.sendOtp} onVerifyOtp={auth.verifyOtp} />
+        </div>
       );
     }
     return (
