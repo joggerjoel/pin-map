@@ -31,6 +31,9 @@ export function ClassMeetupBoard({
   const [meetups, setMeetups] = useState<ClassMeetup[]>([]);
   const [searchText, setSearchText] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [activeMapPersonId, setActiveMapPersonId] = useState<number | null>(
+    null,
+  );
   const [cityText, setCityText] = useState("");
   const [dateText, setDateText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -50,6 +53,23 @@ export function ClassMeetupBoard({
   }, [classSlug]);
 
   const selectedPerson = people.find((p) => p.id === selectedId) ?? null;
+
+  function handleAvatarClick(person: RosterPerson | null) {
+    if (person === null || person.id === activeMapPersonId) {
+      setActiveMapPersonId(null);
+      setSearchText("");
+      return;
+    }
+    setActiveMapPersonId(person.id);
+    setSearchText(displayName(person));
+  }
+
+  function handleGridSelect(person: RosterPerson) {
+    setSelectedId(person.id);
+    if (person.livingLat !== null && person.livingLng !== null) {
+      setActiveMapPersonId(person.id);
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -97,14 +117,20 @@ export function ClassMeetupBoard({
 
   return (
     <div className="class-meetup-board">
-      <ClassMeetupMapView token={token} meetups={meetups} people={people} />
+      <ClassMeetupMapView
+        token={token}
+        meetups={meetups}
+        people={people}
+        activePersonId={activeMapPersonId}
+        onAvatarClick={handleAvatarClick}
+      />
       <div className="class-meetup-board__drawer">
         <RosterGrid
           people={people}
           selectedId={selectedId}
           searchText={searchText}
           onSearchChange={setSearchText}
-          onSelect={(person) => setSelectedId(person.id)}
+          onSelect={handleGridSelect}
           photosByPersonId={photosByPersonId}
           onAddPhoto={
             onAddPhoto &&

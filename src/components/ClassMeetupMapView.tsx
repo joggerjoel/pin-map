@@ -9,6 +9,8 @@ export interface ClassMeetupMapViewProps {
   token: string;
   meetups: ClassMeetup[];
   people: RosterPerson[];
+  activePersonId?: number | null;
+  onAvatarClick?: (person: RosterPerson | null) => void;
 }
 
 type PersonWithLivingLocation = RosterPerson & {
@@ -48,9 +50,14 @@ function createPopupContent(meetup: ClassMeetup): HTMLDivElement {
   return container;
 }
 
-function createAvatarMarkerElement(person: RosterPerson): HTMLDivElement {
+function createAvatarMarkerElement(
+  person: RosterPerson,
+  isActive: boolean,
+): HTMLDivElement {
   const el = document.createElement("div");
-  el.className = "class-meetup-map__avatar-marker";
+  el.className = isActive
+    ? "class-meetup-map__avatar-marker class-meetup-map__avatar-marker--active"
+    : "class-meetup-map__avatar-marker";
   const img = document.createElement("img");
   img.src = person.imageUrl;
   img.alt = displayName(person);
@@ -77,6 +84,8 @@ export function ClassMeetupMapView({
   token,
   meetups,
   people,
+  activePersonId = null,
+  onAvatarClick,
 }: ClassMeetupMapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -108,6 +117,23 @@ export function ClassMeetupMapView({
     const map = mapRef.current;
     if (map === null) return;
 
+    // Clicking a marker doesn't bubble to the map's own click handler (the
+    // markers live outside the canvas element), so this only fires for a
+    // genuine click on open map background — the "click away to deselect"
+    // gesture.
+    function handleBackgroundClick() {
+      onAvatarClick?.(null);
+    }
+    map.on("click", handleBackgroundClick);
+    return () => {
+      map.off("click", handleBackgroundClick);
+    };
+  }, [onAvatarClick]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map === null) return;
+
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = meetups.map((meetup) =>
       new mapboxgl.Marker()
@@ -124,15 +150,35 @@ export function ClassMeetupMapView({
     if (map === null) return;
 
     avatarMarkersRef.current.forEach((marker) => marker.remove());
-    avatarMarkersRef.current = people.filter(hasLivingLocation).map((person) =>
-      new mapboxgl.Marker({ element: createAvatarMarkerElement(person) })
-        .setLngLat([person.livingLng, person.livingLat])
-        .setPopup(
-          new mapboxgl.Popup().setDOMContent(createAvatarPopupContent(person)),
-        )
-        .addTo(map),
-    );
-  }, [people]);
+    avatarMarkersRef.current = people
+      .filter(hasLivingLocation)
+      .map((person) => {
+        const element = createAvatarMarkerElement(
+          person,
+          person.id === activePersonId,
+        );
+        const marker = new mapboxgl.Marker({ element })
+          .setLngLat([person.livingLng, person.livingLat])
+          .setPopup(
+            new mapboxgl.Popup().setDOMContent(
+              createAvatarPopupContent(person),
+            ),
+          )
+          .addTo(map);
+        element.addEventListener("click", () => {
+          onAvatarClick?.(person);
+        });
+        return marker;
+      });
+  }, [people, activePersonId, onAvatarClick]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map === null || activePersonId === null) return;
+    const person = people.find((p) => p.id === activePersonId);
+    if (person === undefined || !hasLivingLocation(person)) return;
+    map.flyTo({ center: [person.livingLng, person.livingLat], zoom: 8 });
+  }, [activePersonId, people]);
 
   return <div ref={containerRef} className="class-meetup-map__canvas" />;
 }

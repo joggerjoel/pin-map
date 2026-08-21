@@ -624,6 +624,11 @@ body {
   cursor: pointer;
 }
 
+.class-meetup-map__avatar-marker--active {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px #3b82f6;
+}
+
 .class-meetup-map__avatar-marker img {
   width: 100%;
   height: 100%;

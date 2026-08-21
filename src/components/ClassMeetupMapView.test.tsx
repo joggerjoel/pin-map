@@ -4,49 +4,69 @@ import { ClassMeetupMapView } from "./ClassMeetupMapView";
 import type { ClassMeetup } from "../lib/classMeetupsRepository";
 import type { RosterPerson } from "../lib/classRosterRepository";
 
-const { markerInstances, MockMap, MockMarker, MockPopup } = vi.hoisted(() => {
-  const markerInstances: InstanceType<typeof MockMarker>[] = [];
+const { mapInstances, markerInstances, MockMap, MockMarker, MockPopup } =
+  vi.hoisted(() => {
+    const markerInstances: InstanceType<typeof MockMarker>[] = [];
+    const mapInstances: InstanceType<typeof MockMap>[] = [];
 
-  class MockMap {
-    constructor(public options: unknown) {}
-    remove(): void {}
-  }
+    class MockMap {
+      handlers: Record<string, Array<() => void>> = {};
+      flyToCalls: unknown[] = [];
+      constructor(public options: unknown) {
+        mapInstances.push(this);
+      }
+      on(event: string, handler: () => void): void {
+        (this.handlers[event] ??= []).push(handler);
+      }
+      off(event: string, handler: () => void): void {
+        this.handlers[event] = (this.handlers[event] ?? []).filter(
+          (h) => h !== handler,
+        );
+      }
+      triggerClick(): void {
+        (this.handlers.click ?? []).forEach((handler) => handler());
+      }
+      flyTo(options: unknown): void {
+        this.flyToCalls.push(options);
+      }
+      remove(): void {}
+    }
 
-  class MockPopup {
-    domContent: unknown;
-    setDOMContent(content: unknown): MockPopup {
-      this.domContent = content;
-      return this;
+    class MockPopup {
+      domContent: unknown;
+      setDOMContent(content: unknown): MockPopup {
+        this.domContent = content;
+        return this;
+      }
     }
-  }
 
-  class MockMarker {
-    lngLat: [number, number] | undefined;
-    popup: MockPopup | undefined;
-    removed = false;
-    element: HTMLElement | undefined;
-    constructor(options?: { element?: HTMLElement }) {
-      this.element = options?.element;
-      markerInstances.push(this);
+    class MockMarker {
+      lngLat: [number, number] | undefined;
+      popup: MockPopup | undefined;
+      removed = false;
+      element: HTMLElement | undefined;
+      constructor(options?: { element?: HTMLElement }) {
+        this.element = options?.element;
+        markerInstances.push(this);
+      }
+      setLngLat(lngLat: [number, number]): MockMarker {
+        this.lngLat = lngLat;
+        return this;
+      }
+      setPopup(popup: MockPopup): MockMarker {
+        this.popup = popup;
+        return this;
+      }
+      addTo(): MockMarker {
+        return this;
+      }
+      remove(): void {
+        this.removed = true;
+      }
     }
-    setLngLat(lngLat: [number, number]): MockMarker {
-      this.lngLat = lngLat;
-      return this;
-    }
-    setPopup(popup: MockPopup): MockMarker {
-      this.popup = popup;
-      return this;
-    }
-    addTo(): MockMarker {
-      return this;
-    }
-    remove(): void {
-      this.removed = true;
-    }
-  }
 
-  return { markerInstances, MockMap, MockMarker, MockPopup };
-});
+    return { mapInstances, markerInstances, MockMap, MockMarker, MockPopup };
+  });
 
 vi.mock("mapbox-gl", () => ({
   default: {
@@ -59,6 +79,7 @@ vi.mock("mapbox-gl", () => ({
 
 beforeEach(() => {
   markerInstances.length = 0;
+  mapInstances.length = 0;
 });
 
 const meetup: ClassMeetup = {
@@ -189,5 +210,92 @@ describe("ClassMeetupMapView", () => {
 
     expect(markerInstances).toHaveLength(3);
     expect(markerInstances[0]?.removed).toBe(true);
+  });
+
+  it("calls onAvatarClick with the person when their marker is clicked", () => {
+    const onAvatarClick = vi.fn();
+    render(
+      <ClassMeetupMapView
+        token="pk.test"
+        meetups={[]}
+        people={[jane]}
+        onAvatarClick={onAvatarClick}
+      />,
+    );
+
+    markerInstances[0]?.element?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+
+    expect(onAvatarClick).toHaveBeenCalledWith(jane);
+  });
+
+  it("calls onAvatarClick with null when the map background is clicked", () => {
+    const onAvatarClick = vi.fn();
+    render(
+      <ClassMeetupMapView
+        token="pk.test"
+        meetups={[]}
+        people={[jane]}
+        onAvatarClick={onAvatarClick}
+      />,
+    );
+
+    mapInstances[0]?.triggerClick();
+
+    expect(onAvatarClick).toHaveBeenCalledWith(null);
+  });
+
+  it("marks the active person's marker with the active class", () => {
+    render(
+      <ClassMeetupMapView
+        token="pk.test"
+        meetups={[]}
+        people={[jane]}
+        activePersonId={jane.id}
+      />,
+    );
+
+    expect(markerInstances[0]?.element?.className).toBe(
+      "class-meetup-map__avatar-marker class-meetup-map__avatar-marker--active",
+    );
+  });
+
+  it("flies to the active person's cached location", () => {
+    const { rerender } = render(
+      <ClassMeetupMapView
+        token="pk.test"
+        meetups={[]}
+        people={[jane]}
+        activePersonId={null}
+      />,
+    );
+    expect(mapInstances[0]?.flyToCalls).toHaveLength(0);
+
+    rerender(
+      <ClassMeetupMapView
+        token="pk.test"
+        meetups={[]}
+        people={[jane]}
+        activePersonId={jane.id}
+      />,
+    );
+
+    expect(mapInstances[0]?.flyToCalls).toEqual([
+      { center: [jane.livingLng, jane.livingLat], zoom: 8 },
+    ]);
+  });
+
+  it("does not fly when the active person has no cached location", () => {
+    render(
+      <ClassMeetupMapView
+        token="pk.test"
+        meetups={[]}
+        people={[bob]}
+        activePersonId={bob.id}
+      />,
+    );
+
+    expect(mapInstances[0]?.flyToCalls).toHaveLength(0);
   });
 });

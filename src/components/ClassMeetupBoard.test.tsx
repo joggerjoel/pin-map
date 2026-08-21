@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ClassMeetupBoard } from "./ClassMeetupBoard";
@@ -7,6 +7,7 @@ import * as classMeetupsRepositoryModule from "../lib/classMeetupsRepository";
 import * as geocoderModule from "../lib/geocoder";
 import type { RosterPerson } from "../lib/classRosterRepository";
 import type { ClassMeetup } from "../lib/classMeetupsRepository";
+import type { ClassMeetupMapViewProps } from "./ClassMeetupMapView";
 
 vi.mock("../lib/classRosterRepository", () => ({
   fetchRoster: vi.fn(),
@@ -21,9 +22,20 @@ vi.mock("../lib/geocoder", () => ({
   geocodeLine: vi.fn(),
 }));
 
-vi.mock("./ClassMeetupMapView", () => ({
-  ClassMeetupMapView: () => null,
+const { mapViewProps } = vi.hoisted(() => ({
+  mapViewProps: { current: null as unknown },
 }));
+
+vi.mock("./ClassMeetupMapView", () => ({
+  ClassMeetupMapView: (props: unknown) => {
+    mapViewProps.current = props;
+    return null;
+  },
+}));
+
+function latestMapViewProps(): ClassMeetupMapViewProps {
+  return mapViewProps.current as ClassMeetupMapViewProps;
+}
 
 const jane: RosterPerson = {
   id: 1,
@@ -36,6 +48,20 @@ const jane: RosterPerson = {
   living: "",
   livingLat: null,
   livingLng: null,
+  currentLocation: "",
+};
+
+const bob: RosterPerson = {
+  id: 2,
+  filename: "class1989-002_sheet1_row1_col2.png",
+  imageUrl:
+    "https://files.sohyper.com/class1989/class1989-002_sheet1_row1_col2.png",
+  highSchoolName: "Bob Lee",
+  currentName: "",
+  hometown: "Belding, Michigan",
+  living: "Detroit, Michigan",
+  livingLat: 42.33,
+  livingLng: -83.05,
   currentLocation: "",
 };
 
@@ -54,6 +80,7 @@ const savedMeetup: ClassMeetup = {
 beforeEach(() => {
   vi.mocked(classRosterRepositoryModule.fetchRoster).mockResolvedValue([jane]);
   vi.mocked(classMeetupsRepositoryModule.fetchMeetups).mockResolvedValue([]);
+  mapViewProps.current = null;
 });
 
 describe("ClassMeetupBoard", () => {
@@ -187,5 +214,115 @@ describe("ClassMeetupBoard", () => {
     expect(
       await screen.findByText("Met Jane Smith Johnson"),
     ).toBeInTheDocument();
+  });
+
+  it("fills the search box with a person's name when their map avatar is clicked", async () => {
+    render(
+      <ClassMeetupBoard
+        classSlug="belding1989"
+        token="pk.test"
+        userId="user-1"
+        userEmail="joel@example.com"
+      />,
+    );
+    await screen.findByRole("button", { name: "Select Jane Smith Johnson" });
+
+    act(() => {
+      latestMapViewProps().onAvatarClick?.(jane);
+    });
+
+    expect(screen.getByLabelText("Search classmates")).toHaveValue(
+      "Jane Smith Johnson",
+    );
+    expect(latestMapViewProps().activePersonId).toBe(jane.id);
+  });
+
+  it("clears the search box when the same map avatar is clicked again (deselect)", async () => {
+    render(
+      <ClassMeetupBoard
+        classSlug="belding1989"
+        token="pk.test"
+        userId="user-1"
+        userEmail="joel@example.com"
+      />,
+    );
+    await screen.findByRole("button", { name: "Select Jane Smith Johnson" });
+
+    act(() => {
+      latestMapViewProps().onAvatarClick?.(jane);
+    });
+    act(() => {
+      latestMapViewProps().onAvatarClick?.(jane);
+    });
+
+    expect(screen.getByLabelText("Search classmates")).toHaveValue("");
+    expect(latestMapViewProps().activePersonId).toBe(null);
+  });
+
+  it("clears the search box when the map background is clicked (onAvatarClick(null))", async () => {
+    render(
+      <ClassMeetupBoard
+        classSlug="belding1989"
+        token="pk.test"
+        userId="user-1"
+        userEmail="joel@example.com"
+      />,
+    );
+    await screen.findByRole("button", { name: "Select Jane Smith Johnson" });
+
+    act(() => {
+      latestMapViewProps().onAvatarClick?.(jane);
+    });
+    act(() => {
+      latestMapViewProps().onAvatarClick?.(null);
+    });
+
+    expect(screen.getByLabelText("Search classmates")).toHaveValue("");
+    expect(latestMapViewProps().activePersonId).toBe(null);
+  });
+
+  it("activates a grid person's map avatar (to zoom to them) when they have a cached location", async () => {
+    vi.mocked(classRosterRepositoryModule.fetchRoster).mockResolvedValue([
+      jane,
+      bob,
+    ]);
+    const user = userEvent.setup();
+    render(
+      <ClassMeetupBoard
+        classSlug="belding1989"
+        token="pk.test"
+        userId="user-1"
+        userEmail="joel@example.com"
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Select Bob Lee" }),
+    );
+
+    await waitFor(() => {
+      expect(latestMapViewProps().activePersonId).toBe(bob.id);
+    });
+  });
+
+  it("does not activate a map avatar for a grid person with no cached location", async () => {
+    const user = userEvent.setup();
+    render(
+      <ClassMeetupBoard
+        classSlug="belding1989"
+        token="pk.test"
+        userId="user-1"
+        userEmail="joel@example.com"
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
+    );
+
+    expect(
+      await screen.findByText("Met Jane Smith Johnson"),
+    ).toBeInTheDocument();
+    expect(latestMapViewProps().activePersonId).toBe(null);
   });
 });
