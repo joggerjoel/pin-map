@@ -16,6 +16,13 @@ to be monetized. Some things should exist precisely because they make
 someone think: _this is where my life is, I don't want to lose this._ That
 bond is worth more than squeezing another $4.99/month out of them.
 
+Internally, Pin Map isn't fundamentally a mapping product — the map is the
+interface, not the product. What it's building is **a personal geographic
+memory graph that helps you decide what to do next.** Memory drives
+retention. People drive participation. Groups drive acquisition and direct
+revenue. Events drive transactions. The map is what makes all of it legible
+to a user, not what it's for.
+
 ## The unique core
 
 > Pin Map's moat is the longitudinal graph connecting people, places,
@@ -58,6 +65,14 @@ comedy, nightlife, selected events. This is the commercial engine.
 
 User experience: **Me → People → Now.** Extremely understandable concepts,
 and every one reinforces the others.
+
+A naming note: "Now" is doing double duty — the layer includes future plans
+("where I'm going"), which isn't literally now. `LIVE` (live entertainment /
+the active world, rather than literal present tense) is the more
+semantically accurate label. Worth keeping in mind, but not worth changing
+the UI copy over yet — `Me / People / Now` reads better emotionally, and the
+mismatch is cosmetic, not architectural. See "Past + present + future"
+below for why the underlying tense axis matters more than the label does.
 
 ### How the layers map to what's already built
 
@@ -173,6 +188,23 @@ Pin Map can naturally cover all three:
 This conceptual model should be part of the architecture, not just the
 pitch.
 
+Crossed with the three layers, this becomes a 3×3 model — arguably more
+fundamental to the architecture than Me/People/Now alone, since it's what
+keeps the product from needing nine separate screens. It's one conceptual
+model, not nine features:
+
+|            | Past             | Now              | Future            |
+| ---------- | ---------------- | ---------------- | ----------------- |
+| **Me**     | Places I've been | Where I am       | Upcoming trips    |
+| **People** | Who I met        | Who's nearby     | Who will be there |
+| **Events** | What I attended  | What's happening | What's scheduled  |
+
+Most mapping products represent _where_. Pin Map represents **where +
+when** — which is what lets it answer "what happened here?" (past),
+"what's happening here?" (now), and "what will happen while I'm here?"
+(future) as the same question asked at different points on one axis,
+rather than three unrelated features.
+
 ## Don't build a generic social network
 
 If messages, followers, public feeds, random people nearby, dating, likes,
@@ -183,6 +215,13 @@ The social graph should have context: _we graduated together, we worked
 together, we traveled together, we attended this event, we met here._
 That's distinctive. Ten million random people isn't the goal — 40
 meaningful people may be more valuable.
+
+Concretely, this means no generic `user follows user` edge in the data
+model either — every connection should carry the reason it exists
+(`relationship.context_type` / `context_id`, see `plan.md` §1.2). That also
+unlocks a query a generic social graph answers poorly: _why do I know this
+person?_ — "You met twice: Belding reunion — 2026, Chicago trip — 2031" is
+closer to externalized human memory than a friends list.
 
 ## Don't make the heat map the product either
 
@@ -223,6 +262,23 @@ Difficult to reproduce once accumulated.
 Together: **Pin Map — Know what's happening wherever life takes you, and
 remember who was there.** Much closer to a real company than "collaborative
 travel map."
+
+## What to measure
+
+Not DAU — this isn't TikTok, and optimizing for daily opens would push the
+product toward exactly the feed/notification patterns "Don't build a
+generic social network" above rules out. The metric that actually tracks
+the moat is something like **Life Graph Density**: how many meaningful
+connections a user has accumulated across people ↔ places ↔ events ↔
+memories. A user with 300 pins, 0 people, and 0 memories has a shallow
+graph; a user with 40 places, 18 people, 12 events, and 14 memories is
+plausibly far more attached to the product, even with fewer total pins.
+
+Candidate metric: **Connected Memories per Active User**, or **Meaningful
+Connections per User**. The hypothesis to test: retention increases as a
+user's life graph becomes more interconnected, not as raw activity
+increases. If that holds, it's a durable growth lever a competitor can't
+shortcut by copying a heat map or a UI.
 
 ## What to build next (reduced roadmap)
 
@@ -277,3 +333,72 @@ the `timeline_event` model, the People layer, and eventually trip
 dates/discovery should all be designed so the reunion feature and this
 broader vision are the same product growing outward, not two products to
 reconcile later.
+
+One gap in the reasoning above: Belding proving out the People/Memory
+concept does **not** by itself validate that groups will pay $99–299 for
+it. Joel is effectively both the organizer and the product owner, and the
+group already existed before the product did — that's a perfect testing
+population, not a paying customer. The milestones below make that
+distinction concrete.
+
+## Milestones
+
+### Milestone 1 — Belding becomes excellent
+
+Not proving scale — proving that the People/Memory concept produces real
+behavior:
+
+```
+classmates return
+update photos
+update locations
+record meetups
+look at other people
+contribute memories
+use mobile
+come back after the actual reunion
+```
+
+The last one matters most. If everyone disappears after reunion weekend,
+that's excellent event software. If people keep returning months later,
+that's the beginning of the memory network this product is actually
+betting on.
+
+### Milestone 2 — Group #2 test
+
+This is the crucial experiment, not Milestone 1 and not "1,000 users" or
+nationwide marketing. The question it answers:
+
+> Can someone who isn't Joel create a group, populate it, invite people,
+> get engagement, and consider it worth paying for?
+
+Success means an outside organizer can, with no custom database edits, no
+Joel-specific code, no hardcoded admin, and no manual rescue for normal
+setup:
+
+```
+create a group
+import a roster
+invite members
+collect current photos/location information
+use meetup/memory functionality
+administer access
+get meaningful participation
+pay, or demonstrate credible willingness to pay
+```
+
+This is exactly where the class-tenancy/RLS work (`plan.md` §2) stops being
+optional infrastructure and starts being the thing the whole business model
+depends on. If Milestone 2 passes, the reunion system stops being a custom
+Belding application and becomes a product.
+
+### Milestone 3 — One commercial intersection
+
+Only after Milestone 2 — not the full NOW layer, a tiny pilot of it:
+
+> You're visiting New York Oct 8–12. See what's happening.
+
+Measured as a funnel: trip created → events viewed → event opened → price
+checked → ticket clicked → transaction. That funnel is what tells you
+whether commerce can actually pay for Pin Map, rather than assuming it will
+because this document says it should.
