@@ -1,4 +1,5 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ClassPublicMapView } from "./ClassPublicMapView";
 import type { PublicRosterLocation } from "../lib/classPublicRosterRepository";
@@ -7,8 +8,39 @@ const { markerInstances, MockMap, MockMarker, MockPopup } = vi.hoisted(() => {
   const markerInstances: InstanceType<typeof MockMarker>[] = [];
 
   class MockMap {
+    sources = new Map<string, { data: unknown }>();
+    handlers: Record<string, Array<() => void>> = {};
     constructor(public options: unknown) {}
     remove(): void {}
+    isStyleLoaded(): boolean {
+      return true;
+    }
+    on(event: string, handler: () => void): void {
+      (this.handlers[event] ??= []).push(handler);
+    }
+    off(event: string, handler: () => void): void {
+      this.handlers[event] = (this.handlers[event] ?? []).filter(
+        (h) => h !== handler,
+      );
+    }
+    once(_event: string, handler: () => void): void {
+      handler();
+    }
+    getSource(id: string): { setData: (data: unknown) => void } | undefined {
+      const record = this.sources.get(id);
+      if (record === undefined) return undefined;
+      return { setData: (data: unknown) => (record.data = data) };
+    }
+    addSource(id: string, options: { data: unknown }): void {
+      this.sources.set(id, { data: options.data });
+    }
+    addLayer(): void {}
+    project([lng, lat]: [number, number]): { x: number; y: number } {
+      return { x: lng, y: lat };
+    }
+    unproject([x, y]: [number, number]): { lng: number; lat: number } {
+      return { lng: x, lat: y };
+    }
   }
 
   class MockPopup {
@@ -58,6 +90,7 @@ vi.mock("mapbox-gl", () => ({
 
 beforeEach(() => {
   markerInstances.length = 0;
+  window.localStorage.clear();
 });
 
 const jane: PublicRosterLocation = {
@@ -110,5 +143,27 @@ describe("ClassPublicMapView", () => {
 
     expect(markerInstances).toHaveLength(3);
     expect(markerInstances[0]?.removed).toBe(true);
+  });
+
+  it("shows a Spider toggle defaulting to off, available without signing in", () => {
+    render(<ClassPublicMapView token="pk.test" people={[jane]} />);
+
+    expect(
+      screen.getByRole("button", { name: "Spider: Off" }),
+    ).toBeInTheDocument();
+  });
+
+  it("toggles the Spider label and persists the preference on click", async () => {
+    const user = userEvent.setup();
+    render(<ClassPublicMapView token="pk.test" people={[jane]} />);
+
+    await user.click(screen.getByRole("button", { name: "Spider: Off" }));
+
+    expect(
+      screen.getByRole("button", { name: "Spider: On" }),
+    ).toBeInTheDocument();
+    expect(window.localStorage.getItem("pin-map:declutter-enabled")).toBe(
+      "true",
+    );
   });
 });

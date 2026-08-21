@@ -721,11 +721,27 @@ body {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  position: relative;
 }
 
 .class-meetup-map__canvas {
   flex: 1;
   min-height: 0;
+}
+
+.class-map__declutter-toggle {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 10;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #374151;
+  background: #1f2937;
+  color: #f9fafb;
+  font-size: 0.8rem;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
 .class-meetup-map__avatar-marker {

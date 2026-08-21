@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { ClassMeetup } from "../lib/classMeetupsRepository";
@@ -8,6 +8,12 @@ import {
   CLASS_MAP_INITIAL_CENTER,
   CLASS_MAP_INITIAL_ZOOM,
 } from "../lib/classMapDefaults";
+import {
+  getDeclutterEnabled,
+  saveDeclutterEnabled,
+} from "../lib/declutterSettings";
+import { useMarkerDeclutter } from "../hooks/useMarkerDeclutter";
+import type { DeclutterPoint } from "../hooks/useMarkerDeclutter";
 
 export interface ClassMeetupMapViewProps {
   token: string;
@@ -94,7 +100,10 @@ export function ClassMeetupMapView({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
-  const avatarMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const avatarMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const [declutterEnabled, setDeclutterEnabled] = useState(() =>
+    getDeclutterEnabled(),
+  );
 
   useEffect(() => {
     if (containerRef.current === null) return;
@@ -159,26 +168,24 @@ export function ClassMeetupMapView({
     if (map === null) return;
 
     avatarMarkersRef.current.forEach((marker) => marker.remove());
-    avatarMarkersRef.current = people
-      .filter(hasLivingLocation)
-      .map((person) => {
-        const element = createAvatarMarkerElement(
-          person,
-          person.id === activePersonId,
-        );
-        const marker = new mapboxgl.Marker({ element })
-          .setLngLat([person.livingLng, person.livingLat])
-          .setPopup(
-            new mapboxgl.Popup().setDOMContent(
-              createAvatarPopupContent(person),
-            ),
-          )
-          .addTo(map);
-        element.addEventListener("click", () => {
-          onAvatarClick?.(person);
-        });
-        return marker;
+    const next = new Map<string, mapboxgl.Marker>();
+    people.filter(hasLivingLocation).forEach((person) => {
+      const element = createAvatarMarkerElement(
+        person,
+        person.id === activePersonId,
+      );
+      const marker = new mapboxgl.Marker({ element })
+        .setLngLat([person.livingLng, person.livingLat])
+        .setPopup(
+          new mapboxgl.Popup().setDOMContent(createAvatarPopupContent(person)),
+        )
+        .addTo(map);
+      element.addEventListener("click", () => {
+        onAvatarClick?.(person);
       });
+      next.set(String(person.id), marker);
+    });
+    avatarMarkersRef.current = next;
   }, [people, activePersonId, onAvatarClick]);
 
   useEffect(() => {
@@ -189,5 +196,39 @@ export function ClassMeetupMapView({
     map.flyTo({ center: [person.livingLng, person.livingLat], zoom: 8 });
   }, [activePersonId, people]);
 
-  return <div ref={containerRef} className="class-meetup-map__canvas" />;
+  const declutterPoints: DeclutterPoint[] = people
+    .filter(hasLivingLocation)
+    .map((person) => ({
+      key: String(person.id),
+      lng: person.livingLng,
+      lat: person.livingLat,
+    }));
+  useMarkerDeclutter(
+    mapRef,
+    avatarMarkersRef,
+    declutterPoints,
+    declutterEnabled,
+  );
+
+  function toggleDeclutter() {
+    setDeclutterEnabled((prev) => {
+      const next = !prev;
+      saveDeclutterEnabled(next);
+      return next;
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="class-map__declutter-toggle"
+        aria-pressed={declutterEnabled}
+        onClick={toggleDeclutter}
+      >
+        {declutterEnabled ? "Spider: On" : "Spider: Off"}
+      </button>
+      <div ref={containerRef} className="class-meetup-map__canvas" />
+    </>
+  );
 }

@@ -1,4 +1,5 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ClassMeetupMapView } from "./ClassMeetupMapView";
 import type { ClassMeetup } from "../lib/classMeetupsRepository";
@@ -12,6 +13,7 @@ const { mapInstances, markerInstances, MockMap, MockMarker, MockPopup } =
     class MockMap {
       handlers: Record<string, Array<(event?: unknown) => void>> = {};
       flyToCalls: unknown[] = [];
+      sources = new Map<string, { data: unknown }>();
       constructor(public options: unknown) {
         mapInstances.push(this);
       }
@@ -22,6 +24,27 @@ const { mapInstances, markerInstances, MockMap, MockMarker, MockPopup } =
         this.handlers[event] = (this.handlers[event] ?? []).filter(
           (h) => h !== handler,
         );
+      }
+      once(_event: string, handler: (event?: unknown) => void): void {
+        handler();
+      }
+      isStyleLoaded(): boolean {
+        return true;
+      }
+      getSource(id: string): { setData: (data: unknown) => void } | undefined {
+        const record = this.sources.get(id);
+        if (record === undefined) return undefined;
+        return { setData: (data: unknown) => (record.data = data) };
+      }
+      addSource(id: string, options: { data: unknown }): void {
+        this.sources.set(id, { data: options.data });
+      }
+      addLayer(): void {}
+      project([lng, lat]: [number, number]): { x: number; y: number } {
+        return { x: lng, y: lat };
+      }
+      unproject([x, y]: [number, number]): { lng: number; lat: number } {
+        return { lng: x, lat: y };
       }
       // mapbox-gl-js fires the map's own click handlers even when the click
       // originated on a marker (default target: a plain element, standing
@@ -90,6 +113,7 @@ vi.mock("mapbox-gl", () => ({
 beforeEach(() => {
   markerInstances.length = 0;
   mapInstances.length = 0;
+  window.localStorage.clear();
 });
 
 const meetup: ClassMeetup = {
@@ -336,5 +360,27 @@ describe("ClassMeetupMapView", () => {
     );
 
     expect(mapInstances[0]?.flyToCalls).toHaveLength(0);
+  });
+
+  it("shows a Spider toggle defaulting to off", () => {
+    render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[]} />);
+
+    expect(
+      screen.getByRole("button", { name: "Spider: Off" }),
+    ).toBeInTheDocument();
+  });
+
+  it("toggles the Spider label and persists the preference on click", async () => {
+    const user = userEvent.setup();
+    render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[]} />);
+
+    await user.click(screen.getByRole("button", { name: "Spider: Off" }));
+
+    expect(
+      screen.getByRole("button", { name: "Spider: On" }),
+    ).toBeInTheDocument();
+    expect(window.localStorage.getItem("pin-map:declutter-enabled")).toBe(
+      "true",
+    );
   });
 });
