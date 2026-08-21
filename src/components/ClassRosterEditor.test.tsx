@@ -77,7 +77,7 @@ describe("ClassRosterEditor", () => {
       await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
     );
 
-    expect(await screen.findByLabelText("High school name")).toHaveValue(
+    expect(await screen.findByLabelText("Birth name")).toHaveValue(
       "Jane Smith",
     );
     expect(screen.getByLabelText("Current name")).toHaveValue(
@@ -103,7 +103,7 @@ describe("ClassRosterEditor", () => {
     await user.type(screen.getByLabelText("Current name"), "Jane Doe");
 
     expect(screen.getByLabelText("Current name")).toHaveValue("Jane Doe");
-    expect(screen.getByLabelText("High school name")).toHaveValue("Jane Smith");
+    expect(screen.getByLabelText("Birth name")).toHaveValue("Jane Smith");
   });
 
   it("trims whitespace and saves all five fields on Save", async () => {
@@ -273,11 +273,11 @@ describe("ClassRosterEditor", () => {
     await user.click(
       await screen.findByRole("button", { name: "Select Jane Smith Johnson" }),
     );
-    await screen.findByLabelText("High school name");
+    await screen.findByLabelText("Birth name");
     await user.click(screen.getByRole("button", { name: "Select Bob Lee" }));
 
     await waitFor(() => {
-      expect(screen.getByLabelText("High school name")).toHaveValue("Bob Lee");
+      expect(screen.getByLabelText("Birth name")).toHaveValue("Bob Lee");
     });
     expect(confirmSpy).not.toHaveBeenCalled();
   });

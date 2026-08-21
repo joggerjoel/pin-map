@@ -158,7 +158,7 @@ export function ClassRosterEditor({
       {selected !== null && form !== null && (
         <div className="class-roster__panel">
           <label>
-            High school name
+            Birth name
             <input
               type="text"
               value={form.highSchoolName}

@@ -29,7 +29,7 @@ export function PersonPhotoModal({
   const avatarSrc = showCurrent ? recentPhoto.url : person.imageUrl;
   const avatarCaption = showCurrent
     ? person.currentName.trim() || "Current photo"
-    : person.highSchoolName.trim() || "High school photo";
+    : person.highSchoolName.trim() || "Birth name photo";
 
   useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
