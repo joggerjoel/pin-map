@@ -15,6 +15,7 @@ import { fetchOwnerId } from "./lib/pinsRepository";
 import { TokenSetup } from "./components/TokenSetup";
 import { LoginForm } from "./components/LoginForm";
 import { ClassReunionApp } from "./components/ClassReunionApp";
+import { ClassPublicLanding } from "./components/ClassPublicLanding";
 import { AddPin } from "./components/AddPin";
 import { PlaceInput } from "./components/PlaceInput";
 import { PlaceList } from "./components/PlaceList";
@@ -166,9 +167,9 @@ export function App() {
 
   // "?class=<slug>" is a completely separate mode (a shared class-reunion
   // meetup map + roster editor) with nothing in common with the travel-map
-  // UI below — still gated behind the same login, but never shown to a
-  // signed-out or anonymous visitor, unlike the travel map's
-  // public-by-default view.
+  // UI below. A signed-out visitor gets a public teaser — the globe with
+  // avatar pins but no names — over which the login form floats; the
+  // roster grid, meetup board, and every name stay behind the login gate.
   if (classSlug !== null) {
     if (auth.status === "loading") {
       return (
@@ -179,9 +180,12 @@ export function App() {
     }
     if (auth.status === "signed-out") {
       return (
-        <div className="class-login-page">
-          <LoginForm onSendOtp={auth.sendOtp} onVerifyOtp={auth.verifyOtp} />
-        </div>
+        <ClassPublicLanding
+          classSlug={classSlug}
+          token={effectiveToken}
+          onSendOtp={auth.sendOtp}
+          onVerifyOtp={auth.verifyOtp}
+        />
       );
     }
     return (
