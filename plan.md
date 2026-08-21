@@ -173,6 +173,13 @@ administration while retaining a global system-owner capability.
 
 Before adding the larger memory features, introduce a reusable event model.
 
+> A working prototype of most of this already exists: `ivr-contacts-ios`'s
+> `ContactTimelineItem` (source, note, optional voice-memo audio, timestamp),
+> offline-queued through `SyncOutbox` and playable from a contact's detail
+> view. See `ivr-contacts-ios/pin-map-plan.md`'s "Voice moments → Person
+> Timeline / Place Memories" section — this should directly inform the
+> `timeline_event` shape below rather than being designed from scratch.
+
 ### Core entity: timeline_event
 
 Suggested fields:
