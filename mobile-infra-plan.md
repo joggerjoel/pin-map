@@ -5,6 +5,27 @@ only — the new REST API service and its deployment. The client side (the
 forked iOS app itself) is planned separately in `ivr-contacts-ios/pin-map-plan.md`,
 since that work happens in that repo.
 
+## One product, multiple repos
+
+`pin-map` (web), `pin-map-api` (this doc), `pin-map-ios` (forked from
+`ivr-contacts-ios`), and `realtime-ivr` (the `voice-platform` binary,
+including its `/ivr/simulator` — a text-mode fake-call harness that runs the
+same concierge-turn logic, system prompt + grounded event inventory + LLM,
+as a live call, without STT/TTS/telephony) are **one product experience
+built across separate repos**, not four unrelated efforts that happen to
+share a box. Separate repos/deploys are a toolchain and blast-radius
+decision (see "do not extend `voice-platform`" below) — not a signal that
+these are different products. Concretely: the reused building blocks from
+`ivr-contacts-ios` (APIClient, SyncOutbox, voice-timeline capture — see
+`ivr-contacts-ios/pin-map-plan.md`) and `voice-platform`'s concierge-LLM
+pattern (grounded, prompt-driven conversational logic, proven out via the
+simulator) are the connective tissue: capabilities built for one surface
+that the others are expected to draw on as the product grows, per
+`strategy.md`'s "Me / People / Now" framing. When adding a capability to any
+of these repos, check whether it's really product-wide infrastructure
+(belongs in this shared framing) before treating it as scoped to just that
+repo.
+
 ## What's already on aorus4 (found by inspection, 2026-08-21)
 
 Before designing a new service, checked what's actually running. aorus4 is a
