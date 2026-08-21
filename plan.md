@@ -58,6 +58,26 @@ generic chat/messaging unless there is a very strong use case
 
 Favor durable information attached to people, places, dates, and memories.
 
+This extends to how connections between people are modeled. Do not build a
+generic `user follows user` edge — every connection should carry the reason
+it exists:
+
+```
+relationship
+├── person_a
+├── person_b
+├── context_type
+├── context_id
+├── started_at
+└── provenance
+```
+
+E.g. `Joel ↔ Michelle, context = belding1989` or `Joel ↔ Alice, context =
+attended_event_293`. That's more meaningful than "friend," and it unlocks a
+query a generic social graph can't answer well: _why do I know this
+person?_ — e.g. "You met twice: Belding reunion — 2026, Chicago trip —
+2031." That's closer to externalized human memory than a friends list.
+
 ### 1.3 Capture should require very little effort
 
 Every major workflow should favor:
@@ -99,6 +119,17 @@ Immediate
 After departure
 Never public
 ```
+
+### 1.5 No speculative surfaces
+
+No major surface gets built without either an existing user behavior or a
+concrete experiment capable of validating it. AI-assisted development makes
+writing code feel free; it doesn't make owning it free — every surface adds
+schema, migrations, tests, interfaces, maintenance, assumptions, and future
+compatibility obligations regardless of how cheap it was to generate. This
+is the concrete version of `strategy.md`'s "don't build for a market that
+isn't there" — see that doc's Milestones for what "validating it" means in
+practice for the NOW layer specifically.
 
 ## 2. Immediate Architectural Priority: Make Classes Real Tenants
 
@@ -180,7 +211,54 @@ Before adding the larger memory features, introduce a reusable event model.
 > Timeline / Place Memories" section — this should directly inform the
 > `timeline_event` shape below rather than being designed from scratch.
 
-### Core entity: timeline_event
+### The conceptual model is broader than "reunion timeline"
+
+`timeline_event` is likely to become the central abstraction of the whole
+product, not just the reunion feature, so it should be designed against
+the general shape now even though only the reunion-scoped columns get
+built first. The entity set the domain model is moving toward:
+
+```
+person
+place
+event
+trip
+group
+timeline_event
+media
+relationship
+```
+
+Under this model a reunion is an event, a meetup is an event, a future
+concert is an event, a trip contains events, and a memory references an
+event. That's what keeps the schema from needing a redesign when the NOW
+layer eventually gets built — concerts and meetups become the same kind of
+row instead of two systems bolted together later. Widening a nullable
+column now is cheap; a migration plus a rewrite of everything built against
+a narrower shape later is not (see 1.5 above).
+
+`timeline_event` examples spanning the product's whole life, not just
+reunions — today: "Joel met Michelle," "reunited with five classmates,"
+"uploaded a memory from 1989"; later: "moved to Miami," "visited Tokyo,"
+"attended a concert." The conceptual shape needs to hold all of these
+without a rewrite, even though not every column is needed immediately:
+
+```
+timeline_event
+├── actor/person
+├── type
+├── timestamp/range
+├── place
+├── related_people[]
+├── related_event
+├── related_trip
+├── group
+├── media[]
+├── memory/text
+└── visibility
+```
+
+### Core entity: timeline_event (current, buildable shape)
 
 Suggested fields:
 
