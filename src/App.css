@@ -744,6 +744,19 @@ body {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
+.class-map__toggles {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 10;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.class-map__toggles .class-map__declutter-toggle {
+  position: static;
+}
+
 .class-meetup-map__avatar-marker {
   width: 40px;
   height: 40px;
