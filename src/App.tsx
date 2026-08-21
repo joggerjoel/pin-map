@@ -37,6 +37,7 @@ import {
   getDeclutterEnabled,
   saveDeclutterEnabled,
 } from "./lib/declutterSettings";
+import { getLastClassSlug, saveLastClassSlug } from "./lib/classNavigation";
 import {
   fetchDeclutterEnabled,
   saveDeclutterEnabledRemote,
@@ -69,6 +70,13 @@ export function App() {
   const sidebarLayout = useSidebarLayout();
   const auth = useAuth();
   const classSlug = new URLSearchParams(window.location.search).get("class");
+  const [lastClassSlug] = useState<string | null>(() => getLastClassSlug());
+
+  useEffect(() => {
+    if (classSlug !== null) {
+      saveLastClassSlug(classSlug);
+    }
+  }, [classSlug]);
 
   useEffect(() => {
     fetchOwnerId().then(setOwnerUserId);
@@ -328,6 +336,14 @@ export function App() {
         onMouseDown={sidebarLayout.onSplitterMouseDown}
       />
       <main className="app__map">
+        {lastClassSlug !== null && (
+          <a
+            href={`/?class=${lastClassSlug}`}
+            className="class-map__declutter-toggle"
+          >
+            Personal Travel
+          </a>
+        )}
         {effectiveToken !== null ? (
           <MapView
             token={effectiveToken}

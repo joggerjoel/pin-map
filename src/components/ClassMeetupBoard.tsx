@@ -123,6 +123,7 @@ export function ClassMeetupBoard({
   return (
     <div className="class-meetup-board">
       <ClassMeetupMapView
+        classSlug={classSlug}
         token={token}
         meetups={meetups}
         people={people}

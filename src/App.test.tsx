@@ -684,3 +684,38 @@ describe("App class-roster mode (?class=)", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("App personal travel / class swap link", () => {
+  afterEach(() => {
+    window.history.pushState({}, "", "/");
+  });
+
+  it("shows no swap link on the travel map for a visitor who's never seen a class page", () => {
+    render(<App />);
+
+    expect(
+      screen.queryByRole("link", { name: "Personal Travel" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a swap link back to the last class page visited", () => {
+    window.localStorage.setItem("pin-map:last-class-slug", "wtc2026");
+
+    render(<App />);
+
+    const link = screen.getByRole("link", { name: "Personal Travel" });
+    expect(link).toHaveAttribute("href", "/?class=wtc2026");
+  });
+
+  it("remembers a visited class page across a later trip to the travel map", async () => {
+    window.history.pushState({}, "", "/?class=belding1989");
+    mockSupabaseFrom({ pinmap_class_roster: { data: [], error: null } });
+    const { unmount } = render(<App />);
+    await screen.findByRole("button", { name: "Meetup Map" });
+    unmount();
+
+    expect(window.localStorage.getItem("pin-map:last-class-slug")).toBe(
+      "belding1989",
+    );
+  });
+});
