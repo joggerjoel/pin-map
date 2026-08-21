@@ -112,8 +112,14 @@ body {
   height: 100vh;
 }
 
+.class-public-landing .class-meetup-map__canvas {
+  position: absolute;
+  inset: 0;
+}
+
 .class-public-landing__no-token {
-  height: 100vh;
+  position: absolute;
+  inset: 0;
   background: #111827;
 }
 
