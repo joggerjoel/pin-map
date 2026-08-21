@@ -103,13 +103,7 @@ const jane: PublicRosterLocation = {
 
 describe("ClassPublicMapView", () => {
   it("places an avatar marker for each person at their cached location", () => {
-    render(
-      <ClassPublicMapView
-        classSlug="belding1989"
-        token="pk.test"
-        people={[jane]}
-      />,
-    );
+    render(<ClassPublicMapView token="pk.test" people={[jane]} />);
 
     expect(markerInstances).toHaveLength(1);
     expect(markerInstances[0]?.lngLat).toEqual([
@@ -122,13 +116,7 @@ describe("ClassPublicMapView", () => {
   });
 
   it("shows only the photo in the popup, with no name text anywhere", () => {
-    render(
-      <ClassPublicMapView
-        classSlug="belding1989"
-        token="pk.test"
-        people={[jane]}
-      />,
-    );
+    render(<ClassPublicMapView token="pk.test" people={[jane]} />);
 
     const content = markerInstances[0]?.popup?.domContent as HTMLDivElement;
     expect(content.textContent).toBe("");
@@ -138,13 +126,7 @@ describe("ClassPublicMapView", () => {
   });
 
   it("does not put a name in the marker's own alt text either", () => {
-    render(
-      <ClassPublicMapView
-        classSlug="belding1989"
-        token="pk.test"
-        people={[jane]}
-      />,
-    );
+    render(<ClassPublicMapView token="pk.test" people={[jane]} />);
 
     const img = markerInstances[0]?.element?.querySelector("img");
     expect(img?.alt).toBe("");
@@ -152,35 +134,19 @@ describe("ClassPublicMapView", () => {
 
   it("re-renders markers when the people list changes", () => {
     const { rerender } = render(
-      <ClassPublicMapView
-        classSlug="belding1989"
-        token="pk.test"
-        people={[jane]}
-      />,
+      <ClassPublicMapView token="pk.test" people={[jane]} />,
     );
     expect(markerInstances).toHaveLength(1);
 
     const other: PublicRosterLocation = { ...jane, id: 2 };
-    rerender(
-      <ClassPublicMapView
-        classSlug="belding1989"
-        token="pk.test"
-        people={[jane, other]}
-      />,
-    );
+    rerender(<ClassPublicMapView token="pk.test" people={[jane, other]} />);
 
     expect(markerInstances).toHaveLength(3);
     expect(markerInstances[0]?.removed).toBe(true);
   });
 
   it("shows a Spider toggle defaulting to on, available without signing in", () => {
-    render(
-      <ClassPublicMapView
-        classSlug="belding1989"
-        token="pk.test"
-        people={[jane]}
-      />,
-    );
+    render(<ClassPublicMapView token="pk.test" people={[jane]} />);
 
     expect(
       screen.getByRole("button", { name: "Spider: On" }),
@@ -189,13 +155,7 @@ describe("ClassPublicMapView", () => {
 
   it("toggles the Spider label and persists the preference on click", async () => {
     const user = userEvent.setup();
-    render(
-      <ClassPublicMapView
-        classSlug="belding1989"
-        token="pk.test"
-        people={[jane]}
-      />,
-    );
+    render(<ClassPublicMapView token="pk.test" people={[jane]} />);
 
     await user.click(screen.getByRole("button", { name: "Spider: On" }));
 
@@ -207,16 +167,10 @@ describe("ClassPublicMapView", () => {
     );
   });
 
-  it("links back to the travel map, labeled with the formatted class name", () => {
-    render(
-      <ClassPublicMapView
-        classSlug="wtc2026"
-        token="pk.test"
-        people={[jane]}
-      />,
-    );
+  it("links back to the travel map, labeled Personal Travel", () => {
+    render(<ClassPublicMapView token="pk.test" people={[jane]} />);
 
-    const link = screen.getByRole("link", { name: "WTC 2026" });
+    const link = screen.getByRole("link", { name: "Personal Travel" });
     expect(link).toHaveAttribute("href", "/");
   });
 });

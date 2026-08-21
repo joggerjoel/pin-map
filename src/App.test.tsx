@@ -693,17 +693,18 @@ describe("App personal travel / class swap link", () => {
   it("shows no swap link on the travel map for a visitor who's never seen a class page", () => {
     render(<App />);
 
-    expect(
-      screen.queryByRole("link", { name: "Personal Travel" }),
-    ).not.toBeInTheDocument();
+    const classLinks = screen
+      .queryAllByRole("link")
+      .filter((el) => el.getAttribute("href")?.startsWith("/?class="));
+    expect(classLinks).toHaveLength(0);
   });
 
-  it("shows a swap link back to the last class page visited", () => {
+  it("shows a swap link back to the last class page visited, labeled with its formatted name", () => {
     window.localStorage.setItem("pin-map:last-class-slug", "wtc2026");
 
     render(<App />);
 
-    const link = screen.getByRole("link", { name: "Personal Travel" });
+    const link = screen.getByRole("link", { name: "WTC 2026" });
     expect(link).toHaveAttribute("href", "/?class=wtc2026");
   });
 

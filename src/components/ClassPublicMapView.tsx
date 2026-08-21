@@ -12,10 +12,8 @@ import {
 } from "../lib/declutterSettings";
 import { useMarkerDeclutter } from "../hooks/useMarkerDeclutter";
 import type { DeclutterPoint } from "../hooks/useMarkerDeclutter";
-import { formatClassDisplayName } from "../lib/classNavigation";
 
 export interface ClassPublicMapViewProps {
-  classSlug: string;
   token: string;
   people: PublicRosterLocation[];
 }
@@ -44,11 +42,7 @@ function createAvatarPopupContent(
   return container;
 }
 
-export function ClassPublicMapView({
-  classSlug,
-  token,
-  people,
-}: ClassPublicMapViewProps) {
+export function ClassPublicMapView({ token, people }: ClassPublicMapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
@@ -124,7 +118,7 @@ export function ClassPublicMapView({
           {declutterEnabled ? "Spider: On" : "Spider: Off"}
         </button>
         <a href="/" className="class-map__declutter-toggle">
-          {formatClassDisplayName(classSlug)}
+          Personal Travel
         </a>
       </div>
       <div ref={containerRef} className="class-meetup-map__canvas" />

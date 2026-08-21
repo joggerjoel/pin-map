@@ -35,11 +35,7 @@ export function ClassPublicLanding({
   return (
     <div className="class-public-landing">
       {token !== null ? (
-        <ClassPublicMapView
-          classSlug={classSlug}
-          token={token}
-          people={people}
-        />
+        <ClassPublicMapView token={token} people={people} />
       ) : (
         <div className="class-public-landing__no-token" />
       )}

@@ -15,10 +15,8 @@ import {
 } from "../lib/declutterSettings";
 import { useMarkerDeclutter } from "../hooks/useMarkerDeclutter";
 import type { DeclutterPoint } from "../hooks/useMarkerDeclutter";
-import { formatClassDisplayName } from "../lib/classNavigation";
 
 export interface ClassMeetupMapViewProps {
-  classSlug: string;
   token: string;
   meetups: ClassMeetup[];
   people: RosterPerson[];
@@ -106,7 +104,6 @@ function createAvatarPopupContent(person: RosterPerson): HTMLDivElement {
 }
 
 export function ClassMeetupMapView({
-  classSlug,
   token,
   meetups,
   people,
@@ -266,7 +263,7 @@ export function ClassMeetupMapView({
           {showPersonalPhotos ? "Photos: Personal" : "Photos: Original"}
         </button>
         <a href="/" className="class-map__declutter-toggle">
-          {formatClassDisplayName(classSlug)}
+          Personal Travel
         </a>
       </div>
       <div ref={containerRef} className="class-meetup-map__canvas" />

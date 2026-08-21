@@ -37,7 +37,11 @@ import {
   getDeclutterEnabled,
   saveDeclutterEnabled,
 } from "./lib/declutterSettings";
-import { getLastClassSlug, saveLastClassSlug } from "./lib/classNavigation";
+import {
+  formatClassDisplayName,
+  getLastClassSlug,
+  saveLastClassSlug,
+} from "./lib/classNavigation";
 import {
   fetchDeclutterEnabled,
   saveDeclutterEnabledRemote,
@@ -341,7 +345,7 @@ export function App() {
             href={`/?class=${lastClassSlug}`}
             className="class-map__declutter-toggle"
           >
-            Personal Travel
+            {formatClassDisplayName(lastClassSlug)}
           </a>
         )}
         {effectiveToken !== null ? (

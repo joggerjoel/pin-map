@@ -160,12 +160,7 @@ const bob: RosterPerson = {
 describe("ClassMeetupMapView", () => {
   it("places a marker for each meetup at its coordinates", () => {
     render(
-      <ClassMeetupMapView
-        classSlug="belding1989"
-        token="pk.test"
-        meetups={[meetup]}
-        people={[]}
-      />,
+      <ClassMeetupMapView token="pk.test" meetups={[meetup]} people={[]} />,
     );
 
     expect(markerInstances).toHaveLength(1);
@@ -174,12 +169,7 @@ describe("ClassMeetupMapView", () => {
 
   it("builds popup content with the place, who was met, the date, and who submitted it", () => {
     render(
-      <ClassMeetupMapView
-        classSlug="belding1989"
-        token="pk.test"
-        meetups={[meetup]}
-        people={[]}
-      />,
+      <ClassMeetupMapView token="pk.test" meetups={[meetup]} people={[]} />,
     );
 
     const content = markerInstances[0]?.popup?.domContent as HTMLDivElement;
@@ -191,19 +181,13 @@ describe("ClassMeetupMapView", () => {
 
   it("re-renders markers when the meetups list changes", () => {
     const { rerender } = render(
-      <ClassMeetupMapView
-        classSlug="belding1989"
-        token="pk.test"
-        meetups={[meetup]}
-        people={[]}
-      />,
+      <ClassMeetupMapView token="pk.test" meetups={[meetup]} people={[]} />,
     );
     expect(markerInstances).toHaveLength(1);
 
     const second: ClassMeetup = { ...meetup, id: "meetup-2", query: "Tokyo" };
     rerender(
       <ClassMeetupMapView
-        classSlug="belding1989"
         token="pk.test"
         meetups={[meetup, second]}
         people={[]}
@@ -216,12 +200,7 @@ describe("ClassMeetupMapView", () => {
 
   it("places an avatar marker only for people with a cached living location", () => {
     render(
-      <ClassMeetupMapView
-        classSlug="belding1989"
-        token="pk.test"
-        meetups={[]}
-        people={[jane, bob]}
-      />,
+      <ClassMeetupMapView token="pk.test" meetups={[]} people={[jane, bob]} />,
     );
 
     expect(markerInstances).toHaveLength(1);
@@ -240,14 +219,7 @@ describe("ClassMeetupMapView", () => {
   });
 
   it("builds avatar popup content with the person's name and where they live", () => {
-    render(
-      <ClassMeetupMapView
-        classSlug="belding1989"
-        token="pk.test"
-        meetups={[]}
-        people={[jane]}
-      />,
-    );
+    render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[jane]} />);
 
     const content = markerInstances[0]?.popup?.domContent as HTMLDivElement;
     expect(content.textContent).toContain("Jane Smith Johnson");
@@ -256,12 +228,7 @@ describe("ClassMeetupMapView", () => {
 
   it("re-renders avatar markers when the people list changes", () => {
     const { rerender } = render(
-      <ClassMeetupMapView
-        classSlug="belding1989"
-        token="pk.test"
-        meetups={[]}
-        people={[jane]}
-      />,
+      <ClassMeetupMapView token="pk.test" meetups={[]} people={[jane]} />,
     );
     expect(markerInstances).toHaveLength(1);
 
@@ -272,7 +239,6 @@ describe("ClassMeetupMapView", () => {
     };
     rerender(
       <ClassMeetupMapView
-        classSlug="belding1989"
         token="pk.test"
         meetups={[]}
         people={[jane, relocatedBob]}
@@ -287,7 +253,6 @@ describe("ClassMeetupMapView", () => {
     const onAvatarClick = vi.fn();
     render(
       <ClassMeetupMapView
-        classSlug="belding1989"
         token="pk.test"
         meetups={[]}
         people={[jane]}
@@ -306,7 +271,6 @@ describe("ClassMeetupMapView", () => {
     const onAvatarClick = vi.fn();
     render(
       <ClassMeetupMapView
-        classSlug="belding1989"
         token="pk.test"
         meetups={[]}
         people={[jane]}
@@ -329,7 +293,6 @@ describe("ClassMeetupMapView", () => {
     const onAvatarClick = vi.fn();
     render(
       <ClassMeetupMapView
-        classSlug="belding1989"
         token="pk.test"
         meetups={[]}
         people={[jane]}
@@ -348,7 +311,6 @@ describe("ClassMeetupMapView", () => {
   it("marks the active person's marker with the active class", () => {
     render(
       <ClassMeetupMapView
-        classSlug="belding1989"
         token="pk.test"
         meetups={[]}
         people={[jane]}
@@ -366,7 +328,6 @@ describe("ClassMeetupMapView", () => {
   it("flies to the active person's cached location", () => {
     const { rerender } = render(
       <ClassMeetupMapView
-        classSlug="belding1989"
         token="pk.test"
         meetups={[]}
         people={[jane]}
@@ -377,7 +338,6 @@ describe("ClassMeetupMapView", () => {
 
     rerender(
       <ClassMeetupMapView
-        classSlug="belding1989"
         token="pk.test"
         meetups={[]}
         people={[jane]}
@@ -393,7 +353,6 @@ describe("ClassMeetupMapView", () => {
   it("does not fly when the active person has no cached location", () => {
     render(
       <ClassMeetupMapView
-        classSlug="belding1989"
         token="pk.test"
         meetups={[]}
         people={[bob]}
@@ -405,14 +364,7 @@ describe("ClassMeetupMapView", () => {
   });
 
   it("shows a Spider toggle defaulting to on", () => {
-    render(
-      <ClassMeetupMapView
-        classSlug="belding1989"
-        token="pk.test"
-        meetups={[]}
-        people={[]}
-      />,
-    );
+    render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[]} />);
 
     expect(
       screen.getByRole("button", { name: "Spider: On" }),
@@ -421,14 +373,7 @@ describe("ClassMeetupMapView", () => {
 
   it("toggles the Spider label and persists the preference on click", async () => {
     const user = userEvent.setup();
-    render(
-      <ClassMeetupMapView
-        classSlug="belding1989"
-        token="pk.test"
-        meetups={[]}
-        people={[]}
-      />,
-    );
+    render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[]} />);
 
     await user.click(screen.getByRole("button", { name: "Spider: On" }));
 
@@ -441,14 +386,7 @@ describe("ClassMeetupMapView", () => {
   });
 
   it("shows a Photos toggle defaulting to Original", () => {
-    render(
-      <ClassMeetupMapView
-        classSlug="belding1989"
-        token="pk.test"
-        meetups={[]}
-        people={[jane]}
-      />,
-    );
+    render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[jane]} />);
 
     expect(
       screen.getByRole("button", { name: "Photos: Original" }),
@@ -465,7 +403,6 @@ describe("ClassMeetupMapView", () => {
     };
     render(
       <ClassMeetupMapView
-        classSlug="belding1989"
         token="pk.test"
         meetups={[]}
         people={[jane]}
@@ -488,7 +425,6 @@ describe("ClassMeetupMapView", () => {
     const user = userEvent.setup();
     render(
       <ClassMeetupMapView
-        classSlug="belding1989"
         token="pk.test"
         meetups={[]}
         people={[jane]}
@@ -510,14 +446,7 @@ describe("ClassMeetupMapView", () => {
 
   it("falls back to the official portrait in Personal mode when no personal photo exists", async () => {
     const user = userEvent.setup();
-    render(
-      <ClassMeetupMapView
-        classSlug="belding1989"
-        token="pk.test"
-        meetups={[]}
-        people={[jane]}
-      />,
-    );
+    render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[jane]} />);
 
     await user.click(screen.getByRole("button", { name: "Photos: Original" }));
 
@@ -528,17 +457,10 @@ describe("ClassMeetupMapView", () => {
     expect(img?.src).toBe(jane.imageUrl);
   });
 
-  it("links back to the travel map, labeled with the formatted class name", () => {
-    render(
-      <ClassMeetupMapView
-        classSlug="wtc2026"
-        token="pk.test"
-        meetups={[]}
-        people={[]}
-      />,
-    );
+  it("links back to the travel map, labeled Personal Travel", () => {
+    render(<ClassMeetupMapView token="pk.test" meetups={[]} people={[]} />);
 
-    const link = screen.getByRole("link", { name: "WTC 2026" });
+    const link = screen.getByRole("link", { name: "Personal Travel" });
     expect(link).toHaveAttribute("href", "/");
   });
 });
