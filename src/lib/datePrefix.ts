@@ -3,7 +3,8 @@ export interface DatePrefixMatch {
   rest: string;
 }
 
-const DATE_PREFIX_PATTERN = /^(\d{4}(?:\s*,\s*\d{4})*)\s*\|\s*(.+)$/;
+const DATE_PREFIX_PATTERN =
+  /^(\d{2}\/\d{2}\/\d{4}\s*-\s*\d{2}\/\d{2}\/\d{4}|\d{2}\/\d{4}\s*-\s*\d{2}\/\d{4}|\d{4}\s*-\s*\d{4}|\d{2}\/\d{4}|\d{4}(?:\s*,\s*\d{4})*)\s*\|\s*(.+)$/;
 
 export function extractDatePrefix(line: string): DatePrefixMatch | null {
   const match = line.trim().match(DATE_PREFIX_PATTERN);
