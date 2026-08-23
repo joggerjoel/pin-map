@@ -13,6 +13,7 @@ export type BuiltinTagKey =
   | "ironman"
   | "airport"
   | "current"
+  | "future"
   | "ski"
   | "run";
 
@@ -23,6 +24,7 @@ export const BUILTIN_TAG_KEYS: BuiltinTagKey[] = [
   "ironman",
   "airport",
   "current",
+  "future",
   "ski",
   "run",
 ];
@@ -34,6 +36,7 @@ export const BUILTIN_TAG_LABELS: Record<BuiltinTagKey, string> = {
   ironman: "Ironman",
   airport: "Airport",
   current: "Current",
+  future: "Future",
   ski: "Ski",
   run: "Run",
 };
@@ -46,6 +49,7 @@ export const BUILTIN_APPEARANCE_DEFAULTS: Record<BuiltinTagKey, TagAppearance> =
     ironman: { color: "#dc2626", iconShape: "triathlete" },
     airport: { color: "#0891b2", iconShape: "airplane" },
     current: { color: "#16a34a", iconShape: "house" },
+    future: { color: "#a855f7", iconShape: "house" },
     ski: { color: "#0ea5e9", iconShape: "ski" },
     run: { color: "#f43f5e", iconShape: "run" },
   };

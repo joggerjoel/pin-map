@@ -80,4 +80,11 @@ describe("extractPlaceIcon", () => {
       icon: "house-current",
     });
   });
+
+  it("extracts the future tag and strips it from the query", () => {
+    expect(extractPlaceIcon("Austin, Texas (future)")).toEqual({
+      query: "Austin, Texas",
+      icon: "house-future",
+    });
+  });
 });

@@ -253,6 +253,7 @@ function resolveBuiltinKey(place: PinnedPlace): BuiltinTagKey | undefined {
   if (place.icon === "house-home") return "hometown";
   if (place.icon === "house-live") return "lived";
   if (place.icon === "house-current") return "current";
+  if (place.icon === "house-future") return "future";
   if (place.icon === "airplane") return "airport";
   if (place.icon === "ski") return "ski";
   if (place.icon === "run") return "run";

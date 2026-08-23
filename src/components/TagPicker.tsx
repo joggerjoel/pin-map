@@ -35,6 +35,7 @@ const BUILTIN_TAGS: Record<BuiltinTagKey, PinTag> = {
   ironman: { kind: "icon", value: "triathlete" },
   airport: { kind: "icon", value: "airplane" },
   current: { kind: "icon", value: "house-current" },
+  future: { kind: "icon", value: "house-future" },
   ski: { kind: "icon", value: "ski" },
   run: { kind: "icon", value: "run" },
 };

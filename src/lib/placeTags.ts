@@ -3,6 +3,7 @@ export type PlaceIcon =
   | "house-home"
   | "house-live"
   | "house-current"
+  | "house-future"
   | "airplane"
   | "ski"
   | "run";
@@ -14,6 +15,7 @@ const TAG_ICONS: Record<string, PlaceIcon> = {
   live: "house-live",
   lived: "house-live",
   current: "house-current",
+  future: "house-future",
   air: "airplane",
   ski: "ski",
   run: "run",

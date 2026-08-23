@@ -621,6 +621,27 @@ describe("MapView", () => {
     expect(marker?.options?.color).toBeUndefined();
   });
 
+  it("renders a custom house marker element for a place tagged with the future icon", () => {
+    const tagged = { ...paris, icon: "house-future" as const };
+    render(
+      <MapView
+        token="pk.test"
+        places={[tagged]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+        canEdit={true}
+      />,
+    );
+    const marker = markerInstances[0];
+    expect(marker?.options?.element).toBeInstanceOf(HTMLElement);
+    expect(marker?.options?.color).toBeUndefined();
+    expect(marker?.element.title).toBe("Future");
+  });
+
   it("renders a custom house marker element for a hometown place", () => {
     const home = { ...paris, category: "hometown" as const };
     render(
