@@ -168,13 +168,26 @@ not just the unzipped fixture folder — see the acceptance criteria below.
         `bun test`. Each underlying module (parser, zip extraction,
         owner-gate) has its own thorough test suite, but the route handler
         wiring them together doesn't yet.
-- [ ] Keep matched photo files in a short-lived per-upload cache dir with
-      TTL cleanup — **not started**, blocked on the posts/photos
-      correlation parsers above (nothing is matched yet, so there's nothing
-      to cache).
-- [ ] `GET /photo/:tusUploadId/:filename` — currently a stub that always
-      404s (see `handlePhoto()` in `index.ts`). **Not started** — same
-      blocker as the photo cache above.
+- [x] Keep matched photo files in a short-lived per-upload cache dir with
+      TTL cleanup — `src/photoCache.ts` (`cachePhotos`/`cleanupStaleCaches`/
+      `resolveCachedPhotoPath`/`contentTypeFor`), wired into `/parse`: matched
+      files are copied out of `extractDir` into `UPLOAD_DIR/_photo_cache/
+    {tusUploadId}/{basename}` before the existing `finally` block deletes
+      `extractDir`. TTL fixed at 24h (the plan's placeholder value), swept
+      opportunistically on every `/parse` call rather than a timer — 12 unit
+      tests (`src/photoCache.test.ts`), including the same
+      resolves-within-root traversal-guard pattern as `zipExtract.ts`'s
+      zip-slip protection, applied here to the URL-supplied filename
+      segment. **Not yet verified against a real `/parse` → `GET /photo`
+      round trip** — only unit-tested and smoke-tested (see below), since
+      that needs a real tus upload to exercise.
+- [x] `GET /photo/:tusUploadId/:filename` — implemented in `index.ts`,
+      same `requireOwner()` gate as `/parse`/`/geocode`, streams raw bytes
+      via `Bun.file()` (no base64) with a content-type inferred from
+      extension. **Verified live**: redeployed to `aorus4` and smoke-tested
+      — unauthenticated request returns `403` (not a crash), `/healthz`
+      returns `200`. **Not yet exercised with a real photo** — that's the
+      still-open item above.
 - [x] `POST /geocode` — accepts `{ inputs: [{externalKey, placeName}] }`.
       **Verified live** with real Mapbox calls against real fixture place
       names: "Singapore, Singapore" and "Busselton, Western Australia"

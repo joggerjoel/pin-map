@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  claimUpload,
   geocodeCandidates,
   parseExport,
+  QuotaExceededError,
   uploadExportFile,
 } from "./fbImportRelayClient";
 
@@ -106,6 +108,128 @@ describe("uploadExportFile", () => {
     const instance = mockUploadInstances[0];
     instance.findPreviousUploads.mockResolvedValue([{ uploadUrl: "prior" }]);
   });
+
+  it("claims the upload via onAfterResponse as soon as tusd assigns the id, before any bytes are sent", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const file = new File(["zip bytes"], "export.zip");
+    void uploadExportFile(file, "token-123", vi.fn());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const instance = mockUploadInstances[0];
+    const onAfterResponse = instance.options.onAfterResponse as (
+      req: { getMethod(): string },
+      res: { getHeader(name: string): string | undefined },
+    ) => Promise<void>;
+
+    await onAfterResponse(
+      { getMethod: () => "POST" },
+      {
+        getHeader: (name) =>
+          name === "Location"
+            ? "http://upload.test/files/new-id-789"
+            : undefined,
+      },
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("/claim-upload");
+    expect(JSON.parse(init.body)).toEqual({ tusUploadId: "new-id-789" });
+  });
+
+  it("only claims once even if onAfterResponse fires again for a later PATCH", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const file = new File(["zip bytes"], "export.zip");
+    void uploadExportFile(file, "token-123", vi.fn());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const instance = mockUploadInstances[0];
+    const onAfterResponse = instance.options.onAfterResponse as (
+      req: { getMethod(): string },
+      res: { getHeader(name: string): string | undefined },
+    ) => Promise<void>;
+
+    await onAfterResponse(
+      { getMethod: () => "POST" },
+      { getHeader: () => "http://upload.test/files/new-id-789" },
+    );
+    await onAfterResponse(
+      { getMethod: () => "PATCH" },
+      { getHeader: () => undefined },
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates a claim rejection out of onAfterResponse (aborts the upload via tus-js-client's own error path)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: "already_claimed" }), {
+          status: 403,
+        }),
+      ),
+    );
+
+    const file = new File(["zip bytes"], "export.zip");
+    void uploadExportFile(file, "token-123", vi.fn());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const instance = mockUploadInstances[0];
+    const onAfterResponse = instance.options.onAfterResponse as (
+      req: { getMethod(): string },
+      res: { getHeader(name: string): string | undefined },
+    ) => Promise<void>;
+
+    await expect(
+      onAfterResponse(
+        { getMethod: () => "POST" },
+        { getHeader: () => "http://upload.test/files/hijacked-id" },
+      ),
+    ).rejects.toThrow("already_claimed");
+  });
+});
+
+describe("claimUpload", () => {
+  it("posts tusUploadId with the bearer token", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await claimUpload("upload-1", "token-123");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("/claim-upload");
+    expect(init.headers.Authorization).toBe("Bearer token-123");
+    expect(JSON.parse(init.body)).toEqual({ tusUploadId: "upload-1" });
+  });
+
+  it("throws with the error code on a non-2xx response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ error: "not_found" }), { status: 400 }),
+        ),
+    );
+
+    await expect(claimUpload("upload-1", "token-123")).rejects.toThrow(
+      "not_found",
+    );
+  });
 });
 
 describe("parseExport / geocodeCandidates", () => {
@@ -165,5 +289,21 @@ describe("parseExport / geocodeCandidates", () => {
     );
 
     expect(result.results.k1).toEqual({ lat: 1, lng: 2, confidence: "high" });
+  });
+
+  it("geocodeCandidates throws QuotaExceededError on a 429", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(new Response("quota exceeded", { status: 429 })),
+    );
+
+    await expect(
+      geocodeCandidates(
+        [{ externalKey: "k1", placeName: "Somewhere" }],
+        "token-123",
+      ),
+    ).rejects.toBeInstanceOf(QuotaExceededError);
   });
 });

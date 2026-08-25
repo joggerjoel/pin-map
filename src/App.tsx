@@ -212,13 +212,15 @@ export function App() {
     );
   }
 
-  // Owner-only, opt-in via the sidebar's "Imports" button (see below) —
-  // swaps the whole travel-map view for the review UI, same shape as the
-  // classSlug branch above.
+  // Any authenticated user, private to them (see
+  // facebook-import-multi-tenant.md) — opt-in via the sidebar's "Imports"
+  // button (see below). Swaps the whole travel-map view for the review UI,
+  // same shape as the classSlug branch above. Used to be owner-only; the
+  // relay's per-upload ownership binding and per-user RLS scoping are what
+  // make opening this to every signed-in user safe.
   if (
     showImports &&
     userId !== null &&
-    userId === ownerUserId &&
     auth.accessToken !== null &&
     effectiveToken !== null
   ) {
@@ -263,7 +265,7 @@ export function App() {
           >
             {declutterEnabled ? "Spider: On" : "Spider: Off"}
           </button>
-          {auth.status === "signed-in" && userId === ownerUserId && (
+          {auth.status === "signed-in" && (
             <button
               type="button"
               className="app__imports-toggle"
