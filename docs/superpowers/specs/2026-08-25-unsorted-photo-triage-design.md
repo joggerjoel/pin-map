@@ -318,10 +318,18 @@ canonical query, `security definer`, matching the existing
 for this pass: this is a single-user tool working through one
 already-captured batch, not a concurrent multi-writer surface, and the
 residual window (a network hiccup or tab-close between the two
-consecutive calls) is narrow and manually recoverable (an orphaned photo
-can be re-triaged; an unused pin can be deleted) rather than the routine
-outcome this design needs to prevent. Worth revisiting if this panel's
-usage pattern changes.
+consecutive calls) is narrow. Recovery is *not* "re-triage it in the
+panel," though — the Invariants section (and now the RLS `using` clause
+itself, §1) rule that out on purpose: `place_query` moves from `null`
+once and stays put, so an orphaned photo (assigned to a pin that never
+persisted) is invisible to this panel forever, not merely until someone
+gets to it. The honest recovery path is direct SQL (`update
+pinmap_place_photos set place_query = null where id = ...`, run as an
+operator, same access level as applying the migration itself) or
+accepting the orphan — not an in-app affordance. An unused pin (the
+milder half of this race) can be deleted normally, no special access
+needed. Worth building the RPC if this ever stops being a narrow,
+manually-recoverable edge case.
 
 ### 5. Component: `src/components/UnsortedPhotosPanel.tsx` (new)
 
