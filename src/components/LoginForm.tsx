@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
 export interface LoginFormProps {
@@ -9,12 +9,26 @@ export interface LoginFormProps {
   ) => Promise<{ error: string | null }>;
 }
 
+// GoTrue's rate-limit error, e.g. "For security purposes, you can only
+// request this after 23 seconds." -- extract the seconds so the button can
+// count down instead of just showing static error text on every retry.
+const RATE_LIMIT_PATTERN = /after (\d+) seconds?/i;
+
 export function LoginForm({ onSendOtp, onVerifyOtp }: LoginFormProps) {
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((seconds) => seconds - 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
 
   async function handleSendOtp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -26,6 +40,10 @@ export function LoginForm({ onSendOtp, onVerifyOtp }: LoginFormProps) {
     setIsSubmitting(false);
     if (result.error !== null) {
       setError(result.error);
+      const match = RATE_LIMIT_PATTERN.exec(result.error);
+      if (match) {
+        setCooldown(Number(match[1]));
+      }
       return;
     }
     setStep("code");
@@ -88,8 +106,12 @@ export function LoginForm({ onSendOtp, onVerifyOtp }: LoginFormProps) {
         onChange={(event) => setEmail(event.target.value)}
         placeholder="you@example.com"
       />
-      <button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? "Sending..." : "Send code"}
+      <button type="submit" disabled={isSubmitting || cooldown > 0}>
+        {isSubmitting
+          ? "Sending..."
+          : cooldown > 0
+            ? `Resend in ${cooldown}s`
+            : "Send code"}
       </button>
       {error !== null && <p className="login-form__error">{error}</p>}
     </form>

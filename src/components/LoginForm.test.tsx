@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LoginForm } from "./LoginForm";
 
 describe("LoginForm", () => {
@@ -116,5 +116,52 @@ describe("LoginForm", () => {
     await user.click(screen.getByRole("button", { name: "Send code" }));
     await screen.findByLabelText("Code");
     expect(screen.getByLabelText("Code")).toHaveValue("");
+  });
+
+  describe("rate-limit cooldown", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("disables the button with a countdown on a rate-limit error, then re-enables at zero", async () => {
+      const onSendOtp = vi.fn().mockResolvedValue({
+        error:
+          "For security purposes, you can only request this after 2 seconds.",
+      });
+      const user = userEvent.setup({ delay: null });
+      render(<LoginForm onSendOtp={onSendOtp} onVerifyOtp={vi.fn()} />);
+
+      await user.type(screen.getByLabelText("Email"), "a@b.com");
+      await user.click(screen.getByRole("button", { name: "Send code" }));
+
+      const button = await screen.findByRole("button", {
+        name: "Resend in 2s",
+      });
+      expect(button).toBeDisabled();
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(
+        screen.getByRole("button", { name: "Resend in 1s" }),
+      ).toBeDisabled();
+
+      await vi.advanceTimersByTimeAsync(1000);
+      const reenabled = screen.getByRole("button", { name: "Send code" });
+      expect(reenabled).not.toBeDisabled();
+    });
+
+    it("does not start a countdown for a non-rate-limit error", async () => {
+      const onSendOtp = vi.fn().mockResolvedValue({ error: "some message" });
+      const user = userEvent.setup({ delay: null });
+      render(<LoginForm onSendOtp={onSendOtp} onVerifyOtp={vi.fn()} />);
+
+      await user.type(screen.getByLabelText("Email"), "a@b.com");
+      await user.click(screen.getByRole("button", { name: "Send code" }));
+
+      const button = await screen.findByRole("button", { name: "Send code" });
+      expect(button).not.toBeDisabled();
+    });
   });
 });

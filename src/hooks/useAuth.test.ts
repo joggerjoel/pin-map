@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth } from "./useAuth";
 import { supabase } from "../lib/supabaseClient";
 import type { Session } from "@supabase/supabase-js";
@@ -16,9 +16,35 @@ vi.mock("../lib/supabaseClient", () => ({
   },
 }));
 
-function mockSession(email: string, id = "user-1"): Session {
-  return { user: { email, id } } as unknown as Session;
+function mockSession(
+  email: string,
+  id = "user-1",
+  createdAt = "2020-01-01T00:00:00.000Z",
+): Session {
+  return {
+    access_token: "token-abc",
+    user: { email, id, created_at: createdAt },
+  } as unknown as Session;
 }
+
+let originalFetch: typeof fetch;
+
+beforeEach(() => {
+  originalFetch = globalThis.fetch;
+  // verifyOtp's success path fire-and-forgets a clientIp lookup + a
+  // notify-relay call (see useAuth.ts) -- stub fetch globally here so
+  // every test exercising that path hits this instead of the network,
+  // rather than repeating the same stub per test.
+  globalThis.fetch = vi
+    .fn()
+    .mockResolvedValue(
+      new Response("ip=203.0.113.42", { status: 200 }),
+    ) as unknown as typeof fetch;
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 function defaultOnAuthStateChange() {
   vi.mocked(supabase.auth.onAuthStateChange).mockReturnValue({
@@ -162,6 +188,73 @@ describe("useAuth", () => {
       type: "email",
     });
     expect(response).toEqual({ error: null });
+  });
+
+  it("verifyOtp notifies notify-relay with the ip and isNewAccount=false for a long-existing account", async () => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({
+      data: { session: null },
+    } as unknown as Awaited<ReturnType<typeof supabase.auth.getSession>>);
+    defaultOnAuthStateChange();
+    vi.mocked(supabase.auth.verifyOtp).mockResolvedValue({
+      data: { session: mockSession("a@b.com"), user: null },
+      error: null,
+    } as unknown as Awaited<ReturnType<typeof supabase.auth.verifyOtp>>);
+
+    const { result } = renderHook(() => useAuth());
+    await waitFor(() => expect(result.current.status).toBe("signed-out"));
+
+    await act(async () => {
+      await result.current.verifyOtp("a@b.com", "123456");
+      // The notify call is fire-and-forget (not awaited by verifyOtp
+      // itself) -- flush pending microtasks so it's had a chance to run.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+    const notifyCall = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes("/notify-login"),
+    );
+    expect(notifyCall).toBeDefined();
+    expect(
+      (notifyCall![1].headers as Record<string, string>).Authorization,
+    ).toBe("Bearer token-abc");
+    expect(JSON.parse(notifyCall![1].body as string)).toEqual({
+      ip: "203.0.113.42",
+      isNewAccount: false,
+    });
+  });
+
+  it("verifyOtp reports isNewAccount=true when the account was just created", async () => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValue({
+      data: { session: null },
+    } as unknown as Awaited<ReturnType<typeof supabase.auth.getSession>>);
+    defaultOnAuthStateChange();
+    vi.mocked(supabase.auth.verifyOtp).mockResolvedValue({
+      data: {
+        session: mockSession("new@b.com", "user-3", new Date().toISOString()),
+        user: null,
+      },
+      error: null,
+    } as unknown as Awaited<ReturnType<typeof supabase.auth.verifyOtp>>);
+
+    const { result } = renderHook(() => useAuth());
+    await waitFor(() => expect(result.current.status).toBe("signed-out"));
+
+    await act(async () => {
+      await result.current.verifyOtp("new@b.com", "123456");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+    const notifyCall = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes("/notify-login"),
+    );
+    expect(JSON.parse(notifyCall![1].body as string)).toEqual({
+      ip: "203.0.113.42",
+      isNewAccount: true,
+    });
   });
 
   it("verifyOtp returns the error message on failure", async () => {

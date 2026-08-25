@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabaseClient";
 import { incrementLogin } from "../lib/tokenUsage";
+import { fetchClientIp } from "../lib/clientIp";
+import { notifyLogin } from "../lib/notifyRelayClient";
 
 export type AuthStatus = "loading" | "signed-out" | "signed-in";
 
@@ -54,6 +56,14 @@ export function useAuth(): UseAuthResult {
     });
     if (!error && data.session) {
       void incrementLogin();
+      // First sign-in and account creation happen in the same OTP-verify
+      // step for this passwordless flow, so "just created" is inferred
+      // from how close created_at is to now, rather than a separate event.
+      const createdAt = new Date(data.session.user.created_at).getTime();
+      const isNewAccount = Date.now() - createdAt < 60_000;
+      void fetchClientIp().then((ip) =>
+        notifyLogin(data.session!.access_token, ip, isNewAccount),
+      );
     }
     return { error: error ? error.message : null };
   }, []);
