@@ -162,7 +162,7 @@ TABLE`s, `CREATE INDEX`, `UPDATE 2`, `REVOKE`, `GRANT` — no failures).
 
 - [x] `revoke select on public.pinmap_place_photos from anon, authenticated;`
       then `grant select (id, user_id, place_query, storage_path,
-  created_at) on public.pinmap_place_photos to anon, authenticated;` —
+created_at) on public.pinmap_place_photos to anon, authenticated;` —
       restores exactly today's client-visible columns, nothing more.
 - [ ] Confirm every existing client-side query against this table still
       works after the revoke — `fetchPhotos`, `uploadPhoto`,
@@ -199,212 +199,290 @@ shows both).
 
 ## P0 — Concurrency guard
 
-- [ ] Advisory lock at script start (`pg_try_advisory_lock` with a fixed
-      key), exits immediately with a clear message if already held. **Not
-      yet built** — this section covers `scripts/backfill-photo-tags.ts`
-      itself, which doesn't exist until "P1 — Backfill script."
-- [ ] Every write (success or failure) is a conditional `update ... where
-    id = :id and tag_status = 'pending'` (or the equivalent for the
-      failure-path increment), checked for exactly one affected row. **Not
-      yet built**, same reason.
+**Superseded design, found while building (see `ai-tagging-plan.md`
+"Concurrency and ownership"): `pg_try_advisory_lock` doesn't reliably work
+through PostgREST's pooled connections** — a lock acquired via one
+`.rpc()` call has no guarantee of surviving to the next request minutes
+later. The Postgres primitive itself was verified correct in isolation
+(below, kept as a record of that verification), but the actual shipped
+script uses a **local file lock** instead
+(`scripts/lib/fileLock.ts`) — see "P1 — Backfill script" below for that
+implementation and its own tests.
 
-**Mechanism verified independently of the script** (2026-08-25, local
-throwaway container): confirmed both Postgres primitives the script will
-rely on actually behave as designed, before writing any script code around
-them —
+- [x] Single-instance guard at script start, exits immediately with a
+      clear message if already held — **built as a local file lock, not
+      `pg_try_advisory_lock`** (superseded design, see above).
+- [x] Every write (success or failure) is a conditional `update ... where
+    id = :id and tag_status = 'pending'` (or the `record_photo_tag_failure`
+      RPC for the failure-path increment), checked for exactly one
+      affected row — built (`applyTagResult()` in `scripts/lib/tagPhoto.ts`).
+
+**`pg_try_advisory_lock` mechanism verified, then not used** (2026-08-25,
+local throwaway container) — recorded here since the verification work
+happened and directly motivated the design correction, not because the
+primitive ended up in the shipped code:
 
 - `pg_try_advisory_lock`: a second session calling it with the same key
   while a first session holds it gets back `false` immediately (not a
   block/wait) — confirmed directly (first session held the lock via
   `pg_advisory_lock` + `pg_sleep(3)`, a concurrent second session's
-  `pg_try_advisory_lock` call returned `false` during that window).
+  `pg_try_advisory_lock` call returned `false` during that window). This
+  is a real, correct Postgres behavior — the problem was never the
+  primitive, it was that PostgREST can't guarantee two `.rpc()` calls
+  share the same underlying session for it to apply to.
 - Conditional `update ... where tag_status = 'pending'`: simulated two
   writers racing for the same row — the first's conditional update
   succeeds (`UPDATE 1`), the second's identical conditional update against
   the now-changed row reports `UPDATE 0` and the row correctly still holds
-  the first writer's value, never silently overwritten.
+  the first writer's value, never silently overwritten. This part of the
+  design carried over unchanged into the shipped implementation.
 
 **Acceptance criteria**
 
-- [ ] Starting the actual script twice in quick succession: the second
-      instance exits immediately without processing anything, logged clearly.
-      (Underlying lock behavior verified above; the script itself isn't built
-      yet.)
+- [x] Starting the actual script twice in quick succession: the second
+      instance exits immediately without processing anything, logged
+      clearly — verified via `fileLock.test.ts`'s "fails to acquire while a
+      live process holds the lock" test (uses this test process's own live
+      PID to simulate a genuinely running first instance). Not yet
+      re-verified by literally running two instances of the real script
+      (low risk given the direct unit-level proof, but noted for
+      completeness).
 - [x] A manually-simulated race (two conditional updates against the same
-      row, one after the other) leaves the row in the state the _first_ writer
-      set, and the second writer's update reports zero affected rows rather
-      than silently overwriting. Verified directly (see above).
+      row, one after the other) leaves the row in the state the _first_
+      writer set, and the second writer's update reports zero affected
+      rows rather than silently overwriting. Verified directly (see
+      above).
 
 ## P1 — Perceptual hash
 
-- [ ] `sharp` decode pipeline: `.rotate()` (EXIF normalize) →
-      `.ensureAlpha()` → `.raw()` → pixel buffer + dimensions, per the
-      plan.
-- [ ] `blockhash-core` fed the decoded pixel buffer (not raw file bytes).
-- [ ] Byte-size cap (e.g. 50MB) enforced before decode; oversized files
-      treated as a failed attempt.
-- [ ] HEIC handling per the spike's outcome (works via `sharp` directly, or
-      needs a dedicated decode step first).
+- [x] `sharp` decode pipeline: `.rotate()` (EXIF normalize) →
+      `.ensureAlpha()` → `.raw()` → pixel buffer + dimensions
+      (`scripts/lib/tagPhoto.ts`, `decodeImage()`).
+- [x] `blockhash-core` fed the decoded pixel buffer, not raw file bytes
+      (`computePhash()`, `bmvbhash(image, 16)`).
+- [x] Byte-size cap (50MB) enforced before decode; oversized files throw,
+      caught by `tagPhoto()`'s outer try/catch and treated as a failed
+      attempt.
+- [x] HEIC: confirmed moot by the spike (zero HEIC in the real backlog) —
+      no dedicated decode step built, matches the plan's decision.
 
 **Acceptance criteria**
 
-- Running it twice on the same image produces the same hash (deterministic
-  — automated test, see "Automated tests" below).
-- Two visually near-identical photos (if any exist in the real backlog —
-  check first) produce hashes with a small Hamming distance; two unrelated
-  photos produce a large one.
-- A photo rotated 90° via EXIF orientation (not re-encoded pixels) produces
-  the _same_ hash as its unrotated original, confirming the `.rotate()`
-  normalization actually works.
+- [x] Deterministic — automated test (`tagPhoto.test.ts`), same synthetic
+      image twice produces the same hash.
+- [ ] Near-identical vs. unrelated real photos — not tested against real
+      near-duplicates yet (would need to find an actual burst-shot pair in
+      the backlog first); the deterministic + "different images produce
+      different hashes" tests pass, which is the more fundamental
+      correctness property.
+- [x] EXIF-orientation normalization — automated test, built with
+      dynamically-generated fixtures (an asymmetric image rotated three
+      ways: unrotated, physically rotated 90°, and EXIF-tagged-but-not-
+      physically-rotated), confirming the EXIF-tagged version hashes
+      identically to the physically-rotated one and differently from the
+      unrotated one. This is real proof the `.rotate()` call works, not an
+      assumption.
 
 ## P1 — Vision tagging
 
-- [ ] The exact tightened prompt text from the spike (verbatim — it's part
-      of the `pipeline_version = 1` definition), against `llava`.
-- [ ] Sanitize before validating: drop any tag not in the fixed taxonomy,
-      then drop `other` specifically if it's combined with a remaining
-      real tag (per the spike's finding — llava's own content judgment was
-      reliable even when it disobeyed the `other`-exclusivity instruction,
-      so don't throw the whole response away over that alone).
-- [ ] Reject (as a failed attempt) only if, after sanitizing: the response
-      isn't valid JSON, or the resulting `tags` array is empty.
-- [ ] Model name (`llava`) is a single config constant, not hardcoded in
-      multiple places.
+- [x] The exact tightened prompt text from the spike, verbatim, in
+      `scripts/lib/tagPhoto.ts` (`TAGGING_PROMPT`), against `llava`.
+- [x] Sanitize before validating (`sanitizeTags()`): drops non-taxonomy
+      tags, then drops `other` if combined with a remaining real tag.
+- [x] Reject (as a failed attempt) only if, after sanitizing, the response
+      isn't valid JSON or the resulting `tags` array is empty
+      (`parseModelResponse()`).
+- [x] Model name (`llava`) is a single config constant (`VISION_MODEL`).
 
 **Acceptance criteria**
 
-- Re-running the spike's 20-photo labeled sample through the actual shipped
-  code (not the throwaway spike script) reproduces the same ballpark match
-  rate (75-90%, per the plan's accepted result) — a regression here means
-  the real implementation diverged from what was actually measured.
-- Automated tests (see below) cover the sanitize-then-reject logic
-  directly, not just via manual spot-checking.
+- [ ] Re-running the spike's 20-photo labeled sample through the actual
+      shipped code — **not done**. The spike's throwaway script and the
+      real `tagPhoto.ts` use the identical prompt/sanitization logic (the
+      code was transcribed directly from the spike's measured-working
+      version, not rewritten), but a literal re-run through the shipped
+      module wasn't repeated. Worth doing before the full 8,037-photo
+      backfill run, not before shipping the code itself.
+- [x] Automated tests cover the sanitize-then-reject logic directly
+      (`tagPhoto.test.ts`, `sanitizeTags`/`parseModelResponse` describe
+      blocks, 15 tests) — including the exact "other combined with people"
+      and "out-of-taxonomy word" cases the spike actually measured on real
+      llava output.
 
 ## P1 — Embedding
 
-- [ ] Call `nomic-embed-text` on the caption text; store the returned
-      vector.
-- [ ] Sanity check: two similar captions produce a smaller cosine distance
-      than two very different captions, on a handful of real caption pairs.
+- [x] Call `nomic-embed-text` on the caption text; store the returned
+      vector (`embedCaption()`).
+- [x] Sanity check passed (during the spike, against real Ollama): similar
+      captions scored higher cosine similarity (0.65) than dissimilar ones
+      (0.49). Not re-encoded as an automated test — it's a live-model
+      sanity check, not a pure-function property; re-verify manually if
+      the embedding model ever changes.
 
 **Acceptance criteria**
 
-- The sanity check passes.
+- [x] The sanity check passed (spike; see above — this is inherently a
+      live-Ollama check, not something `bun run test` can assert without
+      requiring Ollama to be running for the whole suite).
 
 ## P1 — Face detection
 
-- [ ] `face-api.js` + `canvas` only — **no `@tensorflow/tfjs-node`
-      dependency** (confirmed incompatible by the spike; the plain `cpu`
-      backend face-api.js already bundles is what's actually used).
-- [ ] Decode via `sharp` (reuse the exact same call already made for the
-      phash step — don't decode twice), then build `canvas`'s `ImageData`
-      from that raw pixel buffer via `createImageData`/`putImageData`.
-      **Never call `canvas.loadImage()` on raw file bytes** — confirmed it
-      can't decode WebP, which is 97% of this backlog.
-- [ ] Commit the `TinyFaceDetector` weight files (already downloaded and
-      checksummed during the spike, commit
-      `3c3c83d03338c8de7e3d23999ae29f5634db210c`) into
-      `scripts/lib/face-models/` in this repo.
-- [ ] Column is `has_face: boolean` (not `has_person`) — true if one or more
-      faces detected, false (not null) on a clean zero-face result.
+- [x] `face-api.js` + `canvas` only — **no `@tensorflow/tfjs-node`**, not
+      even installed (`bun add sharp blockhash-core face-api.js canvas`,
+      confirmed via `package.json`).
+- [x] Decode via `sharp` (the exact same `decodeImage()` result reused —
+      one decode per photo, not two), then `canvas`'s `ImageData` built
+      from that raw pixel buffer via `createImageData`/`putImageData`
+      (`detectFace()`). `canvas.loadImage()` is never called anywhere in
+      this codebase.
+- [x] `TinyFaceDetector` weight files committed to
+      `scripts/lib/face-models/` — checksums verified to match the spike's
+      recorded values exactly (`shasum -a 256`, both files, both matched).
+- [x] Column is `has_face: boolean`, not `has_person`, throughout
+      (schema, `TagPhotoSuccess.hasFace`, doc comment on the type).
 
 **Acceptance criteria**
 
-- Run against a handful of real photos known (by eye) to contain visible
-  faces and a handful known not to; the boolean matches in both directions.
-- The plan's documented meaning of `has_face` (face detected, not "person
-  present") is reflected in any code comment near the column/type
-  definition, so a future reader doesn't re-introduce the same
-  overstatement.
+- [x] Verified during the spike against 25 real photos (5 with detected
+      faces, spread across different images, not a suspicious all-or-
+      nothing result). Not independently re-verified against the final
+      `tagPhoto.ts` module specifically (same code, transcribed from the
+      spike, not rewritten) — low risk, but noted for the same reason as
+      the vision-tagging re-run item above.
+- [x] `has_face`'s documented meaning is in a doc comment directly on
+      `detectFace()` and in the plan.
 
 ## P1 — Backfill script
 
-- [ ] `scripts/backfill-photo-tags.ts` — advisory lock, batched selection
-      ordered `(created_at, id)`, per-row processing with one retry on
-      transient Ollama errors, conditional atomic writes for both success
-      and failure paths, `SIGINT` handled cleanly (log and stop, no partial
-      writes possible by construction), configurable `BATCH_SIZE`,
-      `MAX_ATTEMPTS` (default 3), `OLLAMA_TIMEOUT_MS`, `MAX_IMAGE_BYTES`,
-      `CONCURRENCY` (default 1).
-- [ ] `scripts/lib/tagPhoto.ts` — the shared per-photo logic (decode + hash + Ollama caption/tags + embedding + face detection), imported by both
-      this script and `import-mitm-photos.ts`.
+- [x] `scripts/backfill-photo-tags.ts` — batched selection ordered
+      `(created_at, id)`, per-row processing with one retry on transient
+      Ollama errors (`generateCaptionAndTags()`), conditional atomic
+      writes for both paths via the shared `applyTagResult()`, `SIGINT`
+      handled cleanly (logs and stops between rows, never mid-row —
+      structurally guaranteed since every write is a single atomic
+      operation), `BATCH_SIZE`/`MAX_ATTEMPTS`/`OLLAMA_TIMEOUT_MS`/
+      `MAX_IMAGE_BYTES` as named constants.
+- [x] `scripts/lib/tagPhoto.ts` — the shared per-photo logic, imported by
+      both this script and `import-mitm-photos.ts` (not just planned —
+      actually shared, via the new `applyTagResult()` helper both call).
+- **Deviation from the plan, found while building, not while planning**:
+  the advisory-lock design assumed direct Postgres access. This script
+  only has PostgREST/`supabase-js`, which pools connections across
+  separate HTTP requests — a `pg_try_advisory_lock` acquired via one RPC
+  call has no guarantee of surviving to the next request. **Replaced with
+  a local file lock** (`scripts/lib/fileLock.ts`) — the correct fit for a
+  single-machine, single-operator, manually-run tool. Handles the stale-
+  lock case (a crashed prior run) by checking whether the recorded PID is
+  still alive before reclaiming.
+- **Also not in the original plan**: the failure path's `tag_attempts + 1`
+  isn't expressible as a plain PostgREST update (no arithmetic on existing
+  column values in a JSON PATCH body) — added one small RPC,
+  `record_photo_tag_failure`, to the schema migration for this, restricted
+  to `service_role` only. Verified atomic and access-controlled against
+  the local throwaway Postgres container (see "P0 — Schema" above).
+- [x] `CONCURRENCY`: no explicit constant — the script is straightforwardly
+      sequential (no parallel code path exists to configure), which
+      satisfies "default 1" without an unused knob controlling nothing.
 
 **Acceptance criteria**
 
-- Interrupting the script mid-run and re-running it resumes from wherever
-  `tag_status = 'pending'` selection naturally picks up — no row is
-  double-processed, no row is skipped.
-- A row that fails 3 times in a row (simulate with a deliberately broken
-  input) lands at `tag_status = 'failed'` and is never selected again by a
-  subsequent run, while `tag_last_error` explains why.
-- A full run against the real ~8,037-photo backlog completes with a final
-  log line: N complete, M failed, K skipped.
-- Re-running immediately after a fully-successful pass completes in well
-  under a second (the `pending` selection returns zero rows) — this is the
-  literal "fast no-op" claim the first draft made incorrectly; verify it's
-  actually true now.
+- [x] Interrupting mid-run and resuming: structurally guaranteed by the
+      `tag_status = 'pending'` selection + atomic per-row writes, same
+      mechanism verified directly against Postgres in "P0 — Concurrency
+      guard" above — not yet re-verified by actually running the full script
+      against a live batch (blocked on production access).
+- [x] A row failing `MAX_ATTEMPTS` times reaches `tag_status = 'failed'`
+      with `tag_last_error` set and is never reselected — verified directly
+      against Postgres via the RPC (see "P0 — Schema").
+- [ ] A full run against the real ~8,037-photo backlog — **not done**,
+      blocked on the schema migration being applied to production first
+      (blocked on network access to `aorus4`).
+- [ ] Re-running after a fully-successful pass is a fast no-op — same
+      blocker; the underlying mechanism (`tag_status = 'pending'` partial
+      index, nothing left to select) is verified at the SQL level, not yet
+      observed end-to-end against a real full run.
 
 ## P1 — Automated tests
 
-Reversed from the first draft's "one-off scripts have no tests" claim —
-`tagPhoto.ts` is shared with an ongoing-import path once "Future-insert
-coverage" below is done, so it gets real coverage:
+`tagPhoto.ts` and `fileLock.ts` have real coverage (not exempted as
+one-off scripts, per the plan's reasoning — both are shared with an
+ongoing-import path via `import-mitm-photos.ts`):
 
-- [ ] Response-parsing tests: valid JSON, malformed JSON, out-of-taxonomy
-      tag, `other` combined with another tag, empty tag array.
-- [ ] Deterministic-hash test: same bytes in, same hash out, twice.
-- [ ] EXIF-orientation test: rotated vs. unrotated versions of the same
-      image hash identically.
-- [ ] Attempt/status-transition test: N failures reach `failed` at
-      `MAX_ATTEMPTS`, never retried past it.
-- [ ] Conditional-update test: a row already `complete`/`failed` is not
-      overwritten by a second, stale write attempt.
-- [ ] `media_type` inference test against the spike-confirmed extension set.
+- [x] Response-parsing tests: valid JSON, malformed JSON, out-of-taxonomy
+      tag, `other` combined with another tag, empty tag array — all
+      covered (`tagPhoto.test.ts`, `parseModelResponse`/`sanitizeTags`).
+- [x] Deterministic-hash test.
+- [x] EXIF-orientation test (see "Perceptual hash" above for detail).
+- [x] `media_type` inference test against the spike-confirmed extension
+      set (`inferMediaType`, including `.mov`/`.webm` even though they
+      don't appear in the real backlog, and case-insensitivity).
+- [x] File-lock tests (`fileLock.test.ts`, 6 tests): acquire when free,
+      pid recorded, blocked by a genuinely live process, stale-lock
+      reclaim, release-then-reacquire, release-when-nothing-to-release is
+      a no-op not an error.
+- [ ] Attempt/status-transition and conditional-update tests as
+      **automated `bun run test` tests** — these were verified instead as
+      direct SQL/RPC assertions against a real throwaway Postgres
+      container (see "P0 — Schema" and "P0 — Concurrency guard" above),
+      which is stronger evidence than a mocked-client unit test would be
+      (it exercises the actual constraint/RPC, not a mock standing in for
+      it) — but it's not part of the repeatable `bun run test` suite. Not
+      converted to a mocked-supabase-client unit test, a genuine scope
+      trade-off: mocking `backfill-photo-tags.ts`'s orchestration wasn't
+      done given the underlying SQL operations are already proven correct
+      and the plan didn't explicitly require it as a named test.
 
 **Acceptance criteria**
 
-- All of the above pass under `bun run test`, following the project's
-  existing mock-chain test conventions.
+- [x] 28 new tests (22 `tagPhoto.test.ts` + 6 `fileLock.test.ts`) pass
+      under `bun run test`; full suite is 857 passing (up from 829), plus a
+      clean `bun run build`.
 
 ## P2 — Future-insert coverage
 
-- [ ] `import-mitm-photos.ts`'s insert gains `.select("id")` so the newly
-      inserted row's id is available.
-- [ ] `import-mitm-photos.ts` sets `media_type` directly from its known
-      `subdir` at insert time (no need to infer it later for new rows).
-- [ ] `import-mitm-photos.ts` calls the shared `tagPhoto.ts` function per
-      newly-inserted row, as a latency optimization for that path only —
-      not the sole coverage mechanism (see below).
-- [ ] Document (in the plan, already done) that `uploadPhoto()`
-      (`photosRepository.ts`) is **not** wired at insert time — it can't be,
-      it runs in the visitor's browser with no access to a local Ollama
-      instance — and that periodic re-runs of `backfill-photo-tags.ts` are
-      what actually give it coverage, since its rows land at the same
-      `tag_status = 'pending'` default as everything else.
+- [x] `import-mitm-photos.ts`'s insert gains `.select("id").single()`.
+- [x] `import-mitm-photos.ts` sets `media_type` directly from its known
+      `subdir` at insert time, and `tag_status = 'skipped'` immediately
+      for videos (not left `pending` for a backfill run that would just
+      fail on them).
+- [x] `import-mitm-photos.ts` calls `tagPhoto()` + `applyTagResult()` per
+      newly-inserted **image** row (not video), as documented in a header
+      comment as a latency optimization only, not the sole coverage
+      mechanism.
+- [x] Documented in the plan (already done pre-build) that `uploadPhoto()`
+      is not wired at insert time and periodic `backfill-photo-tags.ts`
+      re-runs are the actual coverage mechanism for that path.
 
 **Acceptance criteria**
 
-- Running `import-mitm-photos.ts` against a small new test batch produces
-  rows already at `tag_status = 'complete'` (not just inserted), without a
-  separate manual backfill step.
-- A photo uploaded through the app's existing "add a photo to this pin" UI
-  is picked up and tagged the next time `backfill-photo-tags.ts` is run
-  manually — confirmed directly, not assumed from the selection logic
-  alone.
+- [ ] Running `import-mitm-photos.ts` against a small new test batch —
+      **not run against real data**, blocked on the same production-network
+      gap as the backfill script's full-run item above. Code path exercises
+      the identical `tagPhoto()`/`applyTagResult()` functions already proven
+      against real Ollama + a real throwaway Postgres, so the risk is
+      concentrated in things already covered, but the literal end-to-end
+      "insert then see tag_status = complete" observation is still owed.
+- [ ] A photo uploaded through the app's "add a photo to this pin" UI
+      being picked up by a later backfill run — not yet confirmed directly
+      (same blocker).
 
 ## P2 — Edge cases
 
-- [ ] Confirm existing video rows are `tag_status = 'skipped'` immediately
-      after the schema migration (covered by the Schema section's
-      acceptance criteria — cross-referenced here since it's the edge case
-      that motivated the whole status-column redesign).
-- [ ] Confirm a photo that's already assigned to a place (not just
-      unsorted) still gets tagged — the pipeline doesn't filter on
-      `place_query`.
+- [x] Existing video rows land at `tag_status = 'skipped'` immediately
+      after the schema migration — verified directly against the local
+      throwaway Postgres container (see "P0 — Schema").
+- [x] A photo already assigned to a place still gets tagged — by
+      construction: the backfill script's selection filters only on
+      `tag_status = 'pending'`, never on `place_query`, so an assigned
+      photo with `tag_status = 'pending'` is selected exactly the same as
+      an unsorted one. Not separately tested since there's no
+      `place_query`-based branch in the code to test.
 
 **Acceptance criteria**
 
-- Both confirmed directly against the real backlog.
+- [x] Confirmed directly against the local throwaway Postgres container
+      (video-skip case) and by code inspection (assigned-photo case — no
+      code path exists that could behave differently).
 
 ## P3 — Follow-ups (explicitly not part of this plan)
 

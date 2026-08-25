@@ -4,7 +4,19 @@
 // no place to associate them with yet -- that happens later via manual
 // triage in the app. Uses the service-role key (bypasses RLS), same as
 // seed-owner-places.ts.
+//
+// Also tags each newly-inserted image row immediately via tagPhoto.ts, as
+// a latency optimization for this specific import path -- not the sole
+// coverage mechanism for tagging. See ai-tagging-plan.md "Future-insert
+// coverage": this script can't be the only way tagged rows get created,
+// since the app's own uploadPhoto() (photosRepository.ts) inserts rows
+// too, from the visitor's browser, with no access to a local Ollama
+// instance. Periodic re-runs of backfill-photo-tags.ts are what actually
+// give that second path coverage; a tagging failure here never blocks or
+// rolls back the photo import itself -- the row is left tag_status =
+// 'pending' either way, and backfill-photo-tags.ts picks it up later.
 import { createClient } from "@supabase/supabase-js";
+import { applyTagResult, tagPhoto } from "./lib/tagPhoto";
 
 const OWNER_USER_ID = "eb4c96e4-849a-45f4-a0de-1a7df130df31";
 const ARTIFACTS_DIR =
@@ -97,22 +109,36 @@ async function main() {
       continue;
     }
 
-    const { error: insertError } = await supabase
+    const mediaType = record.subdir === "videos" ? "video" : "image";
+    const { data: inserted, error: insertError } = await supabase
       .from("pinmap_place_photos")
       .insert({
         user_id: OWNER_USER_ID,
         place_query: null,
         storage_path: storagePath,
-      });
-    if (insertError) {
+        media_type: mediaType,
+        // Videos are never sent to the vision model (see ai-tagging-plan.md
+        // "Videos are out of scope for v1") -- skip them at insert time
+        // rather than leaving them 'pending' for a backfill run that would
+        // just fail on them.
+        tag_status: mediaType === "video" ? "skipped" : "pending",
+      })
+      .select("id")
+      .single();
+    if (insertError || !inserted) {
       console.error(
-        `insert failed for ${record.filename}: ${insertError.message}`,
+        `insert failed for ${record.filename}: ${insertError?.message}`,
       );
       failed++;
       continue;
     }
 
     uploaded++;
+
+    if (mediaType === "image") {
+      const result = await tagPhoto(Buffer.from(bytes));
+      await applyTagResult(supabase, (inserted as { id: string }).id, result);
+    }
   }
 
   console.log(

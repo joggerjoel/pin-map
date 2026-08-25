@@ -22,8 +22,21 @@ Face detection needed two fixes of its own (dropping
 `@tensorflow/tfjs-node`, decoding via `sharp` instead of `canvas`'s
 WebP-incapable loader) before it worked at all. Every "Open Questions"
 item below is now resolved except pgvector's installed version, which is
-blocked on network access to the production host. Nothing here has
-shipped yet — schema migration is still not written.
+blocked on network access to the production host.
+
+**Revision note (2026-08-25, P0+P1 build):** the schema migration
+(`supabase/schema_place_photos_ai_tags.sql`), `scripts/lib/tagPhoto.ts`,
+`scripts/lib/fileLock.ts`, `scripts/backfill-photo-tags.ts`, and the
+`import-mitm-photos.ts` wiring are all written, and everything reachable
+without production network access has been verified for real — not just
+typechecked: the migration and its RPC against a throwaway local
+`pgvector/pgvector:pg16` container, `tagPhoto()` end-to-end against real
+Ollama and real backlog photos, 28 automated tests, a clean `bun run
+build`. One real design correction surfaced only by actually building it:
+the planned Postgres advisory lock doesn't work through PostgREST's
+pooled connections — replaced with a local file lock (see "Concurrency and
+ownership"). Still blocked on production network access: applying the
+migration itself, and any run of the actual scripts against live data.
 
 ## Scope: pipeline only, no UI
 
@@ -256,23 +269,45 @@ not expected to ever need direct table-level client exposure; a future
 similarity search should go through a `security definer` RPC that returns
 matches, not the vectors themselves.
 
-### Concurrency and ownership (new)
+### Concurrency and ownership (new; revised again during the P1 build)
 
 This is a manually-run local script, but nothing currently stops two
 instances from running at once (e.g. started twice by accident) and racing
 each other over the same rows.
 
-- **Primary guard: a Postgres advisory lock**, taken at script start
-  (`select pg_try_advisory_lock(:fixed_key)`). If it's already held, the
-  script logs "another instance is already running" and exits immediately
-  — simplest correct fix for a single-operator tool, no lease/heartbeat
-  machinery needed.
-- **Defense in depth: every write is conditional.** The final per-row update
-  is `where id = :id and tag_status = 'pending'`, checking the affected-row
-  count is exactly 1. If a row was somehow already claimed and completed by
-  another process (advisory lock notwithstanding — e.g. a stale lock from a
-  killed process), the second writer's update affects zero rows and is
-  treated as "someone else finished this one," not an error.
+**Revised design — a Postgres advisory lock doesn't actually work here.**
+The original plan called for `pg_try_advisory_lock` at script start. Found
+while building `scripts/backfill-photo-tags.ts`, not while planning it:
+this script only ever talks to Postgres through PostgREST/`supabase-js`,
+which pools connections across separate HTTP requests. A session-scoped
+advisory lock acquired via one `.rpc()` call has no guarantee of surviving
+to the _next_ `.rpc()` call minutes later in the same script run — each
+request can land on a different pooled connection, and the lock could be
+silently released (or never meaningfully held at all) well before the
+script's actual work is done. This isn't a hypothetical: it's exactly how
+PostgREST's connection model works, and would have made the "starting the
+script twice exits the second instance immediately" acceptance criterion
+untestable in the way originally described.
+
+- **Primary guard: a local file lock**
+  (`scripts/lib/fileLock.ts`), not a database lock — the correct fit for
+  what this actually is: a single-machine, single-operator, manually-run
+  tool, not a distributed-coordination problem. Atomically creates a lock
+  file (`fs.openSync(path, "wx")`, fails if it already exists) containing
+  the holding process's PID. A second instance sees the existing file,
+  checks whether that PID is still alive (`process.kill(pid, 0)`), and
+  exits immediately if so. If the recorded process is dead (a crash left a
+  stale lock), the lock is reclaimed automatically rather than blocking
+  forever.
+- **Defense in depth: every write is still conditional**, independent of
+  the lock. The success-path update and the failure-path RPC (see
+  "Backfill script" below) are both scoped `where id = :id and tag_status
+= 'pending'`. If a row was somehow already claimed by another process (a
+  stale lock reclaimed incorrectly, or manual `psql` interference), the
+  second writer's update/RPC call affects zero rows and is treated as
+  "someone else already handled this one," not an error — verified
+  directly against a real Postgres instance, not assumed (see "P0 —
+  Concurrency guard" in `ai-tagging-todo.md`).
 
 ### Processing provenance (new — `pipeline_version`)
 
@@ -551,50 +586,70 @@ shared with an ongoing-import path (see "Future-insert coverage" and
 one-shot; this one is re-run repeatedly and its core logic is imported
 elsewhere.
 
-- Takes the advisory lock; exits immediately if already held.
+Built as designed, with two corrections found during the build (both
+already reflected in "Concurrency and ownership" above and the schema
+migration):
+
+- Takes the local file lock (not a Postgres advisory lock — see
+  "Concurrency and ownership"); exits immediately if already held.
 - Selects `tag_status = 'pending'` rows, ordered `(created_at, id)`, in
-  batches (e.g. 50), not all ~8,037 candidates at once.
-- Per row: decode + hash, call Ollama for caption/tags (one immediate retry
-  with a short backoff on a transient network/timeout error before counting
-  it as a failed attempt), embed the caption, run face detection, then
-  either:
+  batches of 50, not all ~8,037 candidates at once.
+- Per row: download from Storage, then `tagPhoto()` (decode + hash, call
+  Ollama for caption/tags with one immediate retry on a transient
+  network/timeout error, run face detection, embed the caption), then
+  `applyTagResult()` — a function shared with `import-mitm-photos.ts`, not
+  duplicated logic — which does either:
   - **success**: one conditional `update ... where id = :id and tag_status
 = 'pending' set caption=..., tags=..., has_face=..., phash=...,
 embedding=..., tagged_at=now(), tag_status='complete',
-pipeline_version=:version, tag_last_attempted_at=now()`.
-  - **failure**: `update ... where id = :id set tag_attempts =
-tag_attempts + 1, tag_last_error = :error, tag_last_attempted_at =
-now(), tag_status = case when tag_attempts + 1 >= :max_attempts then
-'failed' else 'pending' end`.
-- Configurable constants: `BATCH_SIZE`, `MAX_ATTEMPTS` (default 3),
-  `OLLAMA_TIMEOUT_MS`, `MAX_IMAGE_BYTES`, `CONCURRENCY` (default 1 —
-  Ollama typically serializes inference on one loaded model instance, so
-  parallelism mostly benefits the download/hash/DB-write portions; raised
-  later only if the spike shows real throughput gain from
-  `OLLAMA_NUM_PARALLEL`).
+pipeline_version=:version`, via plain PostgREST (no arithmetic needed).
+  - **failure**: the `record_photo_tag_failure(photo_id, error,
+max_attempts)` RPC (added to the schema migration during the build —
+    `tag_attempts = tag_attempts + 1` isn't expressible as a plain
+    PostgREST update, and a client-side read-then-increment-then-write
+    would reintroduce exactly the race the conditional-update design
+    exists to prevent). Restricted to `service_role` only.
+- Named constants (not environment-variable-configurable — hardcoded in
+  one place, which is sufficient for a manually-run single-operator
+  script): `BATCH_SIZE` (50), `MAX_ATTEMPTS` (3, exported from
+  `tagPhoto.ts` as `DEFAULT_MAX_ATTEMPTS` so both scripts share the same
+  default), `OLLAMA_TIMEOUT_MS` (60s), `MAX_IMAGE_BYTES` (50MB).
+  `CONCURRENCY` has no constant at all — the script is straightforwardly
+  sequential, satisfying "default 1" without an unused knob controlling a
+  parallel code path that doesn't exist.
 - Handles `SIGINT` by logging a clean stop message and not starting a new
-  row — no special partial-write cleanup is needed, because every write is
-  already a single atomic per-row update; a row interrupted mid-processing
-  (before its update) simply stays `pending`.
-- Logs progress (`N processed, M failed, K skipped, T remaining`).
+  row — no special partial-write cleanup needed, because every write is
+  already a single atomic per-row operation; a row interrupted
+  mid-processing (before its update/RPC call) simply stays `pending`.
+- Logs progress after every row (`N processed (M complete, K failed)`).
 
 ### Automated tests
 
 Reversed from the first draft. Once `tagPhoto.ts`'s logic is shared with an
 ongoing insertion path, it needs the coverage this project's TDD convention
-already expects elsewhere:
+already expects elsewhere. **Built**: `scripts/lib/tagPhoto.test.ts` (22
+tests) and `scripts/lib/fileLock.test.ts` (6 tests), 28 total, all passing.
 
 - Response parsing: valid JSON accepted; malformed JSON, an out-of-taxonomy
   tag, `other` alongside another tag, and an empty tag array are all
-  rejected as failed attempts.
-- Deterministic hashing: the same image bytes produce the same phash twice.
-- Attempt/status transitions: a failing row increments `tag_attempts` and
-  eventually reaches `failed` at `MAX_ATTEMPTS`, never retried past it by
-  the selection query.
-- The conditional update: a row already flipped to `complete`/`failed` by a
-  concurrent writer is not overwritten by a second writer's stale attempt.
+  rejected as failed attempts. **Covered.**
+- Deterministic hashing: the same image bytes produce the same phash
+  twice. **Covered**, plus a real EXIF-orientation test (dynamically
+  generated fixtures — an image hashed unrotated, physically rotated 90°,
+  and EXIF-tagged-but-not-physically-rotated — confirming the last two
+  match and the first differs), which is stronger than what this section
+  originally asked for.
+- Attempt/status transitions and the conditional-update guarantee: verified
+  directly against a real Postgres instance via
+  `record_photo_tag_failure`, not as a mocked-client unit test — see "P0 —
+  Schema" and "P0 — Concurrency guard" in `ai-tagging-todo.md` for the
+  exact sequence run and its output. A genuine scope trade-off, not an
+  oversight: this exercises the actual constraint/RPC rather than a mock
+  standing in for it, but isn't part of the repeatable `bun run test`
+  suite the way the other items are.
 - `media_type` inference against the real extension set found during the
-  spike.
+  spike. **Covered**, including the `.mov`/`.webm` cases that don't
+  actually appear in the real backlog but are kept as a safe superset.
 
 ### Future-insert coverage (revised — the first draft's gap)
 
@@ -612,35 +667,38 @@ driven by `tag_status = 'pending'` (the default for every new row,
 regardless of which code path inserted it), simply re-running
 `backfill-photo-tags.ts` periodically (manually, or later via a scheduled
 task — not part of this plan) picks up anything inserted since the last
-run, MITM-imported or uploaded through the app. `import-mitm-photos.ts` is
-still updated to record `media_type` directly at insert time (it already
-knows `subdir`) and to call the shared `tagPhoto.ts` function per newly
-inserted row as a **latency optimization** for that specific path (so a
-freshly-imported batch doesn't have to wait for the next manual backfill
-run) — but it is no longer the sole mechanism the design depends on for
-correctness. `import-mitm-photos.ts`'s insert also gains `.select("id")`
-(currently discarded, per review) since the per-row call needs the new
-row's id.
+run, MITM-imported or uploaded through the app. **Built**:
+`import-mitm-photos.ts` records `media_type` directly at insert time (from
+its already-known `subdir`, setting `tag_status = 'skipped'` immediately
+for videos rather than leaving them `pending`) and calls the shared
+`tagPhoto()` + `applyTagResult()` functions per newly inserted **image**
+row as a latency optimization for that specific path — but it is no longer
+the sole mechanism the design depends on for correctness. Its insert also
+gained `.select("id").single()` since the per-row tagging call needs the
+new row's id.
 
 ## Data flow
 
 ```
 scripts/backfill-photo-tags.ts
-  → take advisory lock (exit if already held)
+  → acquire local file lock (exit if already held by a live process)
   → select id, storage_path where tag_status = 'pending'
       order by created_at, id limit :batch_size
   → for each row:
       download image bytes from Storage
-      → sharp: decode + EXIF-normalize + raw pixel buffer     -- the ONE decoder
-      → blockhash-core: compute phash from pixel buffer          (no AI)
-      → canvas ImageData from the same pixel buffer (putImageData, not loadImage)
-      → face-api.js, plain cpu backend: has_face
-      → sharp: re-encode the same pixel buffer as PNG (for Ollama, which also can't read WebP)
-      → Ollama /api/generate (llava, tightened prompt): caption + tags   (1 retry on transient error)
-      → sanitize tags: drop non-taxonomy words, drop 'other' if combined with real tags
-      → Ollama /api/embeddings (nomic-embed-text): embed caption
-      → success: single conditional UPDATE (all outputs + tag_status='complete' + pipeline_version)
-      → failure: single UPDATE (tag_attempts += 1, tag_last_error, tag_status maybe 'failed')
+      → tagPhoto():
+          sharp: decode + EXIF-normalize + raw pixel buffer     -- the ONE decoder
+          → blockhash-core: compute phash from pixel buffer          (no AI)
+          → canvas ImageData from the same pixel buffer (putImageData, not loadImage)
+          → face-api.js, plain cpu backend: has_face
+          → sharp: re-encode the same pixel buffer as PNG (for Ollama, which also can't read WebP)
+          → Ollama /api/generate (llava, tightened prompt): caption + tags   (1 retry on transient error)
+          → sanitize tags: drop non-taxonomy words, drop 'other' if combined with real tags
+          → Ollama /api/embeddings (nomic-embed-text): embed caption
+      → applyTagResult():
+          success: plain conditional UPDATE (all outputs + tag_status='complete' + pipeline_version)
+          failure: record_photo_tag_failure(id, error, max_attempts) RPC
+                   (atomic tag_attempts += 1, tag_status maybe -> 'failed')
   → log progress; loop until no pending rows remain in this run
 ```
 

@@ -89,3 +89,41 @@ where tag_status = 'pending';
 revoke select on public.pinmap_place_photos from anon, authenticated;
 grant select (id, user_id, place_query, storage_path, created_at)
   on public.pinmap_place_photos to anon, authenticated;
+
+-- Atomic failure-path attempt increment for scripts/backfill-photo-tags.ts.
+-- `tag_attempts = tag_attempts + 1` isn't expressible as a plain PostgREST
+-- update (no arithmetic on existing column values in a JSON PATCH body),
+-- and a client-side read-then-write would reintroduce exactly the write
+-- race the conditional-update design exists to prevent. This function does
+-- the increment, error, and possible pending->failed transition in one
+-- atomic statement, gated by the same `tag_status = 'pending'` condition
+-- as every other write in this pipeline -- a row already moved on by
+-- another writer is untouched (0 rows affected), not silently overwritten.
+--
+-- Not used for the success path: setting tag_status = 'complete' plus the
+-- five output columns needs no arithmetic, so a plain conditional
+-- supabase-js `.update()` is sufficient there.
+create or replace function public.record_photo_tag_failure(
+  p_photo_id uuid,
+  p_error text,
+  p_max_attempts integer
+) returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.pinmap_place_photos
+  set tag_attempts = tag_attempts + 1,
+      tag_last_error = p_error,
+      tag_last_attempted_at = now(),
+      tag_status = case
+        when tag_attempts + 1 >= p_max_attempts then 'failed'
+        else 'pending'
+      end
+  where id = p_photo_id and tag_status = 'pending';
+$$;
+
+revoke all on function public.record_photo_tag_failure(uuid, text, integer)
+  from public, anon, authenticated;
+grant execute on function public.record_photo_tag_failure(uuid, text, integer)
+  to service_role;
