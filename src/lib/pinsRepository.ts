@@ -64,9 +64,9 @@ export async function fetchPins(
 export async function upsertPins(
   userId: string,
   places: PinnedPlace[],
-): Promise<void> {
+): Promise<"ok" | "error"> {
   if (places.length === 0) {
-    return;
+    return "ok";
   }
   try {
     const rows = places.map((place) => ({
@@ -80,13 +80,12 @@ export async function upsertPins(
       custom_tag_id: place.customTag?.id ?? null,
       date: place.date ?? null,
     }));
-    await supabase
+    const { error } = await supabase
       .from("pinmap_pinned_places")
       .upsert(rows, { onConflict: "user_id,query" });
+    return error ? "error" : "ok";
   } catch {
-    // Fire-and-forget sync — a failed write here shouldn't crash the UI,
-    // which has already updated optimistically. The next successful sync
-    // (or a page reload once connectivity is back) will reconcile it.
+    return "error";
   }
 }
 

@@ -25,6 +25,7 @@ vi.mock("./lib/supabaseClient", () => ({
 interface FromChainResult {
   data: unknown;
   error: unknown;
+  count?: number | null;
 }
 
 function createFromChain(result: FromChainResult) {
@@ -34,6 +35,7 @@ function createFromChain(result: FromChainResult) {
     limit: vi.fn(() => chain),
     maybeSingle: vi.fn(() => chain),
     order: vi.fn(() => chain),
+    is: vi.fn(() => chain),
     then: (
       resolve: (value: FromChainResult) => void,
       reject?: (reason: unknown) => void,
@@ -632,6 +634,120 @@ describe("App without a Mapbox token", () => {
       screen.getByText(/Connect a Mapbox token to add new places/),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Filter places")).toBeInTheDocument();
+  });
+});
+
+describe("App unsorted-photos panel", () => {
+  async function renderSignedIn(unsortedCount: number | null) {
+    vi.mocked(supabaseModule.supabase.auth.getSession).mockResolvedValueOnce({
+      data: { session: null },
+    } as unknown as Awaited<
+      ReturnType<typeof supabaseModule.supabase.auth.getSession>
+    >);
+    let capturedCallback:
+      ((event: string, session: Session | null) => void) | undefined;
+    vi.mocked(
+      supabaseModule.supabase.auth.onAuthStateChange,
+    ).mockImplementationOnce((callback) => {
+      capturedCallback = callback as (
+        event: string,
+        session: Session | null,
+      ) => void;
+      return {
+        data: { subscription: { unsubscribe: vi.fn() } },
+      } as unknown as ReturnType<
+        typeof supabaseModule.supabase.auth.onAuthStateChange
+      >;
+    });
+    mockSupabaseFrom({
+      pinmap_owner: { data: { user_id: "user-1" }, error: null },
+      pinmap_place_photos: { data: null, error: null, count: unsortedCount },
+    });
+    window.localStorage.setItem("pin-map:mapbox-token", "pk.stored-token");
+
+    render(<App />);
+    await screen.findByLabelText("Email");
+    capturedCallback?.("SIGNED_IN", {
+      user: { id: "user-1", email: "user@example.com" },
+    } as unknown as Session);
+    await screen.findByLabelText("Add a pin");
+  }
+
+  it("hides the header button when totalCount is 0", async () => {
+    await renderSignedIn(0);
+
+    expect(
+      screen.queryByRole("button", { name: /Unsorted/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows 'Unsorted' with no count while totalCount is unknown", async () => {
+    await renderSignedIn(null);
+
+    expect(
+      await screen.findByRole("button", { name: "Unsorted" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows 'Unsorted (N)' once the count resolves", async () => {
+    await renderSignedIn(3);
+
+    expect(
+      await screen.findByRole("button", { name: "Unsorted (3)" }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the panel in place of AddPin/PlaceList, with MapView still mounted", async () => {
+    const user = userEvent.setup();
+    await renderSignedIn(2);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Unsorted (2)" }),
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "‹ Back to places" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Add a pin")).not.toBeInTheDocument();
+    expect(instances.length).toBeGreaterThan(0); // MapView's mapbox-gl Map instance
+  });
+
+  it("closing the panel returns to the normal place list", async () => {
+    const user = userEvent.setup();
+    await renderSignedIn(1);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Unsorted (1)" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "‹ Back to places" }),
+    );
+
+    expect(await screen.findByLabelText("Add a pin")).toBeInTheDocument();
+  });
+
+  it("clicking Imports also closes the unsorted panel", async () => {
+    const user = userEvent.setup();
+    mockSupabaseFrom({
+      pinmap_owner: { data: { user_id: "user-1" }, error: null },
+      pinmap_place_photos: { data: null, error: null, count: 1 },
+    });
+    // Re-render with the Imports flow available (needs an access token, see
+    // showImports's own gating in App.tsx).
+    await renderSignedIn(1);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Unsorted (1)" }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "‹ Back to places" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Imports" }));
+
+    expect(
+      screen.queryByRole("button", { name: "‹ Back to places" }),
+    ).not.toBeInTheDocument();
   });
 });
 

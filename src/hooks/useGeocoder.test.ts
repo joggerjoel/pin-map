@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useGeocoder } from "./useGeocoder";
 import * as geocoderModule from "../lib/geocoder";
 import { GeocodeAllFailedError } from "../lib/geocoder";
@@ -869,6 +869,222 @@ describe("pinPlace", () => {
 
     expect(result.current.failedLines).toEqual(["Nowhereville"]);
     expect(result.current.pinnedPlaces).toEqual([]);
+  });
+});
+
+describe("pinPlaceSilent", () => {
+  beforeEach(() => {
+    // These tests pass a userId, unlike most of this file — that fires the
+    // hook's own mount effect (fetchPins), which needs a resolved value.
+    vi.mocked(pinsRepositoryModule.fetchPins).mockResolvedValue([]);
+  });
+
+  it("resolves {status: 'ok', query: trimmed} and increments the counter only after a successful upsert", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+    vi.mocked(pinsRepositoryModule.upsertPins).mockResolvedValue("ok");
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    let outcome: Awaited<
+      ReturnType<typeof result.current.pinPlaceSilent>
+    > | null = null;
+    await act(async () => {
+      outcome = await result.current.pinPlaceSilent("  Paris  ", {
+        category: "visited",
+      });
+    });
+
+    expect(outcome).toEqual({ status: "ok", query: "Paris" });
+    expect(result.current.pinnedPlaces).toEqual([
+      {
+        query: "Paris",
+        name: "Paris, France",
+        lng: 2.35,
+        lat: 48.86,
+        category: "visited",
+      },
+    ]);
+    expect(tokenUsageModule.incrementPlacesPinned).toHaveBeenCalledWith(1);
+    expect(result.current.error).toBeNull();
+    expect(result.current.failedLines).toEqual([]);
+  });
+
+  it("resolves the existing pin's stored query on the dedup short-circuit, not the freshly typed text", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+    vi.mocked(pinsRepositoryModule.upsertPins).mockResolvedValue("ok");
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+    await act(async () => {
+      await result.current.pinPlaceSilent("Paris", { category: "visited" });
+    });
+    vi.mocked(tokenUsageModule.incrementPlacesPinned).mockClear();
+
+    let outcome: Awaited<
+      ReturnType<typeof result.current.pinPlaceSilent>
+    > | null = null;
+    await act(async () => {
+      outcome = await result.current.pinPlaceSilent("  paris  ", {
+        category: "lived",
+      });
+    });
+
+    expect(outcome).toEqual({ status: "ok", query: "Paris" });
+    expect(result.current.pinnedPlaces).toHaveLength(1);
+    expect(tokenUsageModule.incrementPlacesPinned).not.toHaveBeenCalled();
+  });
+
+  it("rolls back the optimistic entry and resolves 'persistence-error' when upsertPins fails, without touching failedLines", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+    vi.mocked(pinsRepositoryModule.upsertPins).mockResolvedValue("error");
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    let outcome: Awaited<
+      ReturnType<typeof result.current.pinPlaceSilent>
+    > | null = null;
+    await act(async () => {
+      outcome = await result.current.pinPlaceSilent("Paris", {
+        category: "visited",
+      });
+    });
+
+    expect(outcome).toEqual({ status: "persistence-error" });
+    expect(result.current.pinnedPlaces).toEqual([]);
+    expect(tokenUsageModule.incrementPlacesPinned).not.toHaveBeenCalled();
+    expect(result.current.error).toBeNull();
+    expect(result.current.failedLines).toEqual([]);
+  });
+
+  it("resolves 'geocode-error' on a geocode failure, without touching error/failedLines", async () => {
+    vi.spyOn(geocoderModule, "geocodeLine").mockResolvedValue(null);
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    let outcome: Awaited<
+      ReturnType<typeof result.current.pinPlaceSilent>
+    > | null = null;
+    await act(async () => {
+      outcome = await result.current.pinPlaceSilent("Nowhereville", {
+        category: "visited",
+      });
+    });
+
+    expect(outcome).toEqual({ status: "geocode-error" });
+    expect(result.current.error).toBeNull();
+    expect(result.current.failedLines).toEqual([]);
+  });
+
+  it("resolves 'invalid' for empty input without geocoding", async () => {
+    const lineSpy = vi.spyOn(geocoderModule, "geocodeLine");
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    let outcome: Awaited<
+      ReturnType<typeof result.current.pinPlaceSilent>
+    > | null = null;
+    await act(async () => {
+      outcome = await result.current.pinPlaceSilent("   ", {
+        category: "visited",
+      });
+    });
+
+    expect(outcome).toEqual({ status: "invalid" });
+    expect(lineSpy).not.toHaveBeenCalled();
+  });
+
+  it("shares one in-flight geocode/upsert between two concurrent calls for the same new query", async () => {
+    let resolveGeocode: (value: GeocodeResult | null) => void = () => {};
+    vi.spyOn(geocoderModule, "geocodeLine").mockReturnValue(
+      new Promise((resolve) => {
+        resolveGeocode = resolve;
+      }),
+    );
+    vi.mocked(pinsRepositoryModule.upsertPins).mockResolvedValue("ok");
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    let first: ReturnType<typeof result.current.pinPlaceSilent>;
+    let second: ReturnType<typeof result.current.pinPlaceSilent>;
+    act(() => {
+      first = result.current.pinPlaceSilent("Paris", { category: "visited" });
+      second = result.current.pinPlaceSilent("paris", { category: "lived" });
+    });
+
+    await act(async () => {
+      resolveGeocode({
+        query: "Paris",
+        name: "Paris, France",
+        lng: 2.35,
+        lat: 48.86,
+      });
+      await Promise.all([first, second]);
+    });
+
+    expect(geocoderModule.geocodeLine).toHaveBeenCalledTimes(1);
+    expect(await first!).toEqual({ status: "ok", query: "Paris" });
+    expect(await second!).toEqual({ status: "ok", query: "Paris" });
+    expect(result.current.pinnedPlaces).toHaveLength(1);
+    expect(tokenUsageModule.incrementPlacesPinned).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries fresh (not a replay) after a prior attempt for the same query has settled", async () => {
+    const lineSpy = vi.spyOn(geocoderModule, "geocodeLine");
+    lineSpy.mockResolvedValueOnce(null);
+
+    const { result } = renderHook(() =>
+      useGeocoder("pk.test", { userId: "user-1" }),
+    );
+
+    await act(async () => {
+      await result.current.pinPlaceSilent("Paris", { category: "visited" });
+    });
+
+    lineSpy.mockResolvedValueOnce({
+      query: "Paris",
+      name: "Paris, France",
+      lng: 2.35,
+      lat: 48.86,
+    });
+    vi.mocked(pinsRepositoryModule.upsertPins).mockResolvedValue("ok");
+
+    let outcome: Awaited<
+      ReturnType<typeof result.current.pinPlaceSilent>
+    > | null = null;
+    await act(async () => {
+      outcome = await result.current.pinPlaceSilent("Paris", {
+        category: "visited",
+      });
+    });
+
+    expect(lineSpy).toHaveBeenCalledTimes(2);
+    expect(outcome).toEqual({ status: "ok", query: "Paris" });
   });
 });
 

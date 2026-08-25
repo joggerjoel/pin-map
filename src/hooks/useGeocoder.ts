@@ -30,6 +30,12 @@ export interface PinnedPlace extends GeocodeResult {
   date?: string;
 }
 
+export type PinPlaceResult =
+  | { status: "ok"; query: string }
+  | { status: "invalid" }
+  | { status: "geocode-error" }
+  | { status: "persistence-error" };
+
 interface ProcessedLine {
   query: string;
   category?: PlaceCategory;
@@ -95,6 +101,10 @@ export interface UseGeocoderResult {
     query: string,
     tag: { category?: PlaceCategory; icon?: PlaceIcon; customTag?: CustomTag },
   ) => Promise<void>;
+  pinPlaceSilent: (
+    query: string,
+    tag: { category?: PlaceCategory; icon?: PlaceIcon; customTag?: CustomTag },
+  ) => Promise<PinPlaceResult>;
   removePlace: (query: string) => void;
   changeTag: (
     query: string,
@@ -123,6 +133,9 @@ export function useGeocoder(
   const [error, setError] = useState<string | null>(null);
   const pinnedPlacesRef = useRef<PinnedPlace[]>([]);
   const failedLinesRef = useRef<string[]>([]);
+  const pendingPinsRef = useRef<Map<string, Promise<PinPlaceResult>>>(
+    new Map(),
+  );
   const lastRawInput = useRef<string>("");
   const lastContinent = useRef<Continent | null>(null);
 
@@ -424,6 +437,70 @@ export function useGeocoder(
     [token, userId],
   );
 
+  // A pure sibling to pinPlace, for the unsorted-photo triage panel: it
+  // shares the same geocode-then-persist mechanics but never mutates
+  // `error`/`failedLines`, since the panel replaces AddPin/PlaceInput while
+  // open and has no surface for that shared state to appear on. Returns a
+  // discriminated result instead so the caller decides what to do.
+  const pinPlaceSilent = useCallback(
+    async (
+      query: string,
+      tag: {
+        category?: PlaceCategory;
+        icon?: PlaceIcon;
+        customTag?: CustomTag;
+      },
+    ): Promise<PinPlaceResult> => {
+      const trimmed = query.trim();
+      if (trimmed === "") {
+        return { status: "invalid" };
+      }
+      const key = trimmed.toLowerCase();
+
+      const existing = pinnedPlacesRef.current.find(
+        (place) => place.query.toLowerCase() === key,
+      );
+      if (existing !== undefined) {
+        return { status: "ok", query: existing.query };
+      }
+
+      const pending = pendingPinsRef.current.get(key);
+      if (pending !== undefined) {
+        return pending;
+      }
+
+      const attempt = (async (): Promise<PinPlaceResult> => {
+        let result: GeocodeResult | null;
+        try {
+          result = await geocodeLine(trimmed, token);
+        } catch {
+          return { status: "geocode-error" };
+        }
+        if (result === null) {
+          return { status: "geocode-error" };
+        }
+        const newPlace = { ...result, ...tag };
+        setPinnedPlaces((prev) => [...prev, newPlace]);
+        if (userId === null) {
+          return { status: "ok", query: trimmed };
+        }
+        const upsertResult = await upsertPins(userId, [newPlace]);
+        if (upsertResult === "error") {
+          setPinnedPlaces((prev) =>
+            prev.filter((place) => place.query !== trimmed),
+          );
+          return { status: "persistence-error" };
+        }
+        void incrementPlacesPinned(1);
+        return { status: "ok", query: trimmed };
+      })();
+      pendingPinsRef.current.set(key, attempt);
+      attempt.finally(() => pendingPinsRef.current.delete(key));
+      return attempt;
+    },
+    [token, userId],
+  );
+
   const removePlace = useCallback(
     (query: string) => {
       setPinnedPlaces((prev) => prev.filter((place) => place.query !== query));
@@ -557,6 +634,7 @@ export function useGeocoder(
     error,
     pinPlaces,
     pinPlace,
+    pinPlaceSilent,
     removePlace,
     changeTag,
     reorderPlaces,

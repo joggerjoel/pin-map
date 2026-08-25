@@ -11,7 +11,9 @@ import { useGeocoder } from "./hooks/useGeocoder";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
 import { useAuth } from "./hooks/useAuth";
 import { usePhotos } from "./hooks/usePhotos";
+import { useUnsortedPhotoCount } from "./hooks/useUnsortedPhotoCount";
 import { fetchOwnerId } from "./lib/pinsRepository";
+import { openPhotoLightbox } from "./lib/photoLightbox";
 import { TokenSetup } from "./components/TokenSetup";
 import { LoginForm } from "./components/LoginForm";
 import { ClassReunionApp } from "./components/ClassReunionApp";
@@ -20,6 +22,7 @@ import { AddPin } from "./components/AddPin";
 import { ImportsPanel } from "./components/ImportsPanel";
 import { PlaceInput } from "./components/PlaceInput";
 import { PlaceList } from "./components/PlaceList";
+import { UnsortedPhotosPanel } from "./components/UnsortedPhotosPanel";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { MapView } from "./components/MapView";
 import type { MapSelection } from "./components/MapView";
@@ -71,6 +74,7 @@ export function App() {
   );
   const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
   const [showImports, setShowImports] = useState(false);
+  const [showUnsortedPhotos, setShowUnsortedPhotos] = useState(false);
   const selectionNonceRef = useRef(0);
   const removalNonce = useRef(0);
   const sidebarLayout = useSidebarLayout();
@@ -138,6 +142,13 @@ export function App() {
     customTags,
   });
   const photos = usePhotos(userId, ownerUserId);
+  const unsortedCount = useUnsortedPhotoCount(userId);
+
+  useEffect(() => {
+    if (auth.status === "signed-out") {
+      setShowUnsortedPhotos(false);
+    }
+  }, [auth.status]);
 
   function handleCreateCustomTag(
     label: string,
@@ -269,11 +280,30 @@ export function App() {
             <button
               type="button"
               className="app__imports-toggle"
-              onClick={() => setShowImports(true)}
+              onClick={() => {
+                setShowUnsortedPhotos(false);
+                setShowImports(true);
+              }}
             >
               Imports
             </button>
           )}
+          {auth.status === "signed-in" &&
+            (unsortedCount.totalCount === null ||
+              unsortedCount.totalCount > 0) && (
+              <button
+                type="button"
+                className="app__unsorted-toggle"
+                onClick={() => {
+                  unsortedCount.refetch();
+                  setShowUnsortedPhotos(true);
+                }}
+              >
+                {unsortedCount.totalCount === null
+                  ? "Unsorted"
+                  : `Unsorted (${unsortedCount.totalCount})`}
+              </button>
+            )}
           {auth.status === "signed-in" && (
             <button
               type="button"
@@ -301,7 +331,30 @@ export function App() {
         {auth.status === "signed-out" && (
           <LoginForm onSendOtp={auth.sendOtp} onVerifyOtp={auth.verifyOtp} />
         )}
-        {auth.status === "signed-in" && (
+        {auth.status === "signed-in" &&
+          showUnsortedPhotos &&
+          userId !== null && (
+            <UnsortedPhotosPanel
+              userId={userId}
+              pinnedPlaces={geocoder.pinnedPlaces}
+              canCreatePin={effectiveToken !== null}
+              onPinPlace={(query, tag) =>
+                geocoder.pinPlaceSilent(
+                  query,
+                  tag.kind === "category"
+                    ? { category: tag.value }
+                    : tag.kind === "icon"
+                      ? { icon: tag.value }
+                      : { customTag: tag.value },
+                )
+              }
+              onOpenLightbox={openPhotoLightbox}
+              onAssigned={unsortedCount.decrement}
+              onEmpty={unsortedCount.markEmpty}
+              onClose={() => setShowUnsortedPhotos(false)}
+            />
+          )}
+        {auth.status === "signed-in" && !showUnsortedPhotos && (
           <>
             {effectiveToken !== null ? (
               <>

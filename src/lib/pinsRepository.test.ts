@@ -229,18 +229,37 @@ describe("upsertPins", () => {
   });
 
   it("does nothing when given an empty array", async () => {
-    await upsertPins("user-1", []);
+    const result = await upsertPins("user-1", []);
 
     expect(supabase.from).not.toHaveBeenCalled();
+    expect(result).toBe("ok");
   });
 
-  it("does not throw when the call rejects", async () => {
+  it("resolves 'ok' on a successful upsert", async () => {
+    const chain = createChain({ data: null, error: null });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    await expect(upsertPins("user-1", [place])).resolves.toBe("ok");
+  });
+
+  it("resolves 'error' when the response carries a resolved error", async () => {
+    const chain = createChain({ data: null, error: { message: "boom" } });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    await expect(upsertPins("user-1", [place])).resolves.toBe("error");
+  });
+
+  it("resolves 'error' instead of throwing when the call rejects", async () => {
     const chain = createRejectingChain();
     vi.mocked(supabase.from).mockReturnValue(
       chain as unknown as ReturnType<typeof supabase.from>,
     );
 
-    await expect(upsertPins("user-1", [place])).resolves.toBeUndefined();
+    await expect(upsertPins("user-1", [place])).resolves.toBe("error");
   });
 });
 
