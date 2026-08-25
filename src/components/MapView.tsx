@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import type { ExpressionSpecification } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -17,10 +17,19 @@ import {
   TRIATHLETE_ICON_BODY_PATH,
   TRIATHLETE_ICON_HEAD,
 } from "../lib/iconShapes";
-import { BUILTIN_TAG_LABELS } from "../lib/tagAppearance";
-import type { BuiltinTagKey, TagAppearance } from "../lib/tagAppearance";
+import { BUILTIN_TAG_KEYS, BUILTIN_TAG_LABELS } from "../lib/tagAppearance";
+import type {
+  BuiltinTagKey,
+  IconShape,
+  TagAppearance,
+} from "../lib/tagAppearance";
 import { computeDeclutterOffsets } from "../lib/markerDeclutter";
 import type { ScreenPoint } from "../lib/markerDeclutter";
+import { renderIconGlyph } from "../lib/iconGlyph";
+import { useLegendLayout } from "../hooks/useLegendLayout";
+import { GeoDrillDownTray } from "./GeoDrillDownTray";
+import { resolveBuiltinKey } from "../lib/legendClassification";
+import { getPlacesBounds } from "../lib/geoHierarchy";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -248,19 +257,6 @@ export interface MapViewProps {
   onAddPhoto?: (query: string, file: File) => void;
 }
 
-function resolveBuiltinKey(place: PinnedPlace): BuiltinTagKey | undefined {
-  if (place.icon === "triathlete") return "ironman";
-  if (place.icon === "house-home") return "hometown";
-  if (place.icon === "house-live") return "lived";
-  if (place.icon === "house-current") return "current";
-  if (place.icon === "house-future") return "future";
-  if (place.icon === "airplane") return "airport";
-  if (place.icon === "ski") return "ski";
-  if (place.icon === "run") return "run";
-  if (place.category) return place.category;
-  return undefined;
-}
-
 function buildMarkerOptionsFromAppearance(
   appearance: TagAppearance,
 ): { element: HTMLDivElement } | { color: string } {
@@ -315,7 +311,162 @@ function createMarkerOptions(
   return buildMarkerOptionsFromAppearance(builtinAppearance[builtinKey]);
 }
 
-const CATEGORY_ORDER: PlaceCategory[] = ["visited", "lived", "hometown"];
+interface LegendEntry {
+  key: string;
+  label: string;
+  color: string;
+  iconShape: IconShape;
+  places: PinnedPlace[];
+}
+
+// Every distinct pin type actually present among `places` — every builtin
+// category/icon (not just visited/lived/hometown, the old hardcoded list)
+// plus every custom tag in use. Order: builtins in their canonical
+// BUILTIN_TAG_KEYS order, then custom tags in first-seen order. Each entry
+// also carries the places it groups, so a click can cycle through them.
+function getPresentLegendEntries(
+  places: PinnedPlace[],
+  builtinAppearance: Record<BuiltinTagKey, TagAppearance>,
+): LegendEntry[] {
+  const placesByBuiltinKey = new Map<BuiltinTagKey, PinnedPlace[]>();
+  const presentCustomTagsById = new Map<string, PinnedPlace["customTag"]>();
+  const placesByCustomTagId = new Map<string, PinnedPlace[]>();
+
+  for (const place of places) {
+    if (place.customTag) {
+      presentCustomTagsById.set(place.customTag.id, place.customTag);
+      const group = placesByCustomTagId.get(place.customTag.id);
+      if (group) group.push(place);
+      else placesByCustomTagId.set(place.customTag.id, [place]);
+      continue;
+    }
+    const builtinKey = resolveBuiltinKey(place);
+    if (builtinKey !== undefined) {
+      const group = placesByBuiltinKey.get(builtinKey);
+      if (group) group.push(place);
+      else placesByBuiltinKey.set(builtinKey, [place]);
+    }
+  }
+
+  const entries: LegendEntry[] = [];
+  for (const key of BUILTIN_TAG_KEYS) {
+    const group = placesByBuiltinKey.get(key);
+    if (group) {
+      entries.push({
+        key,
+        label: BUILTIN_TAG_LABELS[key],
+        color: builtinAppearance[key].color,
+        iconShape: builtinAppearance[key].iconShape,
+        places: group,
+      });
+    }
+  }
+  for (const tag of presentCustomTagsById.values()) {
+    if (!tag) continue;
+    entries.push({
+      key: `custom:${tag.id}`,
+      label: tag.label,
+      color: tag.color,
+      iconShape: tag.iconShape,
+      places: placesByCustomTagId.get(tag.id) ?? [],
+    });
+  }
+  return entries;
+}
+
+const LEGEND_FOCUS_ZOOM = 12;
+const LEGEND_ZOOM_OUT_LEVEL = 1.5;
+// Mapbox's default flyTo/easeTo duration scales with distance — a
+// cross-continent hop can take many seconds. Left uncapped, a normal click
+// cadence outpaces that: each click interrupts the still-flying previous
+// one before it lands, so the camera perpetually chases the newest target
+// and never actually arrives anywhere (reads as "stuck"). Fixing the
+// duration keeps every transition snappy and predictable regardless of how
+// far apart the two pins are.
+const ZOOM_OUT_DURATION_MS = 450;
+const FOCUS_FLY_DURATION_MS = 600;
+
+// Zooms out just far enough to reveal both `current` and `target`, then
+// flies in to `target` once the zoom-out settles — a deliberate two-stage
+// transition (not just flyTo's own easing curve) so cycling through a
+// legend entry's pins always reads as "zoom out, then zoom to the next
+// one." Bounding to the current↔target pair (rather than always zooming to
+// a fixed world-level) means a sibling in the same city stays close, while
+// Miami → Tokyo genuinely earns a world view. `current` is null when there's
+// no known prior pin to bound against (e.g. the first click for a given
+// cycle key), which falls back to the old fixed zoom-out.
+//
+// `skipAnimation` is for re-selecting the *same* entry in a cycle (e.g. a
+// legend key with only one matching pin, clicked again) — deliberately NOT
+// inferred by comparing current/target coordinates: two genuinely different
+// pins can share identical geocoded coordinates (e.g. the same Ironman
+// venue in different years), and skipping on coordinate equality made
+// cycling between them look stuck, since it silently did nothing on every
+// other click.
+//
+// `navGenerationRef` guards against clicking faster than the two-stage
+// animation can settle. Each call bumps the counter and captures its own
+// value; a `moveend` handler that fires after a *later* call has already
+// started is stale (a rapid click on this same legend/tray entry
+// interrupted the in-flight zoom-out, which itself fires a `moveend` and
+// would otherwise trigger this call's queued flyTo late, fighting the
+// newer click's own transition and leaving the camera stuck mid-zoom-out
+// instead of landing on the most recent target) — so it's a no-op instead
+// of firing flyTo/onComplete out of turn.
+function zoomOutThenFlyTo(
+  map: mapboxgl.Map,
+  current: { lat: number; lng: number } | null,
+  target: { lat: number; lng: number },
+  skipAnimation: boolean,
+  navGenerationRef: { current: number },
+  onComplete?: () => void,
+): void {
+  const generation = ++navGenerationRef.current;
+  const isStale = () => navGenerationRef.current !== generation;
+
+  if (skipAnimation) {
+    // Camera is already sitting on this pin — a zoom-out/zoom-in round
+    // trip back to the exact same point would just flicker, not transition.
+    if (onComplete) onComplete();
+    return;
+  }
+
+  map.once("moveend", () => {
+    if (isStale()) return;
+    map.flyTo({
+      center: [target.lng, target.lat],
+      zoom: LEGEND_FOCUS_ZOOM,
+      duration: FOCUS_FLY_DURATION_MS,
+    });
+    if (onComplete) {
+      map.once("moveend", () => {
+        if (isStale()) return;
+        onComplete();
+      });
+    }
+  });
+
+  if (current === null) {
+    map.easeTo({
+      zoom: Math.min(map.getZoom(), LEGEND_ZOOM_OUT_LEVEL),
+      duration: ZOOM_OUT_DURATION_MS,
+    });
+    return;
+  }
+
+  const bounds: mapboxgl.LngLatBoundsLike = [
+    [Math.min(current.lng, target.lng), Math.min(current.lat, target.lat)],
+    [Math.max(current.lng, target.lng), Math.max(current.lat, target.lat)],
+  ];
+  // Capped at the current zoom so this stage never zooms IN — zooming out
+  // is the whole point, even when the bounding pair would otherwise fit
+  // tighter than where the camera already is.
+  map.fitBounds(bounds, {
+    padding: 80,
+    maxZoom: map.getZoom(),
+    duration: ZOOM_OUT_DURATION_MS,
+  });
+}
 
 function getPinTypeLabel(place: PinnedPlace): string | undefined {
   if (place.customTag) return place.customTag.label;
@@ -392,8 +543,116 @@ export function MapView({
     useRef<Record<BuiltinTagKey, TagAppearance>>(builtinAppearance);
   builtinAppearanceRef.current = builtinAppearance;
 
-  const presentCategories = CATEGORY_ORDER.filter((category) =>
-    places.some((place) => place.category === category),
+  const legendEntries = getPresentLegendEntries(places, builtinAppearance);
+  const legend = useLegendLayout();
+  // Which place within a given group (a legend entry, or a geo-tray leaf)
+  // was shown last, keyed by an arbitrary caller-chosen string, so repeated
+  // clicks on the same group cycle forward (wrapping around) instead of
+  // always jumping to the first match. Shared by the legend and the
+  // continent/country/state/city browse tray below.
+  const cycleIndexRef = useRef<Record<string, number>>({});
+  // Bumped on every zoomOutThenFlyTo call (legend click, tray leaf click, or
+  // tray breadcrumb/drill navigation) so a stale chained `moveend` handler
+  // from an interrupted, superseded navigation can recognize itself as
+  // stale and no-op — see zoomOutThenFlyTo's comment for why this is
+  // needed to avoid the camera getting stuck when clicks land faster than
+  // the two-stage zoom-out/fly-in animation can settle.
+  const navGenerationRef = useRef(0);
+
+  // Opens a pin's popup (its photo gallery, if any) once the camera lands on
+  // it via legend/tray navigation — a no-op for pins with no photos, so
+  // browsing a photo-free pin doesn't pop open an empty popup unprompted.
+  const revealPhotosFor = useCallback(
+    (place: PinnedPlace) => {
+      if ((photosByQuery[place.query]?.length ?? 0) === 0) return;
+      const marker = markersRef.current.get(place.query);
+      const popup = marker?.getPopup();
+      if (popup != null && !popup.isOpen()) {
+        marker?.togglePopup();
+      }
+    },
+    [photosByQuery],
+  );
+
+  const handleCyclePlacesClick = useCallback(
+    (cycleKey: string, cyclePlaces: PinnedPlace[]): PinnedPlace | null => {
+      const map = mapRef.current;
+      if (map === null || cyclePlaces.length === 0) return null;
+      const previousIndex = cycleIndexRef.current[cycleKey] ?? -1;
+      const nextIndex = (previousIndex + 1) % cyclePlaces.length;
+      const current = previousIndex >= 0 ? cyclePlaces[previousIndex] : null;
+      // Only true when there's exactly one candidate to cycle through (so
+      // every click re-selects index 0) — NOT when two distinct pins just
+      // happen to share coordinates, which still needs its own flyTo.
+      const isReselectingOnlyMatch = previousIndex === nextIndex;
+      cycleIndexRef.current[cycleKey] = nextIndex;
+      const target = cyclePlaces[nextIndex];
+      zoomOutThenFlyTo(
+        map,
+        current,
+        target,
+        isReselectingOnlyMatch,
+        navGenerationRef,
+        () => revealPhotosFor(target),
+      );
+      return target;
+    },
+    [revealPhotosFor],
+  );
+
+  // Browsing to a level in the geo tray (via breadcrumb or drilling into a
+  // non-leaf node) fits the map to that level's full extent — a single
+  // place still gets the zoom-out/zoom-in treatment (a fitBounds on one
+  // point is a degenerate, not-very-meaningful bbox). No "current" place is
+  // tracked for this flow, so it always falls back to the fixed zoom-out —
+  // unlike legend/tray cycling, breadcrumb navigation doesn't have a
+  // meaningful "previous pin" to bound against.
+  const handleFocusPlaces = useCallback(
+    (focusPlaces: PinnedPlace[]) => {
+      const map = mapRef.current;
+      if (map === null) return;
+      if (focusPlaces.length === 1) {
+        zoomOutThenFlyTo(
+          map,
+          null,
+          focusPlaces[0],
+          false,
+          navGenerationRef,
+          () => revealPhotosFor(focusPlaces[0]),
+        );
+        return;
+      }
+      // Invalidates any still-pending chained `moveend` handler from a
+      // previous zoomOutThenFlyTo call — this fitBounds doesn't start one
+      // of its own, but without bumping the generation here a late-firing
+      // stale handler could still flyTo an old target and undo this move.
+      navGenerationRef.current += 1;
+      const bounds = getPlacesBounds(focusPlaces);
+      if (bounds === null) return;
+      map.fitBounds(bounds, { padding: 60, maxZoom: 12 });
+    },
+    [revealPhotosFor],
+  );
+
+  // The place the legend most recently flew to — handed down to the geo
+  // browse tray so it can drill to and highlight that same place, keeping
+  // the two navigation surfaces in sync. Deliberately NOT set from the
+  // tray's own leaf clicks (handleCyclePlacesClick is shared, but this
+  // state is legend-only) — the tray already reflects wherever the user
+  // just clicked inside it; re-syncing it to itself would only risk an
+  // unwanted auto-expand on every one of its own clicks.
+  const [legendFocusedPlace, setLegendFocusedPlace] =
+    useState<PinnedPlace | null>(null);
+
+  const handleLegendEntryClick = useCallback(
+    (entry: LegendEntry) => {
+      const target = handleCyclePlacesClick(
+        `legend:${entry.key}`,
+        entry.places,
+      );
+      if (target !== null) setLegendFocusedPlace(target);
+    },
+    [handleCyclePlacesClick],
   );
 
   const [displayZoom, setDisplayZoom] = useState<number | null>(null);
@@ -508,6 +767,9 @@ export function MapView({
       const typeLabel = getPinTypeLabel(place);
       if (typeLabel !== undefined) {
         marker.getElement().title = typeLabel;
+      }
+      if ((photosByQuery[place.query]?.length ?? 0) > 0) {
+        marker.getElement().classList.add("map-marker--has-photos");
       }
       markersRef.current.set(place.query, marker);
     });
@@ -664,19 +926,62 @@ export function MapView({
       {displayZoom !== null && (
         <div className="map-zoom-indicator">Zoom: {displayZoom.toFixed(1)}</div>
       )}
-      {presentCategories.length > 0 && (
-        <div className="map-legend">
-          {presentCategories.map((category) => (
-            <div className="map-legend__item" key={category}>
-              <span
-                className="map-legend__swatch"
-                style={{ backgroundColor: builtinAppearance[category].color }}
-              />
-              <span>{BUILTIN_TAG_LABELS[category]}</span>
+      {legendEntries.length > 0 && (
+        <div
+          className={
+            legend.collapsed
+              ? "map-legend-drawer map-legend-drawer--collapsed"
+              : "map-legend-drawer"
+          }
+        >
+          <button
+            type="button"
+            className="map-legend-drawer__toggle"
+            onClick={legend.toggleCollapsed}
+            aria-expanded={!legend.collapsed}
+            aria-label={legend.collapsed ? "Show map key" : "Hide map key"}
+          >
+            {legend.collapsed ? "‹" : "›"}
+            <span className="map-legend-drawer__toggle-label">Key</span>
+          </button>
+          {!legend.collapsed && (
+            <div className="map-legend" role="list" aria-label="Map key">
+              {legendEntries.map((entry) => (
+                <button
+                  type="button"
+                  className="map-legend__item"
+                  key={entry.key}
+                  role="listitem"
+                  onClick={() => handleLegendEntryClick(entry)}
+                  aria-label={`Zoom to next ${entry.label} pin (${entry.places.length} total)`}
+                >
+                  <span
+                    className="map-legend__swatch"
+                    style={{ backgroundColor: entry.color }}
+                  >
+                    {renderIconGlyph(entry.iconShape)}
+                  </span>
+                  <span>{entry.label}</span>
+                  {entry.places.length > 1 && (
+                    <span className="map-legend__count">
+                      {entry.places.length}
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
+      <GeoDrillDownTray
+        places={places}
+        builtinAppearance={builtinAppearance}
+        onSelectPlaces={(key, cyclePlaces) =>
+          handleCyclePlacesClick(`tray:${key}`, cyclePlaces)
+        }
+        onFocusPlaces={handleFocusPlaces}
+        focusedPlace={legendFocusedPlace}
+      />
     </>
   );
 }

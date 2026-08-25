@@ -1,4 +1,5 @@
-import { act, fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MapView } from "./MapView";
 import type { GeocodeResult } from "../lib/geocoder";
@@ -15,7 +16,7 @@ const TEST_BUILTIN_APPEARANCE = BUILTIN_APPEARANCE_DEFAULTS;
 // without this it would throw as soon as the map fires a "move" event.
 if (typeof globalThis.requestAnimationFrame === "undefined") {
   globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) =>
-    setTimeout(() => cb(0), 0)) as typeof requestAnimationFrame;
+    setTimeout(() => cb(0), 0)) as unknown as typeof requestAnimationFrame;
   globalThis.cancelAnimationFrame = ((id: number) =>
     clearTimeout(id)) as typeof cancelAnimationFrame;
 }
@@ -73,6 +74,10 @@ const {
     flyTo(opts: unknown): void {
       this.flyToCalls.push(opts);
     }
+    easeToCalls: unknown[] = [];
+    easeTo(opts: unknown): void {
+      this.easeToCalls.push(opts);
+    }
     fitBounds(bounds: unknown, opts: unknown): void {
       this.fitBoundsCalls.push({ bounds, opts });
     }
@@ -114,7 +119,10 @@ const {
       }
     }
     once(event: string, handler: () => void): void {
-      if (event === "load") {
+      // Fires synchronously, same simplification as "load" below — tests
+      // don't need real async animation timing, just that the right calls
+      // happened with the right arguments.
+      if (event === "load" || event === "moveend") {
         handler();
       }
     }
@@ -160,11 +168,19 @@ const {
     clickHandler: (() => void) | null = null;
     popup: MockPopup | undefined;
     lngLat: [number, number] | undefined;
+    togglePopupCalls = 0;
+    classListValues = new Set<string>();
     element = {
       title: "",
       style: { zIndex: "", display: "" },
       addEventListener: (event: string, handler: () => void) => {
         if (event === "click") this.clickHandler = handler;
+      },
+      classList: {
+        add: (...names: string[]) => {
+          names.forEach((name) => this.classListValues.add(name));
+        },
+        contains: (name: string) => this.classListValues.has(name),
       },
     };
 
@@ -180,6 +196,14 @@ const {
       this.popup = popup;
       return this;
     }
+    getPopup(): MockPopup | undefined {
+      return this.popup;
+    }
+    togglePopup(): MockMarker {
+      this.togglePopupCalls += 1;
+      this.popup?.toggleOpen();
+      return this;
+    }
     addTo(): MockMarker {
       return this;
     }
@@ -191,12 +215,19 @@ const {
 
   class MockPopup {
     domContent: unknown;
+    openState = false;
     setText(): MockPopup {
       return this;
     }
     setDOMContent(content: unknown): MockPopup {
       this.domContent = content;
       return this;
+    }
+    isOpen(): boolean {
+      return this.openState;
+    }
+    toggleOpen(): void {
+      this.openState = !this.openState;
     }
   }
 
@@ -242,6 +273,7 @@ const tokyo: GeocodeResult = {
 beforeEach(() => {
   instances.length = 0;
   markerInstances.length = 0;
+  window.localStorage.clear();
 });
 
 afterEach(() => {
@@ -725,6 +757,473 @@ describe("MapView", () => {
     expect(container.querySelector(".map-legend")).toBeNull();
   });
 
+  it("shows a legend entry for an icon-based builtin tag, not just category-based ones", () => {
+    const airport = { ...tokyo, icon: "airplane" as const };
+    const { container } = render(
+      <MapView
+        token="pk.test"
+        places={[airport]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+        canEdit={true}
+      />,
+    );
+    expect(container.textContent).toContain("Airport");
+  });
+
+  it("shows a legend entry for a custom tag actually present", () => {
+    const marathon = {
+      ...paris,
+      customTag: {
+        id: "marathon",
+        label: "Marathon",
+        color: "#8b5cf6",
+        iconShape: "none" as const,
+      },
+    };
+    const { container } = render(
+      <MapView
+        token="pk.test"
+        places={[marathon]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+        canEdit={true}
+      />,
+    );
+    expect(container.textContent).toContain("Marathon");
+  });
+
+  describe("geo browse tray integration", () => {
+    it("zooms out then flies to a place selected via the tray's drill-down", async () => {
+      // A category is deliberately NOT set here — the legend renders its
+      // own "listitem" buttons too, which would make an unscoped
+      // getAllByRole("listitem") ambiguous between the legend and the
+      // tray; a place with no category/icon/customTag never appears in
+      // the legend at all, so scoping isn't even needed to disambiguate.
+      const user = userEvent.setup();
+      const { container } = render(
+        <MapView
+          token="pk.test"
+          places={[paris]}
+          selection={null}
+          onMarkerClick={vi.fn()}
+          onRelocate={vi.fn()}
+          onSetLocation={vi.fn()}
+          builtinAppearance={TEST_BUILTIN_APPEARANCE}
+          declutterEnabled={true}
+          canEdit={true}
+        />,
+      );
+      const tray = container.querySelector(".geo-tray") as HTMLElement;
+      const trayScreen = within(tray);
+
+      // paris.name is "Paris, France" (see the fixture above), so the
+      // tray's tree is Europe → France → Paris — three clicks to reach
+      // the leaf, each screen having exactly one item since there's only
+      // one place in play.
+      await user.click(trayScreen.getByRole("listitem"));
+      await user.click(trayScreen.getByRole("listitem"));
+      await user.click(trayScreen.getByRole("listitem"));
+
+      const map = instances[0];
+      expect(map.easeToCalls.length).toBeGreaterThan(0);
+      expect(map.flyToCalls[map.flyToCalls.length - 1]).toEqual({
+        center: [paris.lng, paris.lat],
+        zoom: 12,
+        duration: 600,
+      });
+    });
+  });
+
+  describe("legend entry click cycles through matching pins", () => {
+    it("zooms out then flies to the pin when there's only one match", async () => {
+      const visited = { ...paris, category: "visited" as const };
+      const user = userEvent.setup();
+      render(
+        <MapView
+          token="pk.test"
+          places={[visited]}
+          selection={null}
+          onMarkerClick={vi.fn()}
+          onRelocate={vi.fn()}
+          onSetLocation={vi.fn()}
+          builtinAppearance={TEST_BUILTIN_APPEARANCE}
+          declutterEnabled={true}
+          canEdit={true}
+        />,
+      );
+
+      await user.click(
+        screen.getByRole("listitem", { name: /Zoom to next Visited pin/ }),
+      );
+
+      const map = instances[0];
+      expect(map.easeToCalls).toEqual([{ zoom: 1.5, duration: 450 }]);
+      expect(map.flyToCalls[map.flyToCalls.length - 1]).toEqual({
+        center: [visited.lng, visited.lat],
+        zoom: 12,
+        duration: 600,
+      });
+    });
+
+    it("cycles to the next matching pin on each click, wrapping around", async () => {
+      const parisVisited = { ...paris, category: "visited" as const };
+      const tokyoVisited = { ...tokyo, category: "visited" as const };
+      const user = userEvent.setup();
+      render(
+        <MapView
+          token="pk.test"
+          places={[parisVisited, tokyoVisited]}
+          selection={null}
+          onMarkerClick={vi.fn()}
+          onRelocate={vi.fn()}
+          onSetLocation={vi.fn()}
+          builtinAppearance={TEST_BUILTIN_APPEARANCE}
+          declutterEnabled={true}
+          canEdit={true}
+        />,
+      );
+      const button = screen.getByRole("listitem", {
+        name: /Zoom to next Visited pin/,
+      });
+      const map = instances[0];
+
+      await user.click(button);
+      expect(map.flyToCalls[map.flyToCalls.length - 1]).toEqual({
+        center: [parisVisited.lng, parisVisited.lat],
+        zoom: 12,
+        duration: 600,
+      });
+
+      await user.click(button);
+      expect(map.flyToCalls[map.flyToCalls.length - 1]).toEqual({
+        center: [tokyoVisited.lng, tokyoVisited.lat],
+        zoom: 12,
+        duration: 600,
+      });
+
+      await user.click(button);
+      expect(map.flyToCalls[map.flyToCalls.length - 1]).toEqual({
+        center: [parisVisited.lng, parisVisited.lat],
+        zoom: 12,
+        duration: 600,
+      });
+    });
+
+    it("opens the marker popup automatically when cycling lands on a pin with photos", async () => {
+      const parisVisited = { ...paris, category: "visited" as const };
+      const tokyoVisited = { ...tokyo, category: "visited" as const };
+      const user = userEvent.setup();
+      render(
+        <MapView
+          token="pk.test"
+          places={[parisVisited, tokyoVisited]}
+          selection={null}
+          onMarkerClick={vi.fn()}
+          onRelocate={vi.fn()}
+          onSetLocation={vi.fn()}
+          builtinAppearance={TEST_BUILTIN_APPEARANCE}
+          declutterEnabled={true}
+          canEdit={true}
+          photosByQuery={{
+            paris: [
+              {
+                id: "photo-1",
+                placeQuery: "paris",
+                storagePath: "user-1/photo-1.jpg",
+                url: "https://cdn.example.com/photo-1.jpg",
+              },
+            ],
+          }}
+        />,
+      );
+      const button = screen.getByRole("listitem", {
+        name: /Zoom to next Visited pin/,
+      });
+      // Markers are created west-to-east: paris (lng 2.35) before tokyo
+      // (lng 139.69).
+      const parisMarker = markerInstances[0];
+      const tokyoMarker = markerInstances[1];
+
+      await user.click(button); // cycles to paris, which has a photo
+      expect(parisMarker?.togglePopupCalls).toBe(1);
+      expect(parisMarker?.popup?.isOpen()).toBe(true);
+
+      await user.click(button); // cycles to tokyo, which has no photo
+      expect(tokyoMarker?.togglePopupCalls).toBe(0);
+
+      await user.click(button); // cycles back to paris, already open
+      expect(parisMarker?.togglePopupCalls).toBe(1);
+    });
+
+    it("bounds the zoom-out to just the current and next pin, not always the whole world", async () => {
+      // Two Vermont towns, close enough together that a bounds-fit between
+      // them shouldn't come anywhere near the [-180, 180] longitude span a
+      // world-view zoom-out would need.
+      const rutland = {
+        ...paris,
+        query: "rutland",
+        name: "Rutland, Vermont",
+        lng: -72.97,
+        lat: 43.61,
+      };
+      const burlington = {
+        ...paris,
+        query: "burlington",
+        name: "Burlington, Vermont",
+        lng: -73.21,
+        lat: 44.48,
+      };
+      const rutlandVisited = { ...rutland, category: "visited" as const };
+      const burlingtonVisited = { ...burlington, category: "visited" as const };
+      const user = userEvent.setup();
+      render(
+        <MapView
+          token="pk.test"
+          places={[rutlandVisited, burlingtonVisited]}
+          selection={null}
+          onMarkerClick={vi.fn()}
+          onRelocate={vi.fn()}
+          onSetLocation={vi.fn()}
+          builtinAppearance={TEST_BUILTIN_APPEARANCE}
+          declutterEnabled={true}
+          canEdit={true}
+        />,
+      );
+      const button = screen.getByRole("listitem", {
+        name: /Zoom to next Visited pin/,
+      });
+      const map = instances[0];
+
+      // First click has no known "previous" pin yet, so it takes the fixed
+      // fallback zoom-out.
+      await user.click(button);
+      expect(map.easeToCalls).toEqual([{ zoom: 1.5, duration: 450 }]);
+
+      // Second click cycles from Rutland to Burlington — both known pins
+      // now, so it should bound tightly to the pair instead of the fixed
+      // world-level easeTo.
+      const fitBoundsCallsBefore = map.fitBoundsCalls.length;
+      await user.click(button);
+      expect(map.fitBoundsCalls.length).toBe(fitBoundsCallsBefore + 1);
+      const { bounds, opts } = map.fitBoundsCalls[
+        map.fitBoundsCalls.length - 1
+      ] as {
+        bounds: [[number, number], [number, number]];
+        opts: { maxZoom: number };
+      };
+      const [[west, south], [east, north]] = bounds;
+      expect(east - west).toBeLessThan(1);
+      expect(north - south).toBeLessThan(1);
+      expect(opts.maxZoom).toBe(map.getZoom());
+      // No fixed zoom-out on this click.
+      expect(map.easeToCalls).toEqual([{ zoom: 1.5, duration: 450 }]);
+    });
+
+    it("does not re-animate when clicking a single-match entry a second time", async () => {
+      const visited = { ...paris, category: "visited" as const };
+      const user = userEvent.setup();
+      render(
+        <MapView
+          token="pk.test"
+          places={[visited]}
+          selection={null}
+          onMarkerClick={vi.fn()}
+          onRelocate={vi.fn()}
+          onSetLocation={vi.fn()}
+          builtinAppearance={TEST_BUILTIN_APPEARANCE}
+          declutterEnabled={true}
+          canEdit={true}
+        />,
+      );
+      const button = screen.getByRole("listitem", {
+        name: /Zoom to next Visited pin/,
+      });
+      const map = instances[0];
+
+      await user.click(button);
+      const flyToCallsAfterFirst = map.flyToCalls.length;
+      const easeToCallsAfterFirst = map.easeToCalls.length;
+      const fitBoundsCallsAfterFirst = map.fitBoundsCalls.length;
+
+      // Only one pin ever matches "visited" here, so every click after the
+      // first cycles right back to the same pin the camera is already on —
+      // that shouldn't trigger a pointless zoom-out/zoom-in round trip.
+      await user.click(button);
+      expect(map.flyToCalls.length).toBe(flyToCallsAfterFirst);
+      expect(map.easeToCalls.length).toBe(easeToCallsAfterFirst);
+      expect(map.fitBoundsCalls.length).toBe(fitBoundsCallsAfterFirst);
+    });
+
+    it("still flies between two distinct pins that share the exact same coordinates", async () => {
+      // Two different Ironman races held at the same venue in different
+      // years commonly geocode to identical lat/lng — cycling between them
+      // is a real, distinct navigation (different name/date), not a
+      // re-click of the same match, and must not be silently skipped.
+      const race2023 = {
+        ...paris,
+        query: "ironman-nice-2023",
+        name: "Ironman Nice 2023",
+        icon: "triathlete" as const,
+      };
+      const race2024 = {
+        ...paris,
+        query: "ironman-nice-2024",
+        name: "Ironman Nice 2024",
+        icon: "triathlete" as const,
+      };
+      const user = userEvent.setup();
+      render(
+        <MapView
+          token="pk.test"
+          places={[race2023, race2024]}
+          selection={null}
+          onMarkerClick={vi.fn()}
+          onRelocate={vi.fn()}
+          onSetLocation={vi.fn()}
+          builtinAppearance={TEST_BUILTIN_APPEARANCE}
+          declutterEnabled={true}
+          canEdit={true}
+        />,
+      );
+      const button = screen.getByRole("listitem", {
+        name: /Zoom to next Ironman pin/,
+      });
+      const map = instances[0];
+
+      await user.click(button);
+      const flyToCallsAfterFirst = map.flyToCalls.length;
+      expect(flyToCallsAfterFirst).toBeGreaterThan(0);
+
+      // Same coordinates as the first pin, but a genuinely different
+      // pin (different query/name/index) — this click must still fly.
+      await user.click(button);
+      expect(map.flyToCalls.length).toBeGreaterThan(flyToCallsAfterFirst);
+      expect(map.flyToCalls[map.flyToCalls.length - 1]).toEqual({
+        center: [race2023.lng, race2023.lat],
+        zoom: 12,
+        duration: 600,
+      });
+    });
+
+    it("shows a count badge only when more than one pin matches", () => {
+      const parisVisited = { ...paris, category: "visited" as const };
+      const tokyoVisited = { ...tokyo, category: "visited" as const };
+      render(
+        <MapView
+          token="pk.test"
+          places={[parisVisited, tokyoVisited]}
+          selection={null}
+          onMarkerClick={vi.fn()}
+          onRelocate={vi.fn()}
+          onSetLocation={vi.fn()}
+          builtinAppearance={TEST_BUILTIN_APPEARANCE}
+          declutterEnabled={true}
+          canEdit={true}
+        />,
+      );
+      expect(
+        screen.getByRole("listitem", { name: /Zoom to next Visited pin/ }),
+      ).toHaveTextContent("2");
+    });
+  });
+
+  describe("legend drawer collapse/expand", () => {
+    it("is expanded by default, showing legend content", () => {
+      const visited = { ...paris, category: "visited" as const };
+      render(
+        <MapView
+          token="pk.test"
+          places={[visited]}
+          selection={null}
+          onMarkerClick={vi.fn()}
+          onRelocate={vi.fn()}
+          onSetLocation={vi.fn()}
+          builtinAppearance={TEST_BUILTIN_APPEARANCE}
+          declutterEnabled={true}
+          canEdit={true}
+        />,
+      );
+      expect(
+        screen.getByRole("button", { name: "Hide map key" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("list", { name: "Map key" })).toBeInTheDocument();
+    });
+
+    it("hides legend content and flips the toggle label when collapsed", async () => {
+      const visited = { ...paris, category: "visited" as const };
+      const user = userEvent.setup();
+      render(
+        <MapView
+          token="pk.test"
+          places={[visited]}
+          selection={null}
+          onMarkerClick={vi.fn()}
+          onRelocate={vi.fn()}
+          onSetLocation={vi.fn()}
+          builtinAppearance={TEST_BUILTIN_APPEARANCE}
+          declutterEnabled={true}
+          canEdit={true}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Hide map key" }));
+
+      expect(
+        screen.queryByRole("list", { name: "Map key" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Show map key" }),
+      ).toBeInTheDocument();
+    });
+
+    it("persists the collapsed state across remounts via localStorage", async () => {
+      const visited = { ...paris, category: "visited" as const };
+      const user = userEvent.setup();
+      const { unmount } = render(
+        <MapView
+          token="pk.test"
+          places={[visited]}
+          selection={null}
+          onMarkerClick={vi.fn()}
+          onRelocate={vi.fn()}
+          onSetLocation={vi.fn()}
+          builtinAppearance={TEST_BUILTIN_APPEARANCE}
+          declutterEnabled={true}
+          canEdit={true}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Hide map key" }));
+      unmount();
+
+      render(
+        <MapView
+          token="pk.test"
+          places={[visited]}
+          selection={null}
+          onMarkerClick={vi.fn()}
+          onRelocate={vi.fn()}
+          onSetLocation={vi.fn()}
+          builtinAppearance={TEST_BUILTIN_APPEARANCE}
+          declutterEnabled={true}
+          canEdit={true}
+        />,
+      );
+
+      expect(
+        screen.getByRole("button", { name: "Show map key" }),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("calls onMarkerClick with the place's query when its marker is clicked", () => {
     const onMarkerClick = vi.fn();
     render(
@@ -1022,6 +1521,56 @@ describe("MapView", () => {
     const marker = markerInstances[0];
     const domContent = marker?.popup?.domContent as HTMLDivElement | undefined;
     expect(domContent?.querySelector("img")).toBeNull();
+  });
+
+  it("adds a photo-ring class to a marker whose pin has photos", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+        canEdit={false}
+        photosByQuery={{
+          paris: [
+            {
+              id: "photo-1",
+              placeQuery: "paris",
+              storagePath: "user-1/photo-1.jpg",
+              url: "https://cdn.example.com/photo-1.jpg",
+            },
+          ],
+        }}
+      />,
+    );
+    const marker = markerInstances[0];
+    expect(
+      marker?.getElement().classList.contains("map-marker--has-photos"),
+    ).toBe(true);
+  });
+
+  it("does not add a photo-ring class to a marker whose pin has no photos", () => {
+    render(
+      <MapView
+        token="pk.test"
+        places={[paris]}
+        selection={null}
+        onMarkerClick={vi.fn()}
+        onRelocate={vi.fn()}
+        onSetLocation={vi.fn()}
+        builtinAppearance={TEST_BUILTIN_APPEARANCE}
+        declutterEnabled={true}
+        canEdit={false}
+      />,
+    );
+    const marker = markerInstances[0];
+    expect(
+      marker?.getElement().classList.contains("map-marker--has-photos"),
+    ).toBe(false);
   });
 
   it("gives the popup a photo upload input when canEdit is true, and calls onAddPhoto with the file", () => {

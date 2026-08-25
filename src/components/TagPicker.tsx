@@ -2,14 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import type { PlaceCategory } from "../lib/checklist";
 import type { PlaceIcon } from "../lib/placeTags";
 import type { CustomTag } from "../lib/customTags";
-import {
-  HOUSE_ICON_PATH,
-  TRIATHLETE_ICON_BODY_PATH,
-  TRIATHLETE_ICON_HEAD,
-  AIRPLANE_ICON_PATH,
-  SKI_ICON_PATH,
-  RUN_ICON_PATH,
-} from "../lib/iconShapes";
+import { renderIconGlyph } from "../lib/iconGlyph";
 import { getTagOrder, saveTagOrder } from "../lib/tagOrder";
 import { BUILTIN_TAG_KEYS, BUILTIN_TAG_LABELS } from "../lib/tagAppearance";
 import type {
@@ -83,51 +76,6 @@ export interface TagPickerProps {
     id: string,
     updates: { label: string; color: string; iconShape: IconShape },
   ) => void;
-}
-
-function renderIconGlyph(shape: IconShape) {
-  if (shape === "house") {
-    return (
-      <svg viewBox="0 0 24 24" width="14" height="14">
-        <path d={HOUSE_ICON_PATH} fill="#ffffff" />
-      </svg>
-    );
-  }
-  if (shape === "triathlete") {
-    return (
-      <svg viewBox="0 0 24 24" width="14" height="14">
-        <circle
-          cx={TRIATHLETE_ICON_HEAD.cx}
-          cy={TRIATHLETE_ICON_HEAD.cy}
-          r={TRIATHLETE_ICON_HEAD.r}
-          fill="#ffffff"
-        />
-        <path d={TRIATHLETE_ICON_BODY_PATH} fill="#ffffff" />
-      </svg>
-    );
-  }
-  if (shape === "airplane") {
-    return (
-      <svg viewBox="0 0 24 24" width="14" height="14">
-        <path d={AIRPLANE_ICON_PATH} fill="#ffffff" />
-      </svg>
-    );
-  }
-  if (shape === "ski") {
-    return (
-      <svg viewBox="0 0 24 24" width="14" height="14">
-        <path d={SKI_ICON_PATH} fill="#ffffff" />
-      </svg>
-    );
-  }
-  if (shape === "run") {
-    return (
-      <svg viewBox="0 0 24 24" width="14" height="14">
-        <path d={RUN_ICON_PATH} fill="#ffffff" />
-      </svg>
-    );
-  }
-  return null;
 }
 
 export function TagPicker({
