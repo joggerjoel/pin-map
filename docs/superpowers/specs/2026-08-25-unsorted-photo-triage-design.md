@@ -51,7 +51,7 @@ violate one are bugs, not judgment calls.
 drop policy if exists "pinmap_place_photos_update_own" on public.pinmap_place_photos;
 create policy "pinmap_place_photos_update_own"
   on public.pinmap_place_photos for update
-  using (auth.uid() = user_id)
+  using (auth.uid() = user_id and place_query is null)
   with check (auth.uid() = user_id);
 
 revoke update on public.pinmap_place_photos from authenticated, anon;
@@ -61,6 +61,18 @@ create index if not exists pinmap_place_photos_unsorted_idx
   on public.pinmap_place_photos (user_id, created_at, id)
   where place_query is null;
 ```
+
+The `using` clause's `place_query is null` isn't redundant with
+`assignPhotoPlace`'s own `and place_query is null` — `using` is
+evaluated by Postgres against the row's state *before* the update,
+independent of what query executes it. Without it, the Invariants
+section's "moves from `null` to a real value, once" claim would only be
+true because the one function this app happens to call does it that
+way — any authenticated owner could otherwise issue their own `UPDATE`
+directly against PostgREST (their own valid session already has
+column-level `UPDATE` on `place_query` for their own rows) and overwrite
+an already-assigned photo's `place_query`. With it, that transition is
+enforced by Postgres itself, not by which client code exists.
 
 `drop policy if exists` and `grant`/`index ... if not exists` make the
 file safe to re-run. The explicit `revoke` before the column-scoped
@@ -110,30 +122,57 @@ explicitly, not inferred from the absence of a throw.
   null).order('created_at', {ascending: true}).order('id', {ascending:
   true}).limit(limit)`, plus, when `after` is given, a keyset filter for
   `created_at > after.createdAt OR (created_at = after.createdAt AND id >
-  after.id)` via `.or()`. The timestamp value passed into that `or=`
-  string must always be double-quoted, unconditionally — it contains `:`
-  and (usually, but not reliably — Postgres trims trailing zero
-  fractional seconds, so a timestamp landing on a whole second has no
-  dot) `.`, both reserved in PostgREST's filter grammar. Quoting only
-  when a dot happens to be present would intermittently ship a broken
-  filter; the rule is "always quote," not "quote if punctuation is
-  present." `id` is the tiebreaker since the bulk import can produce
-  `created_at` ties. Returns `null` (not `[]`) on `error` or a thrown
-  exception, so "failed" and "empty page" stay distinguishable for every
-  page, not just the first.
+  after.id)`. PostgREST's `.or()` grammar is a flat comma-separated list
+  of `column.op.value` terms — expressing an `OR` of an `AND` isn't three
+  flat terms, it needs an explicit `and(...)` group nested inside the
+  `or(...)` string: `` .or(`created_at.gt."${after.createdAt}",and(created_at.eq."${after.createdAt}",id.gt."${after.id}")`) ``.
+  Writing it as three flat OR'd terms instead would silently produce a
+  different (wrong) query — one that also matches any row with `id >
+  after.id` regardless of `created_at`, re-returning already-seen rows.
+  The double-quoting around each value is unconditional, not "when it has
+  punctuation": `after.createdAt` contains `:` and (usually, but not
+  reliably — Postgres trims trailing zero fractional seconds, so a
+  timestamp landing on a whole second has no dot) `.`, both reserved in
+  this grammar. `after.createdAt`/`after.id` are also validated as a
+  well-formed ISO timestamp / UUID before being interpolated at all — the
+  function is exported and callable directly with an arbitrary `after`
+  argument, not only through the UI's own generated cursors, so this
+  isn't purely a formatting nicety. `id` is the tiebreaker since the bulk
+  import can produce `created_at` ties. Returns `null` (not `[]`) on
+  `error` or a thrown exception, so "failed" and "empty page" stay
+  distinguishable for every page, not just the first.
 
-  `UnsortedPhoto` is `{id, storagePath, createdAt, kind}`. The panel
-  derives thumbnail and full-size URLs from `storagePath` via
-  `photosRepository`'s existing `publicUrl` helper — for the grid,
-  requesting Supabase Storage's image transform (`getPublicUrl(path, {
-  transform: { width: 240 } })`), routed through this deployment's
-  running `supabase-imgproxy`, rather than the full original; the
-  lightbox (§5) requests the untransformed original. `kind: "image" |
-  "video"` is derived from the extension: `.mp4`/`.mov`/`.webm` → video,
-  everything else → image, checked against the actual imported batch
-  (`videos.jsonl`: 22 entries, all `video/mp4`; `images.jsonl`: 4,929
-  entries spanning `image/jpeg`, `image/png`, `image/webp`,
+  `UnsortedPhoto` is `{id, storagePath, createdAt, kind}`. `kind: "image"
+  | "video"` is derived from the extension: `.mp4`/`.mov`/`.webm` →
+  video, everything else → image, checked against the actual imported
+  batch (`videos.jsonl`: 22 entries, all `video/mp4`; `images.jsonl`:
+  4,929 entries spanning `image/jpeg`, `image/png`, `image/webp`,
   `image/gif`) — every real row today falls cleanly into this split.
+
+  URL rules, all three derived from `storagePath` via `photosRepository`'s
+  existing `publicUrl` helper — and, critically, the image transform only
+  ever applies to `kind: "image"`, never to a video: `supabase-imgproxy`
+  transforms images, it doesn't extract a frame from a video file, so
+  requesting a transformed URL for a video's `storagePath` would be
+  requesting something imgproxy can't produce.
+  - Image, grid thumbnail: `getPublicUrl(path, { transform: { width: 240
+    } })` — routed through this deployment's running `supabase-imgproxy`.
+  - Image, lightbox (§5): `getPublicUrl(path)`, untransformed.
+  - Video, card (there is no separate "video thumbnail"): `getPublicUrl(path)`,
+    untransformed — the `<video preload="metadata">` element lets the
+    *browser* derive a first-frame preview client-side from the real
+    file; there's nothing server-side to transform.
+
+  Before relying on the image transform at all, verify on aorus4 that
+  Supabase Storage's `storage-api` actually has image transformation
+  enabled and pointed at the running `supabase-imgproxy` (an
+  `ENABLE_IMAGE_TRANSFORMATION`-style flag plus an `IMGPROXY_URL` — a
+  container merely running elsewhere in the stack doesn't imply
+  `storage-api` is wired to use it) — a direct `curl` of a transformed
+  URL for one real photo, confirming a resized image comes back, before
+  any grid code is written against it. Also confirm the installed
+  `@supabase/storage-js` version actually supports the `transform` option
+  on `getPublicUrl` — it's not universal across versions.
 
   Keyset pagination survives concurrent assigns: every successful
   `assignPhotoPlace` removes a row from the `place_query is null` set,
@@ -188,65 +227,82 @@ export async function upsertPins(
 }
 ```
 
-Every existing call site (`useGeocoder.ts`, three of them — the batch
-`pinPlaces` path and the single-place `pinPlace` path) currently calls
+Every existing call site (`useGeocoder.ts`, three of them — two inside
+the batch `pinPlaces` path, one inside the single-place `pinPlace` path)
+currently calls
 this with `void upsertPins(...)`, discarding the return value; `void`
 still type-checks against any resolved-promise type, so this is a
-non-breaking change for all of them. The batch `pinPlaces` path keeps its
-`void` call and stays best-effort/fire-and-forget, unchanged — this
-feature doesn't touch its behavior. Only `pinPlace`'s call site changes
-(§4) to actually use the result.
+non-breaking change for all of them, and none of them change — `pinPlace`
+stays exactly as it is today too (see §4 for why). The only new caller
+that actually uses the result is `pinPlaceSilent` (§4), a new sibling
+function, not a change to any existing call site.
 
-### 4. `pinPlace` returns a canonical result, not `void`
+### 4. `pinPlaceSilent`: a triage-only sibling to `pinPlace`
 
-`useGeocoder.ts`'s `pinPlace(query, tag)` is currently `Promise<void>` —
-failures only surface via `setError`/`setFailedLines`, with no way for a
-caller to know whether the pin exists, or under what exact query string.
-Change the return type to `Promise<string | null>`:
+`useGeocoder.ts`'s existing `pinPlace(query, tag)` stays exactly as it is
+today (`Promise<void>`, mutates the hook's own `error`/`failedLines` on
+failure) — `AddPin` keeps using it unchanged. Reusing it for triage was
+an earlier draft's mistake: it would have meant either mutating shared
+error state from inside a panel that has no visible surface for that
+state (§6 discusses why — `AddPin`/`PlaceInput` are unmounted while the
+panel is open), or bolting a fragile "only clear if opened" ref onto
+`App.tsx` to compensate, which itself never got reset and could wipe a
+different, unrelated `AddPin` error. Simpler to not share the mutation at
+all: add a new function that shares the same geocode-then-persist
+mechanics but is pure — it returns a discriminated result and never
+touches `error`/`failedLines`, so there's nothing to clear and no ref to
+forget to reset.
 
-- Empty input, or a geocode failure → `null`.
+```ts
+export type PinPlaceResult =
+  | { status: "ok"; query: string }
+  | { status: "invalid" }
+  | { status: "geocode-error" }
+  | { status: "persistence-error" };
+
+export async function pinPlaceSilent(
+  query: string,
+  tag: { category?: PlaceCategory; icon?: PlaceIcon; customTag?: CustomTag },
+): Promise<PinPlaceResult> { /* below */ }
+```
+
+- Empty input → `{status: "invalid"}`.
 - A pin already exists matching case-insensitively (the existing dedup
-  short-circuit) → the **existing** pin's stored `query`, exactly as
-  stored (not the freshly typed text, which may differ in case/whitespace).
-- Geocode succeeds → `pinPlace` now `await`s the corrected `upsertPins`
-  (§3) before resolving. On `"ok"`: the optimistic `setPinnedPlaces`
-  update (which still runs synchronously right after the geocode
-  succeeds, so `AddPin`'s pin still appears instantly — this doesn't
-  change) stays, and `pinPlace` resolves the `trimmed` input. On
-  `"error"`: the optimistic entry is rolled back
-  (`setPinnedPlaces((prev) => prev.filter((p) => p.query !== trimmed))`),
-  the line is pushed into `failedLines` the same way a geocode failure
-  already is, and `pinPlace` resolves `null`. This is a real behavior
-  change for `AddPin` too, and an improvement: today a failed upsert
-  leaves a pin that looks fine until it silently disappears on reload
-  with zero explanation; after this, the same failure is visible the same
-  way a geocode failure already is.
+  short-circuit) → `{status: "ok", query}` with the **existing** pin's
+  stored `query`, exactly as stored (not the freshly typed text, which
+  may differ in case/whitespace).
+- Geocode fails → `{status: "geocode-error"}`.
+- Geocode succeeds → the optimistic `setPinnedPlaces` update runs
+  (identical to `pinPlace`'s own, so the new pin shows up immediately on
+  the map the same way an `AddPin` pin does), then `await`s the
+  corrected `upsertPins` (§3). On `"ok"`: resolves `{status: "ok",
+  query: trimmed}`. On `"error"`: the optimistic entry is rolled back
+  (`setPinnedPlaces((prev) => prev.filter((p) => p.query !== trimmed))`)
+  and it resolves `{status: "persistence-error"}` — no `failedLines`
+  write, since this function never touches that state.
+- `incrementPlacesPinned(1)` — called unconditionally today inside
+  `pinPlace` right after a successful geocode — is called here only
+  after `upsertPins` resolves `"ok"`, not merely after a successful
+  geocode: the counter should reflect pins that actually persisted, and
+  this function has the awaited result available to gate on, unlike
+  `pinPlace`'s existing fire-and-forget call site (which this doesn't
+  change).
 
-**Single-flight guard for concurrent duplicate creates.** Two different
-triage rows can each type the same new place and both call `pinPlace`
-before either's `pinnedPlacesRef` dedup check would catch it — the
-existing dedup only guards against re-adding an *already-pinned* place,
-not two simultaneous in-flight creates of the same new one. Add an
-in-flight map keyed by the lowercased/trimmed query
-(`pendingPinsRef: Map<string, Promise<string | null>>`) inside
-`useGeocoder`: if a call for a given key is already in flight, return
-that same promise instead of starting a second geocode+upsert+optimistic-
-append. This is centralized in the hook (benefits any future concurrent
-caller, not just this panel) and closes the gap without per-row
-coordination in the panel itself.
-
-**Also export `clearError: () => void`** — `setError(null)` *and*
-`setFailedLines([])` together, since `pinPlace` can populate either on
-failure. Unchanged: `pinPlace` still sets both on a real failure, since
-`AddPin` still needs them for its normal use. What's new is that the
-triage panel replaces `AddPin`/`PlaceInput` while open (§6), so a
-triage-time failure's state would otherwise sit invisible until the panel
-closes and `AddPin` remounts, showing a stale banner. Every path out of
-the triage panel — its own close, clicking "Imports", and sign-out — calls
-`clearError()` *only if the triage panel had actually been open this
-session* (a ref, not unconditional; see §6 for the concrete mechanism),
-so a legitimate pre-existing `AddPin`/`PlaceInput` error from before the
-panel was ever opened isn't silently wiped by an unrelated navigation.
+**Single-flight guard for concurrent duplicate creates**, shared by both
+`pinPlace` and `pinPlaceSilent` (a `useGeocoder`-level
+`pendingPinsRef: Map<string, Promise<PinPlaceResult>>`, keyed by the
+lowercased/trimmed query): two different triage rows can each type the
+same new place and both call `pinPlaceSilent` before either's
+`pinnedPlacesRef` dedup check would catch it — that dedup only guards
+against re-adding an *already-pinned* place, not two simultaneous
+in-flight creates of the same new one. If a call for a given key is
+already in flight (from either function), return that same promise
+instead of starting a second geocode+upsert+optimistic-append; wrap the
+promise in a `.finally()` that deletes the map entry once it settles,
+success or failure alike — without that, a key whose attempt resolved to
+an error would keep returning that same stale failed promise to every
+later retry for the same text, silently making the panel's own "try
+again" affordance a no-op forever for that place name.
 
 **Atomicity, explicitly accepted as a gap.** Creating a pin and assigning
 a photo to it are still two separate writes
@@ -274,7 +330,7 @@ export interface UnsortedPhotosPanelProps {
   userId: string; // always non-null; see §6
   pinnedPlaces: PinnedPlace[]; // App passes geocoder.pinnedPlaces
   canCreatePin: boolean; // App passes effectiveToken !== null
-  onPinPlace: (query: string, tag: PinTag) => Promise<string | null>;
+  onPinPlace: (query: string, tag: PinTag) => Promise<PinPlaceResult>; // geocoder.pinPlaceSilent
   onOpenLightbox: (url: string, alt: string) => void; // App passes openPhotoLightbox
   onAssigned: () => void; // count hook's `decrement`
   onEmpty: () => void; // count hook's `markEmpty`
@@ -314,10 +370,18 @@ Calls `useUnsortedPhotos(userId)` internally (§6). Renders:
 is scalar, not per-photo: opening a card's assign row collapses whichever
 other row was open. This is a deliberate simplification (not "several
 independent rows can be open"), and avoids several simultaneous in-flight
-geocode/assign operations needing independent tracking. `assignError` and
-`isAssigning` remain keyed by photo id, but only the currently-expanded
-id's entries are ever visible — collapsing a row (by expanding a
-different one, or a completed action closing it) clears its error too.
+geocode/assign operations needing independent tracking. Expanding a
+*different* card is disabled while the currently-expanded one has an
+assign sequence in flight (`isAssigning` true) — not just each row's own
+actions disabled against a second click on itself (§ below), but the
+"open a different row" action too — specifically so a card can never be
+collapsed while its own result is still pending, which would otherwise
+leave that row's outcome with nowhere to render (see "Resolving an
+assignment," which reports outcomes through a panel-level toast for
+exactly this reason, but the row-level `assignError` for an `"error"`
+result still needs its own card visible to retry from). `assignError` is
+keyed by photo id and only ever shown on that photo's own card, cleared
+when the row collapses after resolving.
 
 **Preview vs. assign.** Images: a "Preview" button on the card calls
 `onOpenLightbox(fullSizeUrl, "")` (the app's existing lightbox, already
@@ -341,36 +405,45 @@ DEFAULT_TAG)` (`TagPicker`'s existing default, same as `AddPin`; editable
 afterward via `PlaceList`'s tag-edit UI).
 
 **Resolving an assignment.** Whichever path resolves a query (an
-existing match's `place.query` directly, or `onPinPlace`'s result) calls
-`assign(photo, query)`. The create-pin button is already disabled on
-empty input, so the only realistic way `onPinPlace` resolves `null`
-through this UI is a pin-creation failure (geocode *or* the now-checked
-`upsertPins` failure, §4) — shown as "Couldn't create that pin — try
-again." without attempting `assign`. `assign`'s three-way result maps to:
-`"ok"` → "Saved"; `"conflict"` → "Already assigned elsewhere"; `"error"`
-→ "Couldn't save — try again." Both `"ok"` and `"conflict"` call
-`onAssigned()` (a `"conflict"` still means one fewer unsorted photo
-exists overall, just not from this panel's own write) and remove the
-photo from the grid — but not instantly: the row's message is shown for
-a short, fixed delay (e.g. 1.2s) before removal, so a card that
-disappeared as its message rendered isn't the actual behavior — for
-`"ok"` and `"conflict"` alike, the point being to actually communicate
-what happened, not just to clear the row. `"error"` shows its message
-immediately and leaves the photo in place indefinitely (retryable, no
-timed removal).
+existing match's `place.query` directly, or `onPinPlace`'s `{status:
+"ok", query}`) calls `assign(photo, query)`. The create-pin button is
+already disabled on empty input, so the two realistic non-`"ok"`
+`onPinPlace` outcomes through this UI are `"geocode-error"` and
+`"persistence-error"` — both shown as "Couldn't create that pin — try
+again." on the row (one message covers both; the distinct statuses exist
+for future callers, not because this UI differentiates them today)
+without attempting `assign`.
 
-**In-flight guards are refs, not just state.** `isAssigning` (and every
-other in-flight flag in this design — `isLoadingMore`/`isInitialLoading`
-in the hook, §6) is backed by a ref checked and set *synchronously*,
-before the async call starts, not only by a React state value. Two calls
-in the same tick (a double-click before React re-renders, or several
-`assign` calls draining the grid to empty in close succession each
-trying to trigger a refill) can both observe a stale `false` from state;
-a ref set inline avoids that race. The full assign sequence for a row —
-from `onPinPlace` (if applicable) through `assign` resolving, including
-the display delay — is covered by one such guard, so a double-click
-during the geocode step can't fire two `pinPlace` calls before the
-single-flight guard (§4) or the dedup check would otherwise catch it.
+`assign`'s three-way result determines what happens next, and — unlike
+an earlier draft of this design — removal from the grid is never delayed
+to let a message be read: the hook already removes the photo from
+`photos` synchronously on `"ok"`/`"conflict"` (§6), so the component
+doesn't fight that by trying to keep the card around. Instead, the panel
+owns one small, non-blocking notice area (not per-card) that a resolved
+outcome writes into and that auto-dismisses on its own timer, entirely
+decoupled from any card's lifecycle: `"ok"` → "Saved"; `"conflict"` →
+"Already assigned elsewhere" (still counts as one fewer unsorted photo,
+so `onAssigned()` fires the same as `"ok"` — a `"conflict"` just means
+someone else's action caused the removal, not this panel's own write).
+`"error"` is the one outcome that *doesn't* go to the shared notice area
+and *doesn't* remove the card: it sets that specific photo's
+`assignError` and stays visible on its own row, since it needs a retry
+affordance attached to a specific card, not a passing notice.
+
+**In-flight guards are refs, not just state.** `isAssigning` is backed by
+a ref checked and set *synchronously*, before the async call starts, not
+only by a React state value — two calls in the same tick (a double-click
+before React re-renders) can both observe a stale `false` from state; a
+ref set inline avoids that race. The full sequence for a row — from
+`onPinPlace` (if applicable) through `assign` resolving — is covered by
+one such guard, so a double-click during the geocode step can't fire two
+`pinPlaceSilent` calls before the single-flight guard (§4) or the dedup
+check would otherwise catch it. Because removal is no longer delayed,
+there's no window after `assign` resolves where a stale timer could fire
+against an unmounted card or a closed panel — the guard's job ends the
+moment `assign` (and `onAssigned`/the notice) resolves, not some fixed
+interval later. The hook's own `isLoadingMore`/`isInitialLoading` guards
+(§6) follow the identical synchronous-ref pattern for the same reason.
 
 ### 6. Two hooks, and wiring: `src/App.tsx`
 
@@ -397,6 +470,16 @@ a `refetch()` superseded by a later `refetch()` or by the effect
 re-running. `decrement` subtracts 1, floored at 0, no-op while `null`.
 `markEmpty` unconditionally sets `0`.
 
+A second effect calls `refetch()` on the browser's `focus` event (while
+`userId` is non-null) — cheap (one `head: true` count query), and it's
+what keeps the header button (§6 below) from being a dead end once
+`totalCount` reaches `0` and the button that would otherwise trigger a
+refetch has hidden itself. Without this, a second import landing later in
+the same session would have no way to ever reveal itself again short of
+a full reload — the "quietly disappear once triaged" behavior the button
+is deliberately designed to have (see below) shouldn't also mean
+"permanently forgets to check again."
+
 **`src/hooks/useUnsortedPhotos.ts` (new, instantiated only inside the
 panel).**
 
@@ -422,9 +505,10 @@ through an unmount first, per the same reasoning as the count hook).
 
 Uses the same generation-ref pattern as the count hook to keep the
 initial load, `retry()`, and `loadMore()` from applying an out-of-order
-response, on top of the `isLoadingMore`/`isInitialLoading` ref guards
-(§5) that stop a second call from starting at all while one is in
-flight. On mount: fetches the first page (`limit: 60`, a module-level
+response, on top of `isLoadingMore`/`isInitialLoading` themselves
+stopping a second call from starting at all while one is in flight (the
+panel's own `isAssigning` guard, §5, follows this same synchronous-ref
+pattern). On mount: fetches the first page (`limit: 60`, a module-level
 constant in this file — `fetchUnsortedPhotos` itself is agnostic to page
 size) while `isInitialLoading` is true; `null` → `photosLoadError`; an
 array → populates `photos`, `hasMore = (length === limit)`, records the
@@ -448,37 +532,40 @@ swaps the whole view via an early `return` before `<aside>` is ever
 reached, which already makes `showImports`/`showUnsortedPhotos` mutually
 exclusive by construction.
 
-- `useUnsortedPhotoCount(userId)` instantiated at `App` level.
-- A ref, `panelWasOpenedRef` (initialized `false`), tracks whether the
-  triage panel has been opened this session — set to `true` in the header
-  button's click handler, alongside opening the panel. A small helper,
-  `clearErrorIfPanelWasOpen = () => { if (panelWasOpenedRef.current)
-  geocoder.clearError(); }`, is what every exit path below actually
-  calls — this is the concrete form of §4's "only clear if the panel had
-  been open" rule, not a separate mechanism.
+- `useUnsortedPhotoCount(userId)` instantiated at `App` level, passing
+  `auth.userId` — the signed-in caller's own id — never `ownerUserId`
+  (the read-only "view the owner's data as a guest" concept `usePhotos`
+  uses elsewhere in this app). The panel is the same: `userId` is always
+  the caller's own. A signed-in guest therefore only ever sees *their
+  own* unsorted-photo count and grid through this feature — for a guest
+  that's `0` today, since only the owner's account has rows from the
+  mitm-proxy import — never the owner's raw, untriaged batch. This
+  matters because the existing `select` RLS policy (§1) lets a guest
+  *view* the owner's already-placed photos; that's an intentional,
+  existing exposure this feature doesn't extend to the unsorted backlog,
+  since nothing in this design ever queries by `ownerUserId`.
 - Header button next to "Imports", gated on `auth.status ===
   "signed-in"` (`userId` guaranteed non-null). Label: `Unsorted` when
   `totalCount === null`, `Unsorted ({totalCount})` otherwise; rendered
   whenever `totalCount` is `null` or `> 0` (equivalently: hidden only at
-  exactly `0`, since `decrement`'s floor means it's never negative).
-  Click sets `panelWasOpenedRef.current = true`, `showUnsortedPhotos:
-  true`, and calls `count.refetch()` — every open re-fetches fresh rather
+  exactly `0`, since `decrement`'s floor means it's never negative — the
+  focus-triggered `refetch()` above is what keeps this from being a
+  permanent dead end once it hides). Click sets `showUnsortedPhotos:
+  true` and calls `count.refetch()` — every open re-fetches fresh rather
   than trusting a possibly-`null` or drifted value.
 - Panel renders when `showUnsortedPhotos && auth.status === "signed-in"`.
-- Three exit paths, all calling `clearErrorIfPanelWasOpen()` before
-  resetting `showUnsortedPhotos` to `false`: the panel's own `onClose`;
-  clicking "Imports" (so returning from Imports lands on the normal place
-  list, not a stale triage panel or a stale error banner); and an effect
-  on `auth.status` becoming `"signed-out"`. Gating all three on the same
-  ref means a user who never opened the panel this session — clicking
-  "Imports" straight from a legitimate `AddPin` error — never has that
-  error silently wiped by a path this feature doesn't own.
+  Two exit paths reset `showUnsortedPhotos` to `false`: the panel's own
+  `onClose`, and an effect on `auth.status` becoming `"signed-out"`.
+  Clicking "Imports" also resets it, so returning from Imports lands on
+  the normal place list rather than a stale triage panel. None of these
+  need to touch `geocoder`'s error state — `pinPlaceSilent` (§4) never
+  writes to it in the first place, so there's nothing to clear and no
+  ref tracking "was the panel ever open" to forget to reset.
 - `<UnsortedPhotosPanel userId={userId} pinnedPlaces={geocoder.pinnedPlaces}
-  canCreatePin={effectiveToken !== null} onPinPlace={geocoder.pinPlace}
+  canCreatePin={effectiveToken !== null} onPinPlace={geocoder.pinPlaceSilent}
   onOpenLightbox={openPhotoLightbox} onAssigned={count.decrement}
-  onEmpty={count.markEmpty} onClose={() => { clearErrorIfPanelWasOpen();
-  setShowUnsortedPhotos(false); }} />` in place of `<AddPin>` /
-  `<PlaceInput>` / `<PlaceList>`.
+  onEmpty={count.markEmpty} onClose={() => setShowUnsortedPhotos(false)}
+  />` in place of `<AddPin>` / `<PlaceInput>` / `<PlaceList>`.
 
 ## Acceptance tests
 
@@ -487,53 +574,78 @@ exclusive by construction.
   exception, for every failure case: `fetchUnsortedPhotoCount`
   (`null` on either failure mode, distinct from `0`); `fetchUnsortedPhotos`
   (keyset pagination — cursor advances, `id` tiebreak, short/empty/full
-  page — `null` on either failure mode, `kind` derivation, thumbnail vs.
-  full-size transform URLs); `assignPhotoPlace` (`"ok"` on an affected
-  row, `"conflict"` on zero rows with no `error`, `"error"` on a resolved
-  `error` or a throw).
+  page — `null` on either failure mode, `kind` derivation); `assignPhotoPlace`
+  (`"ok"` on an affected row, `"conflict"` on zero rows with no `error`,
+  `"error"` on a resolved `error` or a throw). Separately, the URL-derivation
+  helper: an image gets a transformed URL for the grid and an
+  untransformed one for the lightbox; a video always gets the
+  untransformed URL, never a transform request.
 - **`pinsRepository.test.ts`** — `upsertPins` returns `"ok"`/`"error"` for
   both a resolved `{ error }` and a thrown exception; empty `places`
   short-circuits to `"ok"` without calling Supabase.
-- **`useGeocoder.test.ts`** — `pinPlace` resolves: the trimmed input on a
-  successful geocode + upsert; `null` with the optimistic entry rolled
-  back and `failedLines` populated when `upsertPins` resolves `"error"`;
-  the *existing* pin's stored query on the dedup short-circuit (verified
-  with case/whitespace-differing input); `null` on geocode failure or
-  empty input. Two concurrent `pinPlace` calls for the same new query
-  share one in-flight geocode/upsert and both resolve the same value, not
-  two separate creates. `clearError` resets both `error` and
-  `failedLines`.
+- **`useGeocoder.test.ts`** — `pinPlace` (unchanged) keeps its existing
+  test coverage untouched. New coverage for `pinPlaceSilent`: resolves
+  `{status: "ok", query: trimmed}` on a successful geocode + upsert, and
+  calls `incrementPlacesPinned(1)` only in that case — not merely on a
+  successful geocode; resolves `{status: "ok", query}` with the
+  *existing* pin's stored query on the dedup short-circuit (verified with
+  a case/whitespace-differing input, to prove it's not just echoing the
+  argument back), without incrementing the counter again; resolves
+  `{status: "persistence-error"}` with the optimistic entry rolled back
+  and no counter increment when `upsertPins` resolves `"error"`;
+  resolves `{status: "geocode-error"}` / `{status: "invalid"}` for a
+  geocode failure / empty input; never calls `setError`/`setFailedLines`
+  in any of these cases (asserted directly against the hook's `error`/
+  `failedLines`, which must stay untouched by any `pinPlaceSilent` call).
+  Single-flight: two concurrent calls (one via `pinPlace`, one via
+  `pinPlaceSilent`, and both-`pinPlaceSilent`) for the same new query
+  share one in-flight geocode/upsert and resolve the same outcome, not
+  two separate creates or two counter increments; after that shared
+  attempt resolves — success or failure — a subsequent call for the same
+  query text is a fresh attempt, not a replay of the cached result
+  (proves the `pendingPinsRef` entry is actually cleaned up).
 - **`useUnsortedPhotoCount.test.ts`** — skips fetching while `userId` is
   `null`; fetches once non-null; a response from a superseded generation
   (changed `userId`, or an older `refetch()`) is dropped; `refetch`
-  updates `totalCount` from a fresh fetch; `decrement` floors at 0 and
-  no-ops on `null`; `markEmpty` forces `0` from any state.
+  updates `totalCount` from a fresh fetch, including via a simulated
+  window `focus` event; `decrement` floors at 0 and no-ops on `null`;
+  `markEmpty` forces `0` from any state.
 - **`useUnsortedPhotos.test.ts`** — `isInitialLoading` blocks `loadMore`/
   `retry` until the first page settles; two `loadMore()` calls issued in
   the same tick (before any state update) result in exactly one fetch;
   cursor/`hasMore` behavior for a short/empty/full/failed page, including
   after the currently-loaded photos have all been assigned away; `assign`
-  removes on `"ok"`/`"conflict"`, keeps on `"error"`; draining `photos`
-  while `hasMore` is true auto-triggers exactly one refill.
+  removes on `"ok"`/`"conflict"` immediately (synchronously on
+  resolution, no delay), keeps on `"error"`; draining `photos` while
+  `hasMore` is true auto-triggers exactly one refill.
 - **`UnsortedPhotosPanel.test.tsx`** — all five render-state branches,
   including branch 3 (empty-but-`hasMore`, both its loading and
   `loadMoreError` sub-states) never showing "All caught up" or calling
   `onEmpty`, vs. branch 4 doing exactly that; only one row expanded at a
-  time; a video card's assign trigger is a real, keyboard-reachable
-  button; "Preview" opens `onOpenLightbox` with the full-size URL; a
-  `"conflict"`/`"ok"` assign shows its message for the fixed delay before
-  removing the card, an `"error"` shows immediately and doesn't remove
-  it; `canCreatePin: false` disables "Create new pin" with its
-  explanatory label while existing-pin matches still work; a
-  double-click on any row action before the first response resolves
-  produces exactly one `assign`/`onPinPlace` call.
+  time, and expanding a different row is blocked while the current one's
+  `isAssigning` is true; a video card's assign trigger is a real,
+  keyboard-reachable button and its `<video>` `src` is always the
+  untransformed URL; "Preview" opens `onOpenLightbox` with the
+  untransformed full-size URL, never the thumbnail transform; an `"ok"`/
+  `"conflict"` assign removes the card immediately and shows the shared
+  notice ("Saved" / "Already assigned elsewhere") independent of the
+  card — including when the card that resolved isn't the currently
+  expanded one; an `"error"` shows on that specific card only, doesn't
+  remove it, and doesn't touch the shared notice; `canCreatePin: false`
+  disables "Create new pin" with its explanatory label while
+  existing-pin matches still work; a double-click on any row action
+  before the first response resolves produces exactly one `assign`/
+  `onPinPlace` call; closing the panel or unmounting mid-assign produces
+  no further state updates or duplicate callbacks once the pending call
+  eventually resolves.
 - **`App.test.tsx`** — header button visibility/label across
   `null`/`0`/`N`; click calls `refetch()`; both the panel and header are
-  gated on `signed-in`; sign-out resets the flag and conditionally clears
-  geocoder error only if the panel had been open; same for clicking
-  "Imports"; a pre-existing `AddPin` error from before the panel was ever
-  opened survives an Imports round-trip; opening the panel swaps in
-  `UnsortedPhotosPanel` with `MapView` still mounted.
+  gated on `signed-in`; sign-out resets `showUnsortedPhotos`; clicking
+  "Imports" does the same; a pre-existing `AddPin` error/`failedLines`
+  entry is untouched by opening, using, and closing the triage panel, and
+  by an Imports round-trip, since nothing on the triage path writes to
+  that state at all; opening the panel swaps in `UnsortedPhotosPanel` in
+  place of `AddPin`/`PlaceInput`/`PlaceList` with `MapView` still mounted.
 - **Manual, after applying the migration to production**: an
   existing-pin match and a create-new-pin path succeed end-to-end,
   including the create-pin failure case's inline error; clicking "Load
@@ -542,9 +654,13 @@ exclusive by construction.
   throwaway user, confirm an `UPDATE` against the first user's row
   affects zero rows; as the first user, confirm an `UPDATE` on
   `storage_path` on your own row is rejected (proves the revoke+grant
-  sequence actually restricts columns, not just the RLS policy);
-  measure actual transferred bytes for a "Load more" page to confirm the
-  thumbnail transform is actually smaller than the originals.
+  sequence actually restricts columns, not just the RLS policy); confirm
+  the grid thumbnail transform actually returns a resized image (a
+  direct request to a transformed URL, outside the app, before writing
+  any UI code against it) and measure actual transferred bytes for a
+  "Load more" page to confirm it's smaller than the originals; confirm a
+  video card renders its `<video>` element without ever hitting the
+  transform endpoint.
 
 ## Out of scope
 
