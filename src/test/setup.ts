@@ -58,3 +58,21 @@ if (typeof globalThis.ResizeObserver === "undefined") {
     disconnect(): void {}
   };
 }
+
+// jsdom doesn't implement IntersectionObserver either — same no-op stub
+// approach. Tests that need to actually verify intersection-triggered
+// behavior define a more capable mock scoped to their own file (see
+// UnsortedPhotosPanel.test.tsx).
+if (typeof globalThis.IntersectionObserver === "undefined") {
+  globalThis.IntersectionObserver = class IntersectionObserver {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+    root = null;
+    rootMargin = "";
+    thresholds: ReadonlyArray<number> = [];
+  } as unknown as typeof globalThis.IntersectionObserver;
+}

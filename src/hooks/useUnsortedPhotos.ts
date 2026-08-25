@@ -20,6 +20,7 @@ export interface UseUnsortedPhotosResult {
     photo: UnsortedPhoto,
     placeQuery: string,
   ) => Promise<"ok" | "conflict" | "error">;
+  skip: (photo: UnsortedPhoto) => void;
 }
 
 export function useUnsortedPhotos(userId: string): UseUnsortedPhotosResult {
@@ -114,23 +115,43 @@ export function useUnsortedPhotos(userId: string): UseUnsortedPhotosResult {
   const hasMoreRef = useRef(hasMore);
   hasMoreRef.current = hasMore;
 
+  // Shared by `assign` and `skip`: both remove one photo from the visible
+  // grid and, if that drains it while more pages remain, trigger a refill.
+  const removeFromView = useCallback(
+    (photoId: string) => {
+      // The functional updater form is required for correctness — several
+      // removals can happen in close succession (assigning/skipping several
+      // photos in a row), and each must filter against the *actual* latest
+      // `photos`, not a value captured at call time.
+      setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+      remainingRef.current -= 1;
+      if (remainingRef.current <= 0 && hasMoreRef.current) {
+        loadMore();
+      }
+    },
+    [loadMore],
+  );
+
   const assign = useCallback(
     async (photo: UnsortedPhoto, placeQuery: string) => {
       const result = await assignPhotoPlace(photo.id, placeQuery);
       if (result === "ok" || result === "conflict") {
-        // The functional updater form is required for correctness — several
-        // `assign` calls can be in flight close together (assigning several
-        // photos in quick succession), and each must filter against the
-        // *actual* latest `photos`, not a value captured at call time.
-        setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
-        remainingRef.current -= 1;
-        if (remainingRef.current <= 0 && hasMoreRef.current) {
-          loadMore();
-        }
+        removeFromView(photo.id);
       }
       return result;
     },
-    [loadMore],
+    [removeFromView],
+  );
+
+  // Client-side only: hides a photo from the current session's grid without
+  // any network call or persistence, so it naturally reappears next time the
+  // panel loads (this is a "skip for now" filter, not a database-backed
+  // ignore/delete).
+  const skip = useCallback(
+    (photo: UnsortedPhoto) => {
+      removeFromView(photo.id);
+    },
+    [removeFromView],
   );
 
   return {
@@ -143,5 +164,6 @@ export function useUnsortedPhotos(userId: string): UseUnsortedPhotosResult {
     loadMore,
     retry,
     assign,
+    skip,
   };
 }

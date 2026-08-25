@@ -2,7 +2,10 @@
 
 **Date:** 2026-08-25
 **Status:** implemented and deployed (2026-08-25) — see
-[4669fc3](https://github.com/joggerjoel/pin-map/commit/4669fc3)
+[4669fc3](https://github.com/joggerjoel/pin-map/commit/4669fc3). Amended the
+same day after production usage against the real ~8,037-item backlog; see
+"2026-08-25 follow-up" near the end of this document for the skip filter and
+the infinite-scroll reversal.
 **Relation:** additive on top of the `place_query is null` "unsorted"
 convention introduced by `schema_place_photos_unsorted.sql` and
 `scripts/import-mitm-photos.ts`, which bulk-imported ~4,951 photos/videos
@@ -748,9 +751,12 @@ exclusive by construction.
   cherry-pick, not full-backlog processing.
 - EXIF/timestamp/location-based auto-suggestion — Facebook strips that
   metadata, which is why these are unsorted in the first place.
-- Infinite scroll — "Load more" is simpler and sufficient at this scale.
+- ~~Infinite scroll — "Load more" is simpler and sufficient at this
+  scale.~~ Reversed 2026-08-25 — see follow-up below.
 - Deleting/bulk-archiving unsorted photos from this panel — existing
   per-place `deletePhoto` is unaffected and still available post-assign.
+  The 2026-08-25 "skip" filter (below) is not this: it never touches the
+  database.
 - Undoing/reassigning a mis-triaged photo — no more capable "move to a
   different place" UI exists anywhere in the app today; not a regression.
 - A full-size video preview — no video lightbox/player exists anywhere
@@ -774,3 +780,41 @@ Trade-offs accepted deliberately, kept here rather than scattered inline:
 - **Alt text** is `alt=""` by design (§5) — a sha256 filename read by a
   screen reader would be noise, not a description; the real accessible
   labels live on the surrounding buttons.
+
+## 2026-08-25 follow-up: skip filter and infinite scroll
+
+Two changes made the same day, after using the deployed feature against the
+real backlog (which turned out to be ~8,037 items, not the ~4,951 originally
+assumed).
+
+**Skip filter.** Some unsorted items (screenshots, memes, anything that will
+never get a real-world location) have no place to assign. `skip(photo)` on
+`useUnsortedPhotos` removes a photo from the current session's grid — no
+network call, no database write, no new column or RLS change. It reuses the
+same drain-triggers-refill mechanism as `assign` (a `remainingRef` counter
+that calls `loadMore()` once the visible grid empties while more pages
+remain), factored into a shared `removeFromView(photoId)` helper used by
+both. Because nothing is persisted, a skipped photo reappears the next time
+the panel is opened (a fresh mount re-fetches from the first page) — this is
+a "not right now" filter, not a decision, and deliberately so: an earlier
+version of this change considered a DB-backed `ignored_at` soft-flag column
+with matching RLS, before being corrected to this simpler, non-persistent
+form.
+
+Each card gets a "Skip" button alongside "Assign" (and, for images,
+"Preview"), disabled only while that same row has an assign in flight.
+Clicking it also collapses the row if it happened to be expanded.
+
+**Infinite scroll.** The original design's "Out of scope" call — a manual
+"Load more" button is simpler and sufficient — assumed a few thousand items.
+At the real 8,037-item scale, after 60 small thumbnails render, the button
+sits roughly 2,600px below the fold and is effectively undiscoverable; this
+was reported as "no pagination," though the button itself worked correctly
+when found. Replaced the button as the primary mechanism with an
+`IntersectionObserver` watching a 1px sentinel element rendered after the
+grid, with `rootMargin: "600px"` so the next page starts loading well before
+the user reaches the bottom. The observer only attaches while
+`hasMore && !isLoadingMore && !loadMoreError`; on a `loadMoreError` the
+observer is not (re)attached, and a manual "Couldn't load more — tap to
+retry" button takes over as the recovery affordance, matching the design's
+original error-handling branch instead of silently retrying forever.

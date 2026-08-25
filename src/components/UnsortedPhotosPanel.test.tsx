@@ -140,7 +140,9 @@ describe("UnsortedPhotosPanel", () => {
     const user = userEvent.setup();
 
     render(<UnsortedPhotosPanel {...props} />);
-    await user.click(await screen.findByRole("button", { name: /Assign unsorted photo/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /Assign unsorted photo/ }),
+    );
     await user.type(screen.getByPlaceholderText("Place name"), "Par");
     await user.click(screen.getByRole("button", { name: "Paris" }));
 
@@ -165,7 +167,9 @@ describe("UnsortedPhotosPanel", () => {
     const user = userEvent.setup();
 
     render(<UnsortedPhotosPanel {...props} />);
-    await user.click(await screen.findByRole("button", { name: /Assign unsorted photo/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /Assign unsorted photo/ }),
+    );
     await user.type(screen.getByPlaceholderText("Place name"), "Tokyo");
     await user.click(
       screen.getByRole("button", { name: 'Create new pin: "Tokyo"' }),
@@ -194,7 +198,9 @@ describe("UnsortedPhotosPanel", () => {
     const user = userEvent.setup();
 
     render(<UnsortedPhotosPanel {...props} />);
-    await user.click(await screen.findByRole("button", { name: /Assign unsorted photo/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /Assign unsorted photo/ }),
+    );
     await user.type(screen.getByPlaceholderText("Place name"), "Nowhere");
     await user.click(
       screen.getByRole("button", { name: 'Create new pin: "Nowhere"' }),
@@ -217,7 +223,9 @@ describe("UnsortedPhotosPanel", () => {
     const user = userEvent.setup();
 
     render(<UnsortedPhotosPanel {...props} />);
-    await user.click(await screen.findByRole("button", { name: /Assign unsorted photo/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /Assign unsorted photo/ }),
+    );
     await user.type(screen.getByPlaceholderText("Place name"), "Par");
     await user.click(screen.getByRole("button", { name: "Paris" }));
 
@@ -236,7 +244,9 @@ describe("UnsortedPhotosPanel", () => {
     const user = userEvent.setup();
 
     render(<UnsortedPhotosPanel {...props} />);
-    await user.click(await screen.findByRole("button", { name: /Assign unsorted photo/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /Assign unsorted photo/ }),
+    );
     await user.type(screen.getByPlaceholderText("Place name"), "Anywhere");
 
     expect(
@@ -257,6 +267,84 @@ describe("UnsortedPhotosPanel", () => {
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("Skip removes the photo without calling assignPhotoPlace or onAssigned", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
+      .mockResolvedValueOnce([photo("p0"), photo("p1")])
+      .mockResolvedValueOnce([]);
+    const props = baseProps();
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...props} />);
+    await waitFor(() =>
+      expect(screen.getAllByRole("listitem")).toHaveLength(2),
+    );
+
+    await user.click(
+      screen.getAllByRole("button", { name: /Skip unsorted photo/ })[0],
+    );
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(photosRepositoryModule.assignPhotoPlace).not.toHaveBeenCalled();
+    expect(props.onAssigned).not.toHaveBeenCalled();
+  });
+
+  it("Skip on a video card works too and collapses an expanded row", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      photo("p0", "video"),
+    ]);
+    const props = baseProps();
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...props} />);
+    await user.click(
+      await screen.findByRole("button", { name: /Assign unsorted video/ }),
+    );
+    expect(screen.getByPlaceholderText("Place name")).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /Skip unsorted video/ }),
+    );
+
+    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Place name")).not.toBeInTheDocument();
+  });
+
+  it("auto-loads the next page when the load-more sentinel intersects the viewport", async () => {
+    const observedCallbacks: IntersectionObserverCallback[] = [];
+    class ControllableIntersectionObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        observedCallbacks.push(callback);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    vi.stubGlobal("IntersectionObserver", ControllableIntersectionObserver);
+
+    const fullPage = Array.from({ length: 60 }, (_, i) => photo(`p${i}`));
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
+      .mockResolvedValueOnce(fullPage)
+      .mockResolvedValueOnce([photo("extra")]);
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await waitFor(() => expect(observedCallbacks.length).toBeGreaterThan(0));
+
+    act(() => {
+      for (const callback of observedCallbacks) {
+        callback(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          {} as IntersectionObserver,
+        );
+      }
+    });
+
+    await waitFor(() =>
+      expect(photosRepositoryModule.fetchUnsortedPhotos).toHaveBeenCalledTimes(
+        2,
+      ),
+    );
+  });
+
   it("closing/unmounting mid-assign produces no further updates once the pending call resolves", async () => {
     vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
       photo("p0"),
@@ -271,7 +359,9 @@ describe("UnsortedPhotosPanel", () => {
     const user = userEvent.setup();
 
     const { unmount } = render(<UnsortedPhotosPanel {...props} />);
-    await user.click(await screen.findByRole("button", { name: /Assign unsorted photo/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /Assign unsorted photo/ }),
+    );
     await user.type(screen.getByPlaceholderText("Place name"), "Par");
     await user.click(screen.getByRole("button", { name: "Paris" }));
 

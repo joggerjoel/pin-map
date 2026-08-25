@@ -1715,8 +1715,22 @@ body {
   margin: 0;
 }
 
+.unsorted-photos-panel__skip {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  background: none;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  padding: 0.15rem 0;
+  cursor: pointer;
+}
+
 .unsorted-photos-panel__load-more {
   margin-top: 0.75rem;
+}
+
+.unsorted-photos-panel__load-more-sentinel {
+  height: 1px;
 }
 
 .unsorted-photos-panel__empty {

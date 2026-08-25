@@ -42,6 +42,7 @@ export function UnsortedPhotosPanel({
   const isAssigningRef = useRef(false);
   const noticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emptyNotifiedRef = useRef(false);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -69,6 +70,37 @@ export function UnsortedPhotosPanel({
     }
   }, [isConfirmedEmpty, onEmpty]);
 
+  // Auto-load the next page as the sentinel below the grid nears the
+  // viewport, instead of relying on a manual button — at real-world scale
+  // (thousands of tiny thumbnails) a "Load more" button ends up thousands of
+  // pixels below the fold and is never discovered.
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    if (
+      sentinel === null ||
+      !unsorted.hasMore ||
+      unsorted.isLoadingMore ||
+      unsorted.loadMoreError
+    ) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          unsorted.loadMore();
+        }
+      },
+      { rootMargin: "600px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [
+    unsorted.hasMore,
+    unsorted.isLoadingMore,
+    unsorted.loadMoreError,
+    unsorted.loadMore,
+  ]);
+
   const showNotice = useCallback((message: string) => {
     if (noticeTimeoutRef.current !== null) {
       clearTimeout(noticeTimeoutRef.current);
@@ -90,6 +122,14 @@ export function UnsortedPhotosPanel({
       return next;
     });
   }, []);
+
+  const handleSkip = useCallback(
+    (photo: UnsortedPhoto) => {
+      unsorted.skip(photo);
+      collapseRow(photo.id);
+    },
+    [unsorted, collapseRow],
+  );
 
   const resolveAssignment = useCallback(
     async (photo: UnsortedPhoto, placeQuery: string) => {
@@ -253,22 +293,42 @@ export function UnsortedPhotosPanel({
                         >
                           Assign
                         </button>
+                        <button
+                          type="button"
+                          className="unsorted-photos-panel__skip"
+                          aria-label={`Skip unsorted photo for now`}
+                          disabled={expanded && isAssigning}
+                          onClick={() => handleSkip(photo)}
+                        >
+                          Skip
+                        </button>
                       </>
                     ) : (
-                      <button
-                        type="button"
-                        className="unsorted-photos-panel__assign-toggle"
-                        aria-label={`Assign unsorted video to a place`}
-                        disabled={isAssigning && !expanded}
-                        onClick={() => toggleExpand(photo.id)}
-                      >
-                        <video
-                          src={unsortedPhotoUrl(photo, "full")}
-                          preload="metadata"
-                          muted
-                        />
-                        <span>Assign</span>
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="unsorted-photos-panel__assign-toggle"
+                          aria-label={`Assign unsorted video to a place`}
+                          disabled={isAssigning && !expanded}
+                          onClick={() => toggleExpand(photo.id)}
+                        >
+                          <video
+                            src={unsortedPhotoUrl(photo, "full")}
+                            preload="metadata"
+                            muted
+                          />
+                          <span>Assign</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="unsorted-photos-panel__skip"
+                          aria-label={`Skip unsorted video for now`}
+                          disabled={expanded && isAssigning}
+                          onClick={() => handleSkip(photo)}
+                        >
+                          Skip
+                        </button>
+                      </>
                     )}
 
                     {expanded && (
@@ -324,19 +384,24 @@ export function UnsortedPhotosPanel({
               })}
             </ul>
             {unsorted.hasMore && (
-              <button
-                type="button"
-                className="unsorted-photos-panel__load-more"
-                disabled={unsorted.isLoadingMore}
-                onClick={unsorted.loadMore}
-              >
-                {unsorted.isLoadingMore
-                  ? "Loading…"
-                  : unsorted.loadMoreError
-                    ? "Couldn't load more — tap to retry"
-                    : "Load more"}
-              </button>
+              <div
+                ref={loadMoreSentinelRef}
+                className="unsorted-photos-panel__load-more-sentinel"
+              />
             )}
+            {unsorted.hasMore &&
+              (unsorted.isLoadingMore || unsorted.loadMoreError) && (
+                <button
+                  type="button"
+                  className="unsorted-photos-panel__load-more"
+                  disabled={unsorted.isLoadingMore}
+                  onClick={unsorted.loadMore}
+                >
+                  {unsorted.isLoadingMore
+                    ? "Loading…"
+                    : "Couldn't load more — tap to retry"}
+                </button>
+              )}
           </>
         )}
     </div>

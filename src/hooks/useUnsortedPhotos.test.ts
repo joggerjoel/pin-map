@@ -198,4 +198,65 @@ describe("useUnsortedPhotos", () => {
     });
     expect(result.current.photos).toHaveLength(0);
   });
+
+  it("skip removes a photo from view without calling the repository", async () => {
+    const page1 = [
+      photo("p0", "2026-01-01T00:00:00.000Z"),
+      photo("p1", "2026-01-02T00:00:00.000Z"),
+    ];
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue(
+      page1,
+    );
+    const { result } = renderHook(() => useUnsortedPhotos("user-1"));
+    await waitFor(() => expect(result.current.photos).toHaveLength(2));
+
+    act(() => {
+      result.current.skip(page1[0]);
+    });
+
+    expect(result.current.photos).toEqual([page1[1]]);
+    expect(photosRepositoryModule.assignPhotoPlace).not.toHaveBeenCalled();
+  });
+
+  it("skipping away the last loaded photo while hasMore is true auto-triggers exactly one refill", async () => {
+    const fullPage = Array.from({ length: 60 }, (_, i) =>
+      photo(`p${i}`, `2026-01-01T00:00:0${i % 10}.000Z`),
+    );
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
+      .mockResolvedValueOnce(fullPage)
+      .mockResolvedValueOnce([]);
+
+    const { result } = renderHook(() => useUnsortedPhotos("user-1"));
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+
+    act(() => {
+      for (const p of fullPage) {
+        result.current.skip(p);
+      }
+    });
+
+    await waitFor(() =>
+      expect(photosRepositoryModule.fetchUnsortedPhotos).toHaveBeenCalledTimes(
+        2,
+      ),
+    );
+    expect(result.current.photos).toEqual([]);
+  });
+
+  it("skipped photos are not persisted — a fresh mount of the hook sees them again", async () => {
+    const p = photo("p0", "2026-01-01T00:00:00.000Z");
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      p,
+    ]);
+    const first = renderHook(() => useUnsortedPhotos("user-1"));
+    await waitFor(() => expect(first.result.current.photos).toHaveLength(1));
+
+    act(() => {
+      first.result.current.skip(p);
+    });
+    expect(first.result.current.photos).toEqual([]);
+
+    const second = renderHook(() => useUnsortedPhotos("user-1"));
+    await waitFor(() => expect(second.result.current.photos).toHaveLength(1));
+  });
 });
