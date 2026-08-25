@@ -17,6 +17,7 @@ import { LoginForm } from "./components/LoginForm";
 import { ClassReunionApp } from "./components/ClassReunionApp";
 import { ClassPublicLanding } from "./components/ClassPublicLanding";
 import { AddPin } from "./components/AddPin";
+import { ImportsPanel } from "./components/ImportsPanel";
 import { PlaceInput } from "./components/PlaceInput";
 import { PlaceList } from "./components/PlaceList";
 import { ErrorBanner } from "./components/ErrorBanner";
@@ -69,6 +70,7 @@ export function App() {
     getDeclutterEnabled(),
   );
   const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
+  const [showImports, setShowImports] = useState(false);
   const selectionNonceRef = useRef(0);
   const removalNonce = useRef(0);
   const sidebarLayout = useSidebarLayout();
@@ -210,6 +212,26 @@ export function App() {
     );
   }
 
+  // Owner-only, opt-in via the sidebar's "Imports" button (see below) —
+  // swaps the whole travel-map view for the review UI, same shape as the
+  // classSlug branch above.
+  if (
+    showImports &&
+    userId !== null &&
+    userId === ownerUserId &&
+    auth.accessToken !== null &&
+    effectiveToken !== null
+  ) {
+    return (
+      <ImportsPanel
+        mapboxToken={effectiveToken}
+        userId={userId}
+        accessToken={auth.accessToken}
+        onClose={() => setShowImports(false)}
+      />
+    );
+  }
+
   return (
     <div
       className="app"
@@ -241,6 +263,15 @@ export function App() {
           >
             {declutterEnabled ? "Spider: On" : "Spider: Off"}
           </button>
+          {auth.status === "signed-in" && userId === ownerUserId && (
+            <button
+              type="button"
+              className="app__imports-toggle"
+              onClick={() => setShowImports(true)}
+            >
+              Imports
+            </button>
+          )}
           {auth.status === "signed-in" && (
             <button
               type="button"

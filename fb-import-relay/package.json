@@ -1,0 +1,12 @@
+{
+  "name": "pin-map-fb-import-relay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@types/yauzl": "^3.4.0",
+    "yauzl": "^3.4.0"
+  }
+}

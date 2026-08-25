@@ -459,6 +459,21 @@ body {
   color: #1f2937;
 }
 
+/* A halo around any pin that has photos attached — works for both the
+   native teardrop marker and the custom circular icon badges by following
+   each shape's own alpha silhouette (drop-shadow) rather than a fixed box
+   outline, which would look wrong on the teardrop's non-rectangular shape.
+   drop-shadow() has no spread parameter (unlike box-shadow), so the ring is
+   faked by stacking 8 zero-blur directional copies to trace an outline,
+   plus one blurred copy for a soft outer glow. */
+.map-marker--has-photos {
+  filter: drop-shadow(2.5px 0 0 #f59e0b) drop-shadow(-2.5px 0 0 #f59e0b)
+    drop-shadow(0 2.5px 0 #f59e0b) drop-shadow(0 -2.5px 0 #f59e0b)
+    drop-shadow(1.8px 1.8px 0 #f59e0b) drop-shadow(-1.8px 1.8px 0 #f59e0b)
+    drop-shadow(1.8px -1.8px 0 #f59e0b) drop-shadow(-1.8px -1.8px 0 #f59e0b)
+    drop-shadow(0 0 5px rgba(245, 158, 11, 0.7));
+}
+
 .map-popup {
   display: flex;
   flex-direction: column;
@@ -513,28 +528,85 @@ body {
   font-family: monospace;
 }
 
-.map-legend {
+.map-legend-drawer {
   position: absolute;
   top: 3.25rem;
-  right: 1rem;
+  right: 0.5rem;
+  display: flex;
+  align-items: flex-start;
+  max-width: calc(100% - 1rem);
+  transition: transform 0.15s ease;
+}
+
+.map-legend-drawer__toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
   background: rgba(255, 255, 255, 0.9);
   color: #1f2937;
+  border: none;
+  border-radius: 4px 0 0 4px;
+  padding: 0.5rem 0.35rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.map-legend-drawer--collapsed .map-legend-drawer__toggle {
   border-radius: 4px;
+}
+
+.map-legend-drawer__toggle-label {
+  font-size: 0.7rem;
+  writing-mode: vertical-rl;
+}
+
+.map-legend {
+  background: rgba(255, 255, 255, 0.9);
+  color: #1f2937;
+  border-radius: 0 4px 4px 0;
   padding: 0.5rem 0.75rem;
   font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .map-legend__item {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0.15rem 0.2rem;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.map-legend__item:hover {
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .map-legend__swatch {
-  display: inline-block;
-  width: 0.75rem;
-  height: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
   border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.map-legend__count {
+  color: #6b7280;
+  font-size: 0.75rem;
 }
 
 .photo-lightbox {
@@ -928,4 +1000,292 @@ body {
 
 .person-photo-modal__dated input[type="number"] {
   width: 70px;
+}
+
+.imports-panel {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.imports-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.imports-panel__back {
+  background: none;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  color: inherit;
+}
+
+.imports-panel__upload {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #444;
+}
+
+.imports-panel__upload-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.imports-panel__status {
+  margin: 0;
+  color: #aaa;
+  font-size: 0.9rem;
+}
+
+.imports-panel__progress {
+  width: 100%;
+  max-width: 320px;
+}
+
+.imports-panel__empty {
+  color: #aaa;
+}
+
+.imports-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.import-candidate-card {
+  position: relative;
+  background: #232323;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+}
+
+.import-candidate-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.import-candidate-card__name {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: inherit;
+  font-size: 1rem;
+  padding: 0.15rem 0;
+}
+
+.import-candidate-card__name:focus {
+  outline: none;
+  border-bottom-color: #666;
+}
+
+.import-candidate-card__date {
+  color: #aaa;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.import-candidate-card__suggestions {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0.25rem 0;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.import-candidate-card__suggestions button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.import-candidate-card__suggestions button:hover {
+  background: #3a3a3a;
+}
+
+.import-candidate-card__status {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.import-candidate-card__badge {
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.8rem;
+}
+
+.import-candidate-card__badge--high {
+  background: #1f3d2b;
+  color: #7ed6a5;
+}
+
+.import-candidate-card__badge--low {
+  background: #3d301f;
+  color: #d6b67e;
+}
+
+.import-candidate-card__note {
+  margin: 0.5rem 0 0;
+  color: #ccc;
+  font-size: 0.9rem;
+}
+
+.import-candidate-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.geo-tray {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1f2937;
+  border-radius: 8px 8px 0 0;
+  font-size: 0.85rem;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.geo-tray--collapsed {
+  height: auto;
+}
+
+.geo-tray__handle {
+  flex-shrink: 0;
+  height: 10px;
+  margin: 2px auto 0;
+  width: 48px;
+  border-radius: 3px;
+  background: #d1d5db;
+  cursor: ns-resize;
+}
+
+.geo-tray__handle:hover {
+  background: #9ca3af;
+}
+
+.geo-tray__toggle {
+  flex-shrink: 0;
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  text-align: center;
+}
+
+.geo-tray__body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 0.9rem 0.75rem;
+  overflow-y: auto;
+}
+
+.geo-tray__breadcrumb {
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.geo-tray__breadcrumb button {
+  background: none;
+  border: none;
+  color: #2563eb;
+  font: inherit;
+  cursor: pointer;
+  padding: 0.1rem 0.15rem;
+}
+
+.geo-tray__breadcrumb-sep {
+  color: #9ca3af;
+  margin: 0 0.15rem;
+}
+
+.geo-tray__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.geo-tray__item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.geo-tray__item:hover {
+  background: #e5e7eb;
+}
+
+.geo-tray__item--direct {
+  width: 100%;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.geo-tray__count {
+  color: #6b7280;
+  font-size: 0.75rem;
+}
+
+.geo-tray__item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.geo-tray__item--highlighted {
+  background: #dbeafe;
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 1px #60a5fa;
 }

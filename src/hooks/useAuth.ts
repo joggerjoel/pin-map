@@ -9,6 +9,7 @@ export interface UseAuthResult {
   status: AuthStatus;
   email: string | null;
   userId: string | null;
+  accessToken: string | null;
   sendOtp: (email: string) => Promise<{ error: string | null }>;
   verifyOtp: (email: string, code: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -65,6 +66,7 @@ export function useAuth(): UseAuthResult {
     status,
     email: session?.user.email ?? null,
     userId: session?.user.id ?? null,
+    accessToken: session?.access_token ?? null,
     sendOtp,
     verifyOtp,
     signOut,
