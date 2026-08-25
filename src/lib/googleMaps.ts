@@ -2,6 +2,14 @@ export function buildGoogleMapsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 }
 
+/** Same "search" URL shape as buildGoogleMapsUrl, but keyed by a free-text
+ * name instead of coordinates — for looking a place up on Google Maps
+ * *before* it has coordinates at all (the exact situation an import
+ * candidate needing review is in). */
+export function buildGoogleMapsSearchUrl(query: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
 export function parseGoogleMapsUrl(
   url: string,
 ): { lat: number; lng: number } | null {

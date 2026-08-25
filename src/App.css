@@ -189,6 +189,15 @@ body {
   background: #fee;
   border: 1px solid #f99;
   border-radius: 4px;
+  /* Explicit dark text — this banner's light background must stay readable
+     even inside a dark-themed parent (e.g. the Imports panel), where an
+     inherited light ambient text color would otherwise sit on this same
+     light background practically invisibly. */
+  color: #7f1d1d;
+}
+
+.error-banner button {
+  color: #7f1d1d;
 }
 
 .add-pin {
@@ -1105,6 +1114,42 @@ body {
   white-space: nowrap;
 }
 
+.import-candidate-card__search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.import-candidate-card__search-input {
+  flex: 1;
+  background: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: inherit;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.import-candidate-card__maps-link {
+  flex-shrink: 0;
+  color: #7ea6d6;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.import-candidate-card__maps-link:hover {
+  text-decoration: underline;
+}
+
+.import-candidate-card__location-confirmed {
+  margin: 0.4rem 0 0;
+  color: #7ed6a5;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .import-candidate-card__suggestions {
   list-style: none;
   margin: 0.25rem 0 0;
@@ -1164,6 +1209,323 @@ body {
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 0.75rem;
+}
+
+.import-candidate-card__merge-select {
+  flex-shrink: 0;
+}
+
+.import-candidate-card__split-toggle {
+  margin-top: 0.5rem;
+  background: none;
+  border: none;
+  color: #7ea6d6;
+  font-size: 0.85rem;
+  padding: 0;
+  cursor: pointer;
+}
+
+.import-candidate-card__split-form {
+  margin-top: 0.5rem;
+  padding: 0.6rem;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.import-candidate-card__split-form input {
+  background: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: inherit;
+  padding: 0.35rem 0.5rem;
+}
+
+.import-candidate-card__split-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* ---- Imports panel toolbar (progress / order / view toggle) ---- */
+
+.imports-panel__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.imports-panel__progress-count {
+  margin: 0;
+  color: #aaa;
+  font-size: 0.85rem;
+}
+
+.order-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.order-picker select {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: inherit;
+  padding: 0.3rem 0.5rem;
+}
+
+.imports-panel__view-toggle {
+  display: inline-flex;
+  margin-left: auto;
+}
+
+.imports-panel__view-toggle-button {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  color: inherit;
+  padding: 0.3rem 0.75rem;
+  cursor: pointer;
+}
+
+.imports-panel__view-toggle-button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.imports-panel__view-toggle-button:last-child {
+  border-radius: 0 4px 4px 0;
+  border-left: none;
+}
+
+.imports-panel__view-toggle-button--active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: #fff;
+}
+
+/* ---- Grid / year view ---- */
+
+.imports-grid-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.imports-grid-view__section {
+  padding: 0.75rem 1rem;
+  background: #1f3d2b;
+  border: 1px solid #2d5a3e;
+  border-radius: 6px;
+}
+
+.imports-grid-view__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.imports-grid-view__section-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  color: #7ed6a5;
+}
+
+.imports-grid-view__section-header button {
+  background: #22c55e;
+  border: none;
+  border-radius: 4px;
+  color: #062712;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.imports-grid-view__section summary {
+  margin-top: 0.5rem;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.imports-grid-view__section .imports-grid-view__cards {
+  margin-top: 0.75rem;
+}
+
+.imports-grid-view__year {
+  background: #232323;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+}
+
+.imports-grid-view__year summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.imports-grid-view__year[open] summary {
+  margin-bottom: 0.75rem;
+}
+
+.imports-grid-view__cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.imports-grid-view__empty,
+.imports-grid-view__geocoding {
+  color: #aaa;
+}
+
+.imports-grid-view__merge-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  background: #1e3a8a;
+  border: 1px solid #3b82f6;
+  border-radius: 6px;
+  color: #fff;
+}
+
+.imports-grid-view__merge-bar button {
+  background: #3b82f6;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* ---- Swipe mode ---- */
+
+.import-swipe-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 0;
+}
+
+.import-swipe-view--empty {
+  color: #aaa;
+  padding: 2rem 0;
+}
+
+.import-swipe-view__remaining {
+  margin: 0;
+  color: #aaa;
+  font-size: 0.85rem;
+}
+
+.import-swipe-card {
+  width: 100%;
+  max-width: 360px;
+  background: #232323;
+  border: 1px solid #444;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  cursor: grab;
+  user-select: none;
+}
+
+.import-swipe-card--approve {
+  border-color: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.5);
+}
+
+.import-swipe-card--reject {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.5);
+}
+
+.import-swipe-card--later {
+  border-color: #d6b67e;
+  box-shadow: 0 0 0 2px rgba(214, 182, 126, 0.5);
+}
+
+.import-swipe-card__name {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.import-swipe-card__date {
+  margin-top: 0.25rem;
+  color: #aaa;
+  font-size: 0.85rem;
+}
+
+.import-swipe-card__maps-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  color: #7ea6d6;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.import-swipe-card__maps-link:hover {
+  text-decoration: underline;
+}
+
+.import-swipe-card__note {
+  margin: 0.75rem 0 0;
+  color: #ccc;
+  font-size: 0.9rem;
+}
+
+.import-swipe-card__status {
+  margin: 0.75rem 0 0;
+  color: #d6b67e;
+  font-size: 0.85rem;
+}
+
+.import-swipe-card__actions {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.import-swipe-card__actions button {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid #444;
+  background: #2a2a2a;
+  color: inherit;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.import-swipe-card__reject {
+  color: #ef4444;
+}
+
+.import-swipe-card__approve {
+  color: #22c55e;
+}
+
+.import-swipe-card__approve:disabled {
+  color: #666;
+  cursor: not-allowed;
 }
 
 .geo-tray {

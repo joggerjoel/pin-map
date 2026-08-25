@@ -2,11 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   approveCandidate,
   deferCandidate,
+  fetchProgressCounts,
   fetchReviewableCandidates,
   insertCandidates,
+  mergeCandidates,
   rejectCandidate,
+  splitCandidate,
   updateCandidateFields,
   updateCandidateGeocode,
+  type ImportCandidate,
 } from "./importCandidatesRepository";
 import { supabase } from "./supabaseClient";
 
@@ -24,15 +28,18 @@ afterEach(() => {
 interface ChainResult {
   data: unknown;
   error: unknown;
+  count?: number | null;
 }
 
 interface Chain {
   select: ReturnType<typeof vi.fn>;
   eq: ReturnType<typeof vi.fn>;
   in: ReturnType<typeof vi.fn>;
+  neq: ReturnType<typeof vi.fn>;
   order: ReturnType<typeof vi.fn>;
   upsert: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
+  insert: ReturnType<typeof vi.fn>;
   then: (
     resolve: (value: ChainResult) => void,
     reject?: (reason: unknown) => void,
@@ -44,9 +51,11 @@ function createChain(result: ChainResult = { data: null, error: null }): Chain {
     select: vi.fn(() => chain),
     eq: vi.fn(() => chain),
     in: vi.fn(() => chain),
+    neq: vi.fn(() => chain),
     order: vi.fn(() => chain),
     upsert: vi.fn(() => chain),
     update: vi.fn(() => chain),
+    insert: vi.fn(() => chain),
     then: (resolve) => resolve(result),
   };
   return chain;
@@ -57,12 +66,30 @@ function createRejectingChain(): Chain {
     select: vi.fn(() => chain),
     eq: vi.fn(() => chain),
     in: vi.fn(() => chain),
+    neq: vi.fn(() => chain),
     order: vi.fn(() => chain),
     upsert: vi.fn(() => chain),
     update: vi.fn(() => chain),
+    insert: vi.fn(() => chain),
     then: (_resolve, reject) => reject?.(new Error("network down")),
   };
   return chain;
+}
+
+function makeCandidate(
+  overrides: Partial<ImportCandidate> & { id: string },
+): ImportCandidate {
+  return {
+    externalKey: `key-${overrides.id}`,
+    placeName: "Somewhere",
+    suggestedLat: null,
+    suggestedLng: null,
+    geocodeConfidence: null,
+    visitTime: "2020-01-01T00:00:00.000Z",
+    note: null,
+    status: "pending",
+    ...overrides,
+  };
 }
 
 describe("fetchReviewableCandidates", () => {
@@ -275,6 +302,189 @@ describe("approveCandidate", () => {
     await expect(approveCandidate("c1")).resolves.toEqual({
       pinId: null,
       error: "network down",
+    });
+  });
+});
+
+describe("splitCandidate", () => {
+  it("inserts one row per part with deterministic external_keys, duplicates photos, and marks the parent split", async () => {
+    const parent = makeCandidate({
+      id: "parent-1",
+      externalKey: "parent-key",
+      visitTime: "2019-03-01T00:00:00.000Z",
+      note: "race weekend",
+    });
+    const insertedChildren = [
+      {
+        id: "child-1",
+        external_key: "parent-key::split-1",
+        place_name: "Start line",
+        suggested_lat: null,
+        suggested_lng: null,
+        geocode_confidence: null,
+        visit_time: "2019-03-01T00:00:00.000Z",
+        note: "race weekend",
+        status: "pending",
+      },
+      {
+        id: "child-2",
+        external_key: "parent-key::split-2",
+        place_name: "Finish line",
+        suggested_lat: null,
+        suggested_lng: null,
+        geocode_confidence: null,
+        visit_time: "2019-03-01T00:00:00.000Z",
+        note: "race weekend",
+        status: "pending",
+      },
+    ];
+    const candidatesChain = createChain({
+      data: insertedChildren,
+      error: null,
+    });
+    const photosChain = createChain({
+      data: [{ storage_path: "u1/parent-1/photo.jpg" }],
+      error: null,
+    });
+    vi.mocked(supabase.from).mockImplementation(((table: string) =>
+      table === "pinmap_import_candidates"
+        ? candidatesChain
+        : photosChain) as unknown as typeof supabase.from);
+
+    const result = await splitCandidate("user-1", parent, [
+      { placeName: "Start line" },
+      { placeName: "Finish line" },
+    ]);
+
+    expect(candidatesChain.insert).toHaveBeenCalledWith([
+      {
+        user_id: "user-1",
+        external_key: "parent-key::split-1",
+        place_name: "Start line",
+        visit_time: "2019-03-01T00:00:00.000Z",
+        note: "race weekend",
+      },
+      {
+        user_id: "user-1",
+        external_key: "parent-key::split-2",
+        place_name: "Finish line",
+        visit_time: "2019-03-01T00:00:00.000Z",
+        note: "race weekend",
+      },
+    ]);
+    expect(photosChain.select).toHaveBeenCalledWith("storage_path");
+    expect(photosChain.eq).toHaveBeenCalledWith("candidate_id", "parent-1");
+    expect(photosChain.insert).toHaveBeenCalledWith([
+      {
+        user_id: "user-1",
+        candidate_id: "child-1",
+        storage_path: "u1/parent-1/photo.jpg",
+      },
+      {
+        user_id: "user-1",
+        candidate_id: "child-2",
+        storage_path: "u1/parent-1/photo.jpg",
+      },
+    ]);
+    expect(candidatesChain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "split" }),
+    );
+    expect(candidatesChain.eq).toHaveBeenCalledWith("id", "parent-1");
+    expect(result.map((c) => c.id)).toEqual(["child-1", "child-2"]);
+  });
+
+  it("does nothing for fewer than 2 parts", async () => {
+    const parent = makeCandidate({ id: "parent-1" });
+    const result = await splitCandidate("user-1", parent, [
+      { placeName: "Only one" },
+    ]);
+    expect(result).toEqual([]);
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("returns [] instead of throwing when the insert rejects", async () => {
+    const parent = makeCandidate({ id: "parent-1" });
+    vi.mocked(supabase.from).mockReturnValue(
+      createRejectingChain() as unknown as ReturnType<typeof supabase.from>,
+    );
+    await expect(
+      splitCandidate("user-1", parent, [
+        { placeName: "A" },
+        { placeName: "B" },
+      ]),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe("mergeCandidates", () => {
+  it("duplicates each loser's photos onto the survivor and marks losers merged", async () => {
+    const candidatesChain = createChain({ data: null, error: null });
+    const photosChain = createChain({ data: [], error: null });
+    vi.mocked(supabase.from).mockImplementation(((table: string) =>
+      table === "pinmap_import_candidates"
+        ? candidatesChain
+        : photosChain) as unknown as typeof supabase.from);
+
+    await mergeCandidates("user-1", "survivor-1", ["loser-1", "loser-2"]);
+
+    expect(photosChain.eq).toHaveBeenCalledWith("candidate_id", "loser-1");
+    expect(photosChain.eq).toHaveBeenCalledWith("candidate_id", "loser-2");
+    expect(candidatesChain.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "merged",
+        related_candidate_id: "survivor-1",
+      }),
+    );
+    expect(candidatesChain.in).toHaveBeenCalledWith("id", [
+      "loser-1",
+      "loser-2",
+    ]);
+  });
+
+  it("does nothing for an empty loser list", async () => {
+    await mergeCandidates("user-1", "survivor-1", []);
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when the update rejects", async () => {
+    vi.mocked(supabase.from).mockReturnValue(
+      createRejectingChain() as unknown as ReturnType<typeof supabase.from>,
+    );
+    await expect(
+      mergeCandidates("user-1", "survivor-1", ["loser-1"]),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("fetchProgressCounts", () => {
+  it("queries total and non-pending counts with head:true/count:exact", async () => {
+    const totalChain = createChain({ data: null, error: null, count: 157 });
+    const reviewedChain = createChain({ data: null, error: null, count: 54 });
+    vi.mocked(supabase.from)
+      .mockReturnValueOnce(
+        totalChain as unknown as ReturnType<typeof supabase.from>,
+      )
+      .mockReturnValueOnce(
+        reviewedChain as unknown as ReturnType<typeof supabase.from>,
+      );
+
+    const result = await fetchProgressCounts("user-1");
+
+    expect(totalChain.select).toHaveBeenCalledWith("*", {
+      count: "exact",
+      head: true,
+    });
+    expect(reviewedChain.neq).toHaveBeenCalledWith("status", "pending");
+    expect(result).toEqual({ total: 157, reviewed: 54 });
+  });
+
+  it("returns zeros instead of throwing when the query rejects", async () => {
+    vi.mocked(supabase.from).mockReturnValue(
+      createRejectingChain() as unknown as ReturnType<typeof supabase.from>,
+    );
+    await expect(fetchProgressCounts("user-1")).resolves.toEqual({
+      total: 0,
+      reviewed: 0,
     });
   });
 });

@@ -1,6 +1,9 @@
-import type { ChangeEvent } from "react";
+import { useState, type ChangeEvent } from "react";
 import { useImportCandidates } from "../hooks/useImportCandidates";
-import { ImportCandidateCard } from "./ImportCandidateCard";
+import { ImportsGridView } from "./ImportsGridView";
+import { ImportSwipeView } from "./ImportSwipeView";
+import { OrderPicker } from "./OrderPicker";
+import { triageCandidates } from "../lib/importCandidateOrder";
 import { ErrorBanner } from "./ErrorBanner";
 
 export interface ImportsPanelProps {
@@ -9,6 +12,8 @@ export interface ImportsPanelProps {
   accessToken: string;
   onClose: () => void;
 }
+
+type ViewMode = "grid" | "swipe";
 
 const BUSY_STATES = new Set(["uploading", "parsing", "geocoding"]);
 
@@ -20,12 +25,17 @@ export function ImportsPanel({
 }: ImportsPanelProps) {
   const imports = useImportCandidates(userId, accessToken);
   const isBusy = BUSY_STATES.has(imports.uploadState);
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (file) imports.startUpload(file);
   }
+
+  const { highConfidence, needsReview, stillGeocoding } = triageCandidates(
+    imports.candidates,
+  );
 
   return (
     <div className="imports-panel">
@@ -71,21 +81,81 @@ export function ImportsPanel({
           No candidates to review yet — upload an export above to get started.
         </p>
       ) : (
-        <ul className="imports-panel__list">
-          {imports.candidates.map((candidate) => (
-            <ImportCandidateCard
-              key={candidate.id}
-              candidate={candidate}
+        <>
+          <div className="imports-panel__toolbar">
+            {imports.progress.total > 0 && (
+              <p className="imports-panel__progress-count">
+                {imports.progress.reviewed} of {imports.progress.total} reviewed
+              </p>
+            )}
+            <OrderPicker order={imports.order} onChange={imports.setOrder} />
+            <div
+              className="imports-panel__view-toggle"
+              role="group"
+              aria-label="Review layout"
+            >
+              <button
+                type="button"
+                className={
+                  viewMode === "grid"
+                    ? "imports-panel__view-toggle-button imports-panel__view-toggle-button--active"
+                    : "imports-panel__view-toggle-button"
+                }
+                aria-pressed={viewMode === "grid"}
+                onClick={() => setViewMode("grid")}
+              >
+                List
+              </button>
+              <button
+                type="button"
+                className={
+                  viewMode === "swipe"
+                    ? "imports-panel__view-toggle-button imports-panel__view-toggle-button--active"
+                    : "imports-panel__view-toggle-button"
+                }
+                aria-pressed={viewMode === "swipe"}
+                onClick={() => setViewMode("swipe")}
+              >
+                Swipe
+              </button>
+            </div>
+          </div>
+
+          {viewMode === "grid" ? (
+            <ImportsGridView
+              highConfidence={highConfidence}
+              needsReview={needsReview}
+              stillGeocoding={stillGeocoding}
+              order={imports.order}
               mapboxToken={mapboxToken}
-              onApprove={() => void imports.approve(candidate.id)}
-              onReject={() => void imports.reject(candidate.id)}
-              onDefer={() => void imports.defer(candidate.id)}
-              onUpdate={(updates) =>
-                void imports.updateCandidate(candidate.id, updates)
+              onApprove={(id) => void imports.approve(id)}
+              onReject={(id) => void imports.reject(id)}
+              onDefer={(id) => void imports.defer(id)}
+              onUpdate={(id, updates) =>
+                void imports.updateCandidate(id, updates)
               }
+              onSplit={(candidate, parts) =>
+                void imports.split(candidate, parts)
+              }
+              onMerge={(survivorId, loserIds) =>
+                void imports.merge(survivorId, loserIds)
+              }
+              onBulkApproveHighConfidence={() =>
+                void imports.bulkApproveHighConfidence()
+              }
+              onGeocodeRemaining={() => void imports.geocodeRemaining()}
+              isGeocodingRemaining={imports.isGeocodingRemaining}
             />
-          ))}
-        </ul>
+          ) : (
+            <ImportSwipeView
+              candidates={needsReview}
+              order={imports.order}
+              onApprove={(id) => void imports.approve(id)}
+              onReject={(id) => void imports.reject(id)}
+              onDefer={(id) => void imports.defer(id)}
+            />
+          )}
+        </>
       )}
     </div>
   );

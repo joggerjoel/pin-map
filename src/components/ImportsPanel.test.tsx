@@ -42,6 +42,14 @@ function baseResult(
     defer: vi.fn(),
     updateCandidate: vi.fn(),
     refresh: vi.fn(),
+    order: "newest",
+    setOrder: vi.fn(),
+    progress: { total: 0, reviewed: 0 },
+    split: vi.fn(),
+    merge: vi.fn(),
+    bulkApproveHighConfidence: vi.fn(),
+    geocodeRemaining: vi.fn(),
+    isGeocodingRemaining: false,
     ...overrides,
   };
 }
@@ -181,5 +189,84 @@ describe("ImportsPanel", () => {
     );
 
     expect(screen.getByRole("alert")).toHaveTextContent("upload failed");
+  });
+
+  it("shows the reviewed/total progress count once there are candidates", () => {
+    vi.mocked(useImportCandidatesModule.useImportCandidates).mockReturnValue(
+      baseResult({
+        candidates: [candidate],
+        progress: { total: 157, reviewed: 54 },
+      }),
+    );
+    render(
+      <ImportsPanel
+        mapboxToken="pk.test"
+        userId="user-1"
+        accessToken="token"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("54 of 157 reviewed")).toBeInTheDocument();
+  });
+
+  it("defaults to the List (grid) view, and Swipe switches to the swipe queue", async () => {
+    const needsReview: ImportCandidate = {
+      ...candidate,
+      id: "c2",
+      placeName: "Busselton, Western Australia",
+      geocodeConfidence: "low",
+    };
+    vi.mocked(useImportCandidatesModule.useImportCandidates).mockReturnValue(
+      baseResult({ candidates: [needsReview] }),
+    );
+    const user = userEvent.setup();
+    render(
+      <ImportsPanel
+        mapboxToken="pk.test"
+        userId="user-1"
+        accessToken="token"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "List" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Grid view shows the editable name input.
+    expect(screen.getByLabelText("Place name")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Swipe" }));
+
+    expect(screen.getByRole("button", { name: "Swipe" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Swipe view has no editable name field, just the read-only card.
+    expect(screen.queryByLabelText("Place name")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: /Review Busselton/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("passes the order picker's selection through to setOrder", async () => {
+    const setOrder = vi.fn();
+    vi.mocked(useImportCandidatesModule.useImportCandidates).mockReturnValue(
+      baseResult({ candidates: [candidate], setOrder }),
+    );
+    const user = userEvent.setup();
+    render(
+      <ImportsPanel
+        mapboxToken="pk.test"
+        userId="user-1"
+        accessToken="token"
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.selectOptions(screen.getByRole("combobox"), "oldest");
+
+    expect(setOrder).toHaveBeenCalledWith("oldest");
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildGoogleMapsSearchUrl,
   buildGoogleMapsUrl,
   parseGoogleMapsUrl,
   parseLatLngPair,
@@ -15,6 +16,20 @@ describe("buildGoogleMapsUrl", () => {
   it("handles negative coordinates", () => {
     expect(buildGoogleMapsUrl(-33.8688, 151.2093)).toBe(
       "https://www.google.com/maps/search/?api=1&query=-33.8688,151.2093",
+    );
+  });
+});
+
+describe("buildGoogleMapsSearchUrl", () => {
+  it("builds a Google Maps search URL from a free-text query", () => {
+    expect(buildGoogleMapsSearchUrl("The Twins, Hong Kong")).toBe(
+      "https://www.google.com/maps/search/?api=1&query=The%20Twins%2C%20Hong%20Kong",
+    );
+  });
+
+  it("URL-encodes special characters", () => {
+    expect(buildGoogleMapsSearchUrl("Café & Bar")).toBe(
+      "https://www.google.com/maps/search/?api=1&query=Caf%C3%A9%20%26%20Bar",
     );
   });
 });
