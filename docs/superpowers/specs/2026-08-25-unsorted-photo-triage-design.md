@@ -52,7 +52,11 @@ drop policy if exists "pinmap_place_photos_update_own" on public.pinmap_place_ph
 create policy "pinmap_place_photos_update_own"
   on public.pinmap_place_photos for update
   using (auth.uid() = user_id and place_query is null)
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and place_query is not null
+    and btrim(place_query) <> ''
+  );
 
 revoke update on public.pinmap_place_photos from authenticated, anon;
 grant update (place_query) on public.pinmap_place_photos to authenticated;
@@ -73,6 +77,17 @@ directly against PostgREST (their own valid session already has
 column-level `UPDATE` on `place_query` for their own rows) and overwrite
 an already-assigned photo's `place_query`. With it, that transition is
 enforced by Postgres itself, not by which client code exists.
+
+The `with check` clause's `place_query is not null and btrim(place_query)
+<> ''` closes the other half of the same invariant: "moves to a *real*
+value" implicitly meant non-blank, but nothing enforced that until now —
+a direct API call could otherwise set `place_query` to `''` and have it
+technically satisfy `is not null` while being meaningless to every
+existing place-lookup in the app (`PlaceList`/`fetchPhotos` key on
+`query`, none of which treat `''` specially). `assignPhotoPlace` (§2)
+also validates `placeQuery.trim() !== ""` at the repository boundary
+before ever issuing the update — redundant with the DB constraint by
+design, so a bug in one layer doesn't silently rely on the other.
 
 `drop policy if exists` and `grant`/`index ... if not exists` make the
 file safe to re-run. The explicit `revoke` before the column-scoped
@@ -155,10 +170,17 @@ explicitly, not inferred from the absence of a throw.
   transforms images, it doesn't extract a frame from a video file, so
   requesting a transformed URL for a video's `storagePath` would be
   requesting something imgproxy can't produce.
-  - Image, grid thumbnail: `getPublicUrl(path, { transform: { width: 240
-    } })` — routed through this deployment's running `supabase-imgproxy`.
-  - Image, lightbox (§5): `getPublicUrl(path)`, untransformed.
-  - Video, card (there is no separate "video thumbnail"): `getPublicUrl(path)`,
+
+  The existing `publicUrl(storagePath)` helper in `photosRepository.ts`
+  gains one new optional parameter rather than a second helper being
+  written alongside it: `publicUrl(storagePath, options?: { width?:
+  number })`, passing `options` straight through as `getPublicUrl`'s
+  `transform` argument when present. Every existing call site (the
+  per-place `PlacePhoto` flow) omits the second argument and is
+  unaffected.
+  - Image, grid thumbnail: `publicUrl(path, { width: 240 })`.
+  - Image, lightbox (§5): `publicUrl(path)`, untransformed.
+  - Video, card (there is no separate "video thumbnail"): `publicUrl(path)`,
     untransformed — the `<video preload="metadata">` element lets the
     *browser* derive a first-frame preview client-side from the real
     file; there's nothing server-side to transform.
@@ -183,7 +205,11 @@ explicitly, not inferred from the absence of a throw.
   earlier rows left the set in the meantime.
 
 - **`assignPhotoPlace(photoId, placeQuery): Promise<"ok" | "conflict" | "error">`**
-  — `update pinmap_place_photos set place_query = placeQuery where id =
+  — validates `placeQuery.trim() !== ""` before issuing any query,
+  returning `"error"` immediately if it's blank (matching the DB's own
+  `with check` constraint, §1 — this is the same guarantee enforced at
+  both layers on purpose, not a substitute for either one). Otherwise:
+  `update pinmap_place_photos set place_query = placeQuery where id =
   photoId and place_query is null`, with `.select('id')` chained. `"ok"`:
   a row came back. `"conflict"`: the update resolved with no `error` but
   zero rows affected — either RLS filtered out a row you don't own (silent,
@@ -229,8 +255,7 @@ export async function upsertPins(
 
 Every existing call site (`useGeocoder.ts`, three of them — two inside
 the batch `pinPlaces` path, one inside the single-place `pinPlace` path)
-currently calls
-this with `void upsertPins(...)`, discarding the return value; `void`
+currently calls this with `void upsertPins(...)`, discarding the return value; `void`
 still type-checks against any resolved-promise type, so this is a
 non-breaking change for all of them, and none of them change — `pinPlace`
 stays exactly as it is today too (see §4 for why). The only new caller
@@ -288,21 +313,26 @@ export async function pinPlaceSilent(
   `pinPlace`'s existing fire-and-forget call site (which this doesn't
   change).
 
-**Single-flight guard for concurrent duplicate creates**, shared by both
-`pinPlace` and `pinPlaceSilent` (a `useGeocoder`-level
-`pendingPinsRef: Map<string, Promise<PinPlaceResult>>`, keyed by the
-lowercased/trimmed query): two different triage rows can each type the
-same new place and both call `pinPlaceSilent` before either's
-`pinnedPlacesRef` dedup check would catch it — that dedup only guards
-against re-adding an *already-pinned* place, not two simultaneous
-in-flight creates of the same new one. If a call for a given key is
-already in flight (from either function), return that same promise
+**Single-flight guard for concurrent duplicate creates**, scoped to
+`pinPlaceSilent` only (a `useGeocoder`-level `pendingPinsRef:
+Map<string, Promise<PinPlaceResult>>`, keyed by the lowercased/trimmed
+query) — not shared with `pinPlace`, whose `Promise<void>` return type
+and error-mutating side effect don't fit the same map. `pinPlace` keeps
+its existing (weaker, pre-existing) dedup behavior unchanged; this guard
+exists specifically for the scenario the panel actually has — two
+different triage rows each typing the same new place and both calling
+`pinPlaceSilent` before either's `pinnedPlacesRef` dedup check would
+catch it (that dedup only guards against re-adding an *already-pinned*
+place, not two simultaneous in-flight creates of the same new one). If a
+call for a given key is already in flight, return that same promise
 instead of starting a second geocode+upsert+optimistic-append; wrap the
 promise in a `.finally()` that deletes the map entry once it settles,
 success or failure alike — without that, a key whose attempt resolved to
 an error would keep returning that same stale failed promise to every
 later retry for the same text, silently making the panel's own "try
-again" affordance a no-op forever for that place name.
+again" affordance a no-op forever for that place name. `AddPin` itself
+has no equivalent multi-row-concurrency scenario (it's a single form),
+so `pinPlace` not sharing this guard isn't a gap for its own use case.
 
 **Atomicity, explicitly accepted as a gap.** Creating a pin and assigning
 a photo to it are still two separate writes
@@ -437,6 +467,23 @@ someone else's action caused the removal, not this panel's own write).
 and *doesn't* remove the card: it sets that specific photo's
 `assignError` and stays visible on its own row, since it needs a retry
 affordance attached to a specific card, not a passing notice.
+
+The notice's own dismiss timer needs the same discipline every other
+timer/async result in this design gets: its `setTimeout` id lives in a
+ref, not a bare local variable, so a second notice arriving before the
+first has dismissed clears the outstanding timeout before starting a
+new one (otherwise an earlier notice's dismiss could fire after a later
+notice has already replaced it, clearing text the user hasn't read yet).
+An unmount effect clears that same ref's timeout unconditionally. And
+because `assign`/`onPinPlace` are awaited before the notice is ever
+set, every one of those call sites checks a `mountedRef` (set `false` in
+the same unmount cleanup) before calling any state setter — closing over
+the general case, not just the notice, that a slow network response can
+resolve after the panel (and the hook instance with it, §6) is already
+gone. Rendered as `role="status" aria-live="polite"` — an unlabeled
+`<div>` update wouldn't be announced to a screen reader at all, and
+`"assertive"` would be gratuitously interruptive for a non-error
+confirmation.
 
 **In-flight guards are refs, not just state.** `isAssigning` is backed by
 a ref checked and set *synchronously*, before the async call starts, not
@@ -584,7 +631,8 @@ exclusive by construction.
   (keyset pagination — cursor advances, `id` tiebreak, short/empty/full
   page — `null` on either failure mode, `kind` derivation); `assignPhotoPlace`
   (`"ok"` on an affected row, `"conflict"` on zero rows with no `error`,
-  `"error"` on a resolved `error` or a throw). Separately, the URL-derivation
+  `"error"` on a resolved `error` or a throw, and `"error"` for a blank/
+  whitespace-only `placeQuery` without ever calling Supabase). Separately, the URL-derivation
   helper: an image gets a transformed URL for the grid and an
   untransformed one for the lightbox; a video always gets the
   untransformed URL, never a transform request.
@@ -605,11 +653,13 @@ exclusive by construction.
   geocode failure / empty input; never calls `setError`/`setFailedLines`
   in any of these cases (asserted directly against the hook's `error`/
   `failedLines`, which must stay untouched by any `pinPlaceSilent` call).
-  Single-flight: two concurrent calls (one via `pinPlace`, one via
-  `pinPlaceSilent`, and both-`pinPlaceSilent`) for the same new query
-  share one in-flight geocode/upsert and resolve the same outcome, not
-  two separate creates or two counter increments; after that shared
-  attempt resolves — success or failure — a subsequent call for the same
+  Single-flight: two concurrent `pinPlaceSilent` calls for the same new
+  query share one in-flight geocode/upsert and resolve the same outcome,
+  not two separate creates or two counter increments; a concurrent
+  `pinPlace` call for the same query is unaffected by (and doesn't
+  interact with) `pinPlaceSilent`'s guard, since the map is scoped to
+  `pinPlaceSilent` only. After a shared `pinPlaceSilent` attempt
+  resolves — success or failure — a subsequent call for the same
   query text is a fresh attempt, not a replay of the cached result
   (proves the `pendingPinsRef` entry is actually cleaned up).
 - **`useUnsortedPhotoCount.test.ts`** — skips fetching while `userId` is
@@ -645,7 +695,12 @@ exclusive by construction.
   before the first response resolves produces exactly one `assign`/
   `onPinPlace` call; closing the panel or unmounting mid-assign produces
   no further state updates or duplicate callbacks once the pending call
-  eventually resolves.
+  eventually resolves (the `mountedRef` guard, §5); the notice area
+  renders with `role="status"` and `aria-live="polite"`; a second notice
+  arriving before the first one's dismiss timer has fired clears that
+  timer and shows the new text instead of both racing to clear it; the
+  notice's timer is cleared on unmount (no dismiss-triggered state update
+  after the panel is gone).
 - **`App.test.tsx`** — header button visibility/label across
   `null`/`0`/`N`; click calls `refetch()`; both the panel and header are
   gated on `signed-in`; sign-out resets `showUnsortedPhotos`; clicking
@@ -654,21 +709,37 @@ exclusive by construction.
   by an Imports round-trip, since nothing on the triage path writes to
   that state at all; opening the panel swaps in `UnsortedPhotosPanel` in
   place of `AddPin`/`PlaceInput`/`PlaceList` with `MapView` still mounted.
-- **Manual, after applying the migration to production**: an
-  existing-pin match and a create-new-pin path succeed end-to-end,
-  including the create-pin failure case's inline error; clicking "Load
-  more" at least once against real PostgREST (the keyset `.or()` filter
-  is the one part no mocked-client test can validate); as a second,
-  throwaway user, confirm an `UPDATE` against the first user's row
-  affects zero rows; as the first user, confirm an `UPDATE` on
-  `storage_path` on your own row is rejected (proves the revoke+grant
-  sequence actually restricts columns, not just the RLS policy); confirm
-  the grid thumbnail transform actually returns a resized image (a
-  direct request to a transformed URL, outside the app, before writing
-  any UI code against it) and measure actual transferred bytes for a
-  "Load more" page to confirm it's smaller than the originals; confirm a
-  video card renders its `<video>` element without ever hitting the
-  transform endpoint.
+- **`src/test/unsortedPhotosRls.live.test.ts`** (new) — follows this
+  repo's existing live-Supabase pattern (`src/test/
+  importCandidatesRls.live.test.ts`: `describe.skipIf(!shouldRun)` gated
+  on `RUN_LIVE_SUPABASE_TESTS=1`, real creds loaded from `.env` via that
+  file's `loadRealEnv()`, a service-role admin client to create two
+  throwaway users). Against the real database (not the mocked client
+  every other test in this design uses): a second user's `UPDATE` on the
+  first user's unsorted-photo row affects zero rows; the first user's own
+  `UPDATE` on `storage_path` is rejected (the revoke+grant column scoping,
+  §1); an `UPDATE` attempting to set `place_query` to `''` or to `null`
+  is rejected by the `with check` clause; an `UPDATE` on an already-
+  assigned row (`place_query` already non-null) affects zero rows (the
+  `using` clause). This is what actually runs the RLS/grant guarantees on
+  every change to this policy, not just once by hand — there's no CI in
+  this repo to run it automatically (`.github/workflows` doesn't exist
+  here at all, matching every other test in the codebase), so it's run
+  manually via `bun run test -- unsortedPhotosRls.live`, same as the
+  existing one, immediately after applying the migration below and again
+  after any future change to `schema_place_photos_update_policy.sql`.
+- **Manual, after applying the migration to production and running the
+  live RLS test above**: through the actual UI, an existing-pin match and
+  a create-new-pin path succeed end-to-end, including the create-pin
+  failure case's inline error; clicking "Load more" at least once against
+  real PostgREST (the keyset `.or()` filter is the one part no
+  mocked-client or the live RLS test — which doesn't exercise pagination
+  — can validate); confirm the grid thumbnail transform actually returns
+  a resized image (a direct request to a transformed URL, outside the
+  app, before writing any UI code against it) and measure actual
+  transferred bytes for a "Load more" page to confirm it's smaller than
+  the originals; confirm a video card renders its `<video>` element
+  without ever hitting the transform endpoint.
 
 ## Out of scope
 
