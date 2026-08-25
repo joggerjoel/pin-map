@@ -1,7 +1,8 @@
 # Unsorted-photo geo-triage panel
 
 **Date:** 2026-08-25
-**Status:** approved, not yet implemented
+**Status:** implemented and deployed (2026-08-25) — see
+[4669fc3](https://github.com/joggerjoel/pin-map/commit/4669fc3)
 **Relation:** additive on top of the `place_query is null` "unsorted"
 convention introduced by `schema_place_photos_unsorted.sql` and
 `scripts/import-mitm-photos.ts`, which bulk-imported ~4,951 photos/videos
