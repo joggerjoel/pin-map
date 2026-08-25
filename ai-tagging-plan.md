@@ -4,14 +4,26 @@ Companion to [idea.md](idea.md), [todo.md](todo.md), and
 [docs/superpowers/specs/2026-08-25-unsorted-photo-triage-design.md](docs/superpowers/specs/2026-08-25-unsorted-photo-triage-design.md)
 (the unsorted-photo triage panel this pipeline's output will eventually feed).
 
-**Revision note (2026-08-25):** a review of the first draft found three
-blockers (an unbounded video-selection loop, no protection against a
-permanently-failing row starving the whole queue, and an underspecified
-image-decode step) plus five more material gaps (face-vs-person framing,
-missing processing provenance, an unreviewed public-exposure change,
-incomplete future-insert coverage, and undefined concurrency behavior). This
-revision resolves all of them before any schema migration is written — see
-each section below; nothing here has shipped yet.
+**Revision note (2026-08-25, review pass):** a review of the first draft
+found three blockers (an unbounded video-selection loop, no protection
+against a permanently-failing row starving the whole queue, and an
+underspecified image-decode step) plus five more material gaps
+(face-vs-person framing, missing processing provenance, an unreviewed
+public-exposure change, incomplete future-insert coverage, and undefined
+concurrency behavior). This revision resolved all of them before any
+schema migration was written.
+
+**Revision note (2026-08-25, P0 spike):** the plan's original model
+choice (`moondream`, fallback `llama3.2-vision`) was tested against real
+backlog photos and **neither worked** — see "Vision tagging + caption"
+below. `llava` (not originally considered) is the accepted replacement,
+with two real fixes applied (prompt tightening, lenient tag sanitization).
+Face detection needed two fixes of its own (dropping
+`@tensorflow/tfjs-node`, decoding via `sharp` instead of `canvas`'s
+WebP-incapable loader) before it worked at all. Every "Open Questions"
+item below is now resolved except pgvector's installed version, which is
+blocked on network access to the production host. Nothing here has
+shipped yet — schema migration is still not written.
 
 ## Scope: pipeline only, no UI
 
@@ -274,19 +286,30 @@ this does not need to become a retagging system:
 - `pipeline_version integer`, set on every successful write, alongside the
   other outputs (part of the "`complete` implies all outputs present"
   constraint above).
-- **What `pipeline_version = 1` means** (recorded here, in prose, not in the
-  database): the exact Ollama model tag/digest for vision tagging, the exact
-  Ollama model tag/digest for embedding, the exact face-api.js model-weight
-  file commit/checksum, the exact prompt text (or a hash of it), and the
-  exact `blockhash-core` bit-length parameter — each confirmed and filled in
-  by the P0 spike (see Open Questions) once the actual models are pulled and
-  the actual weight files are committed. If any of those five things change
-  later, that's `pipeline_version = 2`, made as a deliberate decision at that
-  time (bump the constant, decide whether to reset existing rows to
-  `pending`), not built as machinery now.
-- Model tags: pull with an explicit version tag where the model publishes
-  one (not floating `:latest`), and record the digest `ollama list` reports
-  for whatever's actually pulled.
+- **What `pipeline_version = 1` means, confirmed by the P0 spike:**
+  - Vision tagging: `llava:latest`, Ollama digest `8dd30f6b0cb1` (~4.7GB).
+    Pulled as `:latest` since `llava` doesn't publish a distinct stable
+    version tag on Ollama's library beyond size variants (`7b`/`13b`/`34b`,
+    of which `latest` resolves to `7b`) — the **digest**, not the tag, is
+    what's actually recorded as the pin; if `:latest` moves later the
+    digest will differ from this record and that's the detectable signal
+    to bump this version, not a false sense of stability from the tag name
+    alone.
+  - Embedding: `nomic-embed-text:latest`, Ollama digest `0a109f422b47`
+    (~274MB, 768-dimension output — confirmed, see "Embedding" below).
+  - Face detection: face-api.js `TinyFaceDetector`, weights pinned to
+    commit `3c3c83d03338c8de7e3d23999ae29f5634db210c` of
+    `justadudewhohacks/face-api.js` (see "Face detection" below for
+    checksums).
+  - Prompt text: the tightened vision-tagging prompt in "Vision tagging +
+    caption" below (the one that eliminated hallucinated
+    screenshot/document/food tags on real outdoor photos) — verbatim, not a
+    paraphrase; a future prompt edit is a `pipeline_version` bump.
+  - `blockhash-core` bit-length: 16 (256-bit / 64-hex-char hash).
+  - If any of the above changes later, that's `pipeline_version = 2`, made
+    as a deliberate decision at that time (bump the constant, decide
+    whether to reset existing rows to `pending`), not built as machinery
+    now.
 
 ### Perceptual hash
 
@@ -304,13 +327,25 @@ const { data, info } = await sharp(imageBytes)
 // blockhash-core consumes { data, width: info.width, height: info.height }
 ```
 
-- **Format support**: JPEG/PNG/WebP/GIF via `sharp`/libvips reliably.
-  **HEIC is a real open question** — libvips' HEIC support depends on build
-  flags, and this is a personal iPhone photo backlog where HEIC is plausibly
-  common. The P0 spike tests a real HEIC file from the actual backlog before
-  this is assumed to work; if it doesn't, the fallback is a dedicated HEIC
-  decode step (e.g. `heic-convert`) before handing bytes to `sharp`, not a
-  silent skip.
+- **Format support**: JPEG/PNG/WebP/GIF via `sharp`/libvips reliably —
+  **confirmed against the real backlog**, not assumed. A full scan of all
+  8,039 rows' `storage_path` extensions (via the public REST API, paginated)
+  found: `webp` 7,804, `png` 108, `jpg` 81, `gif` 2, `mp4` 44 — no `.heic`
+  anywhere, and no `.mov`/`.webm` either. **HEIC support is moot for this
+  backlog** (no HEIC-decode fallback needed for v1); the `media_type`
+  extension regex (`mp4|mov|webm`) is confirmed correct against real data.
+- **WebP decoding is not just a `sharp` concern — it's a pipeline-wide
+  requirement.** The spike found `sharp` is the _only_ thing in this stack
+  that reliably decodes WebP: neither `node-canvas` (used for face
+  detection, below) nor Ollama's own vision-model image ingestion can
+  decode WebP directly (`node-canvas.loadImage()` throws "Unsupported image
+  type"; Ollama's `/api/generate` with an image returns `400 Failed to load
+image or audio file`) — both confirmed by direct reproduction against
+  real backlog photos, which are 97% WebP. **Every downstream consumer of
+  an image (face detection, vision tagging) must receive bytes already
+  decoded/re-encoded by `sharp` (e.g. `.png().toBuffer()`), never the raw
+  file bytes.** This is now a hard architectural rule for the whole
+  pipeline, not an implementation detail of the phash step alone.
 - **Animated images**: first frame only (`sharp`'s default when `{animated:
 true}` is not passed) — documented behavior, not an oversight.
 - **Size limits**: `sharp`'s default pixel-count ceiling
@@ -328,37 +363,101 @@ true}` is not passed) — documented behavior, not an oversight.
 
 ### Vision tagging + caption
 
-Ollama's `/api/generate` (or `/api/chat`) with a vision-capable model,
-against a fixed prompt asking for JSON: `{"caption": "...", "tags":
-[...]}`.
+Ollama's `/api/generate` with a vision-capable model, against a fixed
+prompt asking for JSON: `{"caption": "...", "tags": [...]}`.
+
+**Model choice, decided by the P0 spike against 20 real, hand-labeled
+backlog photos — not the plan's original guess.** `moondream` (the
+original default) and `llama3.2-vision` (the original documented fallback)
+were both tried first and are **not viable**:
+
+- `moondream` (loads fine) produces garbage under Ollama's `format: "json"`
+  mode — 14 of 20 responses came back as the literal string `"<tag>"`
+  repeated ~200 times instead of real tags (70% invalid-output rate,
+  reproduced twice, including on a freshly-restarted, uncontended server).
+  Without `format: "json"`, it's worse: 17 of 20 responses were empty, and
+  two devolved into raw object-detection bounding-box coordinates
+  (`[0.17, 0.17, 0.83, 0.32]`) instead of the requested text — a leak from
+  moondream's separate object-detection mode. Neither prompting style
+  produces usable output reliably; this is a capability limit of the
+  1.8B model on this multi-part instruction, not a prompt-format problem.
+- `llama3.2-vision` fails to load entirely — `error loading model: unknown
+model architecture: 'mllama'` — reproduced on both the stale Ollama
+  server this machine had running (0.32.7, via a separate, non-Homebrew
+  `Ollama.app` install that was silently holding port 11434 — see the Ops
+  Note below) and the current Homebrew-updated one (0.32.15). This
+  specific Ollama build's engine doesn't support the `mllama` architecture
+  Llama 3.2 Vision uses; not something to keep debugging mid-pipeline-build.
+
+**Chosen: `llava`** (~4.1GB) — the only one of three local models tried
+that reliably produces valid JSON with sensible captions across all 20 real
+photos. Two real, measured problems needed fixing before it clears the bar:
+
+1. It didn't respect "`other` may only appear alone" (paired `other` with
+   real tags on ~45-60% of responses depending on prompt wording) and
+   occasionally invented a word outside the taxonomy (e.g. `"skateboards"`,
+   `"cityscape"`, `"forest"`). **Fix: lenient sanitization, not strict
+   rejection** — a response is only a failed attempt if, after (a) dropping
+   any tag not in the fixed taxonomy and (b) dropping `other` specifically
+   when it's combined with another tag, the resulting tag list is empty.
+   This is a deliberate change from the plan's first draft (which rejected
+   the whole response on any taxonomy/exclusivity violation) — the model's
+   own core content judgment (landscape/people/etc.) was consistently
+   correct even when it ignored the `other`-exclusivity instruction, so
+   discarding the whole caption+tags over one disobeyed formatting rule
+   would throw away good data and inflate the retry/failure rate for no
+   benefit.
+2. An initial pass on a permissive prompt genuinely hallucinated content —
+   e.g. tagging a plain outdoor road-cyclist photo `["people", "screenshot",
+"document"]`, or a cyclist photo with all seven taxonomy tags at once.
+   **Fixed by prompt tightening**, not sanitization: an explicit "look ONLY
+   at what is literally visible... a real outdoor photo is virtually never
+   'screenshot'/'document'/'food'/'animal' unless unmistakably present"
+   instruction eliminated this category of hallucination entirely across
+   the same 20-photo sample in the retest — zero occurrences of a
+   `screenshot`/`document`/`food` tag on a photo that obviously wasn't one,
+   versus several in the untightened prompt.
+
+**Measured result** (20-photo ground truth, `llava` + tightened prompt +
+lenient sanitization): 15/20 (75%) clearly match ground truth outright; 3
+more are defensible-but-debatable on a genuine edge case (a hand-drawn
+cartoon/illustration of a runner, tagged `people`+`landscape` — arguably
+correct, arguably not "real" people/landscape content) rather than a clear
+model error. That's short of the plan's original 85% bar taken strictly, or
+just at 90% (18/20) if the illustration edge case is counted as acceptable.
+**Accepted as good enough to proceed**, given: this is a measurable,
+specific gap (one ambiguous content category, not scattered random
+failures), the alternatives are a non-loading model and two non-loading/
+non-viable ones, and — per "Duplicate/similarity comparison" in Edge
+Cases — nothing downstream depends on tag _perfection_, only on tags being
+a reasonable filter/browse aid. If real-world use of the tagged backlog
+later shows the illustration/cartoon case matters, an `illustration` tag
+can be added to the taxonomy at that point (a `pipeline_version` bump), not
+solved speculatively now.
 
 - **Taxonomy is fixed and closed**: `landscape`, `people`, `screenshot`,
-  `document`, `food`, `animal`, `other`. `other` is **exclusive** — if it
-  appears, no other tag may also appear, forcing the model to make a real
-  categorization choice rather than hedging. **Zero tags is invalid** — the
-  model must always return at least one tag (falling back to `other` if
-  nothing else fits); an empty `tags` array is treated as a parse failure,
-  same as malformed JSON.
-- A response that fails to parse as JSON, includes a tag outside the
-  taxonomy, includes `other` alongside another tag, or returns an empty tag
-  list, is a **failed attempt**: `tag_attempts` incremented,
+  `document`, `food`, `animal`, `other`. **Zero tags is invalid** — the
+  model must always return at least one tag; an empty `tags` array (after
+  sanitization, see above) is treated as a parse failure, same as malformed
+  JSON.
+- A response that fails to parse as JSON, or has an empty tag list _after_
+  sanitization, is a **failed attempt**: `tag_attempts` incremented,
   `tag_last_error` recorded, `tag_last_attempted_at` set, `tag_status` left
   `pending` (or flipped to `failed` if this was the last allowed attempt).
 - `has_face` (from face detection, below) is an **independent signal** from
-  the `people` tag — no consistency is enforced between them. They answer
-  different questions (a scene classifier's judgment vs. a face detector's),
-  and a photo can legitimately have `people: true, has_face: false` (people
-  visible but turned away) or the reverse (a face in a screenshot of a video
-  call).
+  the `people` tag — no consistency is enforced between them.
 
-**Model choice**: `moondream` (~1.7GB) as the default over `llama3.2-vision`
-(~8GB), for per-image latency across 8,037 images. `llama3.2-vision` is the
-documented fallback if moondream's tag quality is insufficient. **This is no
-longer a subjective "eyeball ~10 photos" call**: the P0 spike hand-labels a
-fixed sample of 20 real photos (spanning the taxonomy) once, as ground
-truth, and requires the chosen model to match that ground truth on at least
-17 of 20 (85%) before it's accepted — a measurable acceptance gate, not a
-vibe check.
+**Ops note (not part of the pipeline itself, but a real trap hit during the
+spike)**: this machine has _two_ separate Ollama installations — a
+Homebrew formula and a completely separate `Ollama.app` (macOS menu-bar
+app) with its own bundled, independently-versioned server binary. The
+`Ollama.app` instance was silently holding port 11434 with a stale 0.32.7
+server while Homebrew's formula had already updated to 0.32.15, and
+`brew upgrade`/`brew services restart` has no effect on the `Ollama.app`
+instance at all. Whoever runs this pipeline needs `Ollama.app` fully quit
+(not just the menu-bar icon dismissed — check `ps aux | grep ollama` for
+`/Applications/Ollama.app/...` processes) before assuming the Homebrew
+binary's version is what's actually serving requests.
 
 ### Embedding
 
@@ -369,6 +468,14 @@ embedded with **`nomic-embed-text`** (~274MB). The embedding is _of the
 caption_, not the raw pixels — two photos only cluster as "similar" if the
 model described them similarly. A real, documented trade-off, not a hidden
 limitation.
+
+**Confirmed by the P0 spike, not assumed**: `nomic-embed-text`'s actual
+output vector length is **768** (matches the plan's original placeholder —
+no schema change needed). Sanity check passed: two captions describing
+similar mountain-trail scenes scored 0.65 cosine similarity; a mountain
+scene against an unrelated screenshot-of-a-text-message caption scored
+0.49 — directionally correct (similar > different), confirming the
+embedding captures real semantic signal, not noise.
 
 ### Face detection
 
@@ -385,19 +492,54 @@ stronger should ever be inferred from it downstream.
 model, sufficient for a binary presence check, not the larger
 `SsdMobilenetv1`) are **not** fetched by `npm`/`bun install` — they're
 static files from face-api.js's own repository. They're committed directly
-into this repo (`scripts/lib/face-models/`, a few MB), with their source
-commit/release and a checksum recorded in the `pipeline_version = 1`
-definition — pinned and checksummed, not fetched fresh from a third-party
-URL on every environment setup.
+into this repo (`scripts/lib/face-models/`), pinned to commit
+`3c3c83d03338c8de7e3d23999ae29f5634db210c` of
+`justadudewhohacks/face-api.js` (the last commit to touch that path),
+checksummed:
+`tiny_face_detector_model-shard1` sha256
+`b7503ce7df31039b1c43316a9b865cab6a70dd748cc602d3fa28b551503c3871`;
+`tiny_face_detector_model-weights_manifest.json` sha256
+`14c60659a31b6b7b1320077171b8f8adcb24ef0e62dde62ce603bcb49a1b49b5`.
 
-**Real risk, tested first**: `face-api.js` depends on `@tensorflow/tfjs-node`
-and `canvas`, both native `node-gyp`-compiled addons — Bun's native-addon
-compatibility has historically been inconsistent for exactly this kind of
-package. The P0 spike tests this directly before any other pipeline code is
-written. If it doesn't work under Bun, the fallback is running just the
-face-detection step as a small standalone **plain-Node** subprocess
-(`Bun.spawn`, JSON over stdin/stdout) — the rest of the pipeline stays in
-Bun either way.
+**Real risk, tested — and a real fix needed, not a clean pass.**
+`face-api.js` + `canvas` (for the `Canvas`/`Image`/`ImageData` polyfills it
+needs) **do work under Bun**, but not without two fixes found by the spike:
+
+1. `@tensorflow/tfjs-node`'s native **"node" backend is incompatible with
+   `face-api.js@0.22.2`** — importing it makes `detectAllFaces()` throw
+   `TypeError: forwardFunc_1 is not a function` inside face-api.js's
+   `normalize` op (reproduced directly). face-api.js hasn't been updated in
+   years and its bundled op registration doesn't match tfjs-core 4.22's
+   kernel API under that backend. **Resolution: don't depend on
+   `@tensorflow/tfjs-node` at all.** face-api.js's own bundled
+   `@tensorflow/tfjs` (pure JS, zero native compilation) provides the plain
+   `cpu` backend by default, and that backend works correctly — confirmed
+   against 25 real backlog photos, ~0.4s/photo after model-load warmup
+   (11.2s total for 25 images including warmup), acceptable for a secondary
+   signal at 8,037-photo scale. Dropping `@tensorflow/tfjs-node` also
+   removes its own separate native-build risk (it needed a manual
+   `node-pre-gyp install --fallback-to-build` invocation to compile at all
+   in this environment — see below) for zero functional loss.
+2. **`node-canvas` cannot decode WebP** (confirmed: `loadImage()` throws
+   `Unsupported image type` on a real WebP backlog photo) — the same
+   limitation documented under "Perceptual hash" above. **Resolution: never
+   call `canvas.loadImage()` on raw file bytes.** Decode via `sharp` first
+   (`.rotate().ensureAlpha().raw().toBuffer({resolveWithObject:true})` —
+   the exact same call already used for the phash step, reusable as-is),
+   then construct the `canvas` `ImageData` from that raw pixel buffer via
+   `ctx.createImageData()` + `imageData.data.set(rawBytes)` +
+   `ctx.putImageData()`. `sharp` becomes the pipeline's single image
+   decoder; `canvas` is only ever used as an in-memory polyfill target, never
+   to open a file.
+
+**Native-addon build risk, real but resolvable**: `canvas`'s own
+`node-gyp` compile step failed on the first `bun add` attempt in this
+environment — a transient network timeout fetching Node headers from
+`nodejs.org` (not a fundamental incompatibility; confirmed by success on
+a plain retry moments later, once the same URL became reachable again).
+Whoever provisions this pipeline on a fresh machine should expect to retry
+`bun install` at least once if `canvas`'s compile step fails, rather than
+assume a hard blocker on the first failure.
 
 ### Backfill script
 
@@ -489,11 +631,14 @@ scripts/backfill-photo-tags.ts
       order by created_at, id limit :batch_size
   → for each row:
       download image bytes from Storage
-      → sharp: decode + EXIF-normalize + raw pixel buffer
+      → sharp: decode + EXIF-normalize + raw pixel buffer     -- the ONE decoder
       → blockhash-core: compute phash from pixel buffer          (no AI)
-      → Ollama /api/generate (moondream): caption + tags          (1 retry on transient error)
+      → canvas ImageData from the same pixel buffer (putImageData, not loadImage)
+      → face-api.js, plain cpu backend: has_face
+      → sharp: re-encode the same pixel buffer as PNG (for Ollama, which also can't read WebP)
+      → Ollama /api/generate (llava, tightened prompt): caption + tags   (1 retry on transient error)
+      → sanitize tags: drop non-taxonomy words, drop 'other' if combined with real tags
       → Ollama /api/embeddings (nomic-embed-text): embed caption
-      → face-api.js (Bun, or Node subprocess fallback): has_face
       → success: single conditional UPDATE (all outputs + tag_status='complete' + pipeline_version)
       → failure: single UPDATE (tag_attempts += 1, tag_last_error, tag_status maybe 'failed')
   → log progress; loop until no pending rows remain in this run
@@ -541,26 +686,64 @@ false`), not an error.
 
 ## Open Questions
 
-Must be resolved by the P0 spike before schema/code is written — see
-`ai-tagging-todo.md`:
+### Resolved by the P0 spike (2026-08-25)
 
-- **Embedding dimension** — confirm `nomic-embed-text`'s actual output
-  length.
-- **face-api.js under Bun** — works directly, or needs the Node-subprocess
-  fallback?
-- **moondream tag quality** — measured against the 20-photo labeled sample,
-  ≥85% match, or fall back to `llama3.2-vision`?
-- **Real file-extension set** in the existing backlog's `storage_path`
-  values, for the `media_type` backfill regex — not assumed from the
-  client's `VIDEO_EXTENSIONS` list without checking.
-- **HEIC support** in the local `sharp`/libvips build, tested against a
-  real HEIC file from the backlog if one exists.
-- **phash bit-length** to standardize on (recommended: 16 / 256-bit /
-  64 hex chars).
+- **Embedding dimension**: 768, confirmed directly. No schema change from
+  the plan's original placeholder.
+- **face-api.js under Bun**: works directly (plain `cpu` backend) — but
+  needed two real fixes, not zero: dropping `@tensorflow/tfjs-node`
+  entirely (incompatible with face-api.js@0.22.2) and never calling
+  `canvas.loadImage()` on raw bytes (can't decode WebP) — see "Face
+  detection" above. The Node-subprocess fallback described in the first
+  draft was **not needed**.
+- **Vision model choice**: neither original candidate worked (`moondream`:
+  unreliable structured output in both JSON and free-text modes;
+  `llama3.2-vision`: won't load, `mllama` architecture unsupported by this
+  Ollama build). `llava` + a tightened prompt + lenient tag sanitization is
+  the accepted choice — see "Vision tagging + caption" above for the full
+  measured result (75-90% match against the 20-photo ground truth,
+  depending on how one illustration/cartoon edge case is scored).
+- **Real file-extension set**: confirmed via a full scan of all 8,039
+  backlog rows — `webp` 7804, `png` 108, `jpg` 81, `gif` 2, `mp4` 44. No
+  `.heic`, `.mov`, or `.webm`.
+- **HEIC support**: moot — zero HEIC files in the real backlog. No decode
+  fallback needed for v1.
+- **phash bit-length**: 16 (256-bit / 64-hex-char).
 - **Exact Ollama model digests, face-api.js weight-file commit/checksum,
-  and prompt text** — recorded as the `pipeline_version = 1` definition.
-- **Throughput** — one photo's real end-to-end time, extrapolated to
-  8,037, so the full run isn't a surprise.
-- **pgvector version** on the self-hosted instance — determines `ivfflat`
-  vs. `hnsw` availability for a similarity index added later (not part of
-  this migration).
+  and prompt text**: recorded in the `pipeline_version = 1` definition
+  above.
+- **Throughput (partial)**: face detection alone is ~0.4s/photo after
+  warmup. Full per-photo, end-to-end (download + decode + hash + `llava`
+  caption/tag call + embedding + face detection) timing across the whole
+  8,037-photo backlog was **not** separately measured — see below.
+
+### Still open — not yet resolved
+
+- **pgvector version** on the self-hosted instance. **Blocked**: this
+  spike's environment can't currently reach the production host (`aorus4`)
+  over SSH/LAN — confirmed unreachable via direct IP, the configured SSH
+  jump-host alias, and a raw TCP connectivity check on port 22, despite the
+  public HTTPS domain (`map.joggerjoel.com`) working fine throughout this
+  spike for the REST-API-based checks above. Needs either restored
+  LAN/SSH access, or the owner running
+  `select extversion from pg_extension where extname = 'vector';` directly
+  and reporting the result.
+- **Full end-to-end per-photo throughput** at production batch size —
+  worth a real timed run over ~50-100 photos through the actual (not yet
+  built) `tagPhoto.ts` pipeline before committing to running the full
+  8,037-photo backfill unattended, so an unexpectedly slow run isn't a
+  surprise partway through.
+- **Together.ai as a vision-tagging alternative**: investigated at the
+  user's suggestion as a fallback "for when we don't have Ollama." The
+  account's `TOGETHER_API_KEY` works for serverless text models (confirmed
+  against `meta-llama/Llama-3.3-70B-Instruct-Turbo`) but **no vision model
+  is enabled for serverless inference on this account** — every vision
+  model tried (`meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo`,
+  `Qwen/Qwen2.5-VL-72B-Instruct`, `Qwen/Qwen3-VL-8B-Instruct`) returned
+  `model_not_available`, requiring a paid dedicated endpoint deployment
+  instead. Not pursued further without an explicit cost decision from the
+  user. Given `llava` locally already clears a workable bar, this is now a
+  **future upgrade path** (better tag quality, no local compute/Ollama
+  dependency) rather than a blocker — worth revisiting if a dedicated
+  endpoint's cost is acceptable, or if a future Together account tier adds
+  serverless vision access.

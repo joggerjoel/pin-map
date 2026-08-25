@@ -17,48 +17,85 @@ Every item below reflects the fix, not the original draft.
 Do this **before** writing any schema or pipeline code. Every item answers
 an Open Question from the plan with a real result on real data.
 
-- [ ] `ollama pull moondream`. Hand-label a fixed sample of 20 real unsorted
-      photos (ground truth, spanning the taxonomy) once. Run moondream
-      against them; if fewer than 17/20 (85%) match ground truth, try
-      `llama3.2-vision:11b` on the same 20 and compare. Record the winner
-      and the actual match rate in the plan.
-- [ ] Call `nomic-embed-text` via `/api/embeddings` once; confirm the actual
-      returned vector length and update the plan's `vector(768)` placeholder
-      if it's wrong.
-- [ ] Query the real backlog for distinct file extensions in `storage_path`
-      (e.g. `select distinct lower(storage_path) ~ regex` style scan or a
-      simple extension histogram) and confirm the video-extension regex
-      used in the `media_type` backfill (`mp4|mov|webm`, per the client's
-      existing `VIDEO_EXTENSIONS`) actually covers everything real — update
-      the plan's regex if not.
-- [ ] Test `sharp` decoding a real HEIC file from the backlog, if one
-      exists. If it fails, evaluate a HEIC-specific decode step
-      (`heic-convert`) and record the outcome in the plan.
-- [ ] Install `face-api.js` + `@tensorflow/tfjs-node` + `canvas`, run face
-      detection on one real test image under `bun run`. If it fails to
-      load/build under Bun, build the plain-Node subprocess fallback and
-      confirm that works instead.
-- [ ] Download the `TinyFaceDetector` model weight files from face-api.js's
-      repository, commit them to `scripts/lib/face-models/`, record the
-      source commit/release and a checksum in the plan's
-      `pipeline_version = 1` definition.
-- [ ] Decide and record the `blockhash-core` bit-length parameter
-      (recommended: 16 → 256-bit/64-hex hash) in the plan.
-- [ ] Pull Ollama models with explicit version tags where available (not
-      floating `:latest`); record the exact tags/digests `ollama list`
-      reports in the plan's `pipeline_version = 1` definition, alongside the
-      exact prompt text used for tagging.
-- [ ] Time one photo end-to-end (download → decode/hash → caption → embed →
-      face detection); extrapolate to 8,037 and record the estimate.
-- [ ] Confirm `pgvector` is installed and check its version on the
-      self-hosted Postgres instance:
+**Update (2026-08-25): spike run, most items resolved.** See "Resolved by
+the P0 spike" in the plan's Open Questions section for full detail on each.
+
+- [x] `ollama pull moondream`. Hand-labeled a real 20-photo ground-truth
+      sample. **moondream failed decisively** (70% invalid output in
+      JSON-mode, 85% empty in free-text mode) — not viable at all, not a
+      borderline case. Tried `llama3.2-vision` next per the plan's fallback
+      path: **fails to load** (`unknown model architecture: 'mllama'`),
+      even after updating Ollama from 0.32.7 to 0.32.15 (see the ops note
+      below). Pulled a third candidate, `llava`, not originally in the
+      plan — works, needed a tightened prompt + lenient tag sanitization to
+      reach an acceptable (75-90%, scoring-dependent) match rate. Plan
+      updated with the full result and reasoning for accepting it.
+- [x] Called `nomic-embed-text` via `/api/embeddings`: confirmed 768
+      dimensions, matches the plan's original placeholder exactly. Sanity
+      check (similar captions cluster closer than dissimilar ones) passed:
+      0.65 vs. 0.49 cosine similarity.
+- [x] Queried the real backlog (all 8,039 rows, paginated via the public
+      REST API): `webp` 7804, `png` 108, `jpg` 81, `gif` 2, `mp4` 44 — the
+      planned `mp4|mov|webm` regex is confirmed correct (a safe superset;
+      only `mp4` actually appears).
+- [x] HEIC: moot — zero HEIC files anywhere in the real backlog. No
+      HEIC-specific decode step needed for v1.
+- [x] Installed `face-api.js` + `@tensorflow/tfjs-node` + `canvas`, ran
+      face detection on real backlog photos under `bun run`. **Two real
+      fixes needed, not a clean pass**: (1) `@tensorflow/tfjs-node`'s
+      native backend is incompatible with `face-api.js@0.22.2` (throws
+      inside its `normalize` op) — dropped entirely, the plain `cpu`
+      backend face-api.js already bundles works fine and is what's
+      actually used; (2) `node-canvas` cannot decode WebP
+      (`loadImage()` throws) — fixed by decoding via `sharp` first and
+      constructing `canvas`'s `ImageData` from the raw pixel buffer
+      instead of ever calling `loadImage()` on file bytes. The
+      Node-subprocess fallback described in the plan was **not needed** —
+      face-api.js works directly under Bun once those two fixes are
+      applied. Confirmed working across 25 real photos, ~0.4s/photo after
+      warmup.
+- [x] Downloaded the `TinyFaceDetector` weight files, pinned to commit
+      `3c3c83d03338c8de7e3d23999ae29f5634db210c`, checksums recorded in the
+      plan's `pipeline_version = 1` definition. (Not yet committed into
+      `scripts/lib/face-models/` in this repo — that happens when the real
+      `tagPhoto.ts` module is built, per "P1 — Face detection" below; the
+      spike's copy lives in a scratch directory outside the repo.)
+- [x] Decided: 16-bit blockhash parameter (256-bit/64-hex-char hash) —
+      recorded in the plan.
+- [x] Pulled Ollama models, recorded exact digests in the plan's
+      `pipeline_version = 1` definition: `llava:latest` (digest
+      `8dd30f6b0cb1`), `nomic-embed-text:latest` (digest `0a109f422b47`).
+      Exact tagging prompt text recorded in the plan too.
+- [ ] Time one photo end-to-end through the **actual built pipeline**
+      (`tagPhoto.ts`, once it exists) and extrapolate to 8,037 — the spike
+      measured face-detection latency alone (~0.4s/photo) but not the full
+      chain including the `llava` call, which dominates. Do this as part of
+      "P1 — Backfill script" below, on a real batch, before committing to
+      an unattended full run.
+- [ ] Confirm `pgvector` is installed and its version on the self-hosted
+      instance:
       `sql
-    select extversion from pg_extension where extname = 'vector';
-    -- or, if missing:
-    create extension if not exists vector;
-    `
-      Determines `ivfflat` vs. `hnsw` availability for a later similarity
-      index (not part of this migration).
+select extversion from pg_extension where extname = 'vector';
+-- or, if missing:
+create extension if not exists vector;
+`
+      **Blocked**: this environment currently can't reach the production
+      host (`aorus4`) over SSH/LAN — confirmed via direct IP, the
+      configured jump-host alias, and a raw TCP port-22 check, all
+      unreachable, despite `map.joggerjoel.com` (public HTTPS) working
+      fine throughout the rest of this spike. Needs either restored
+      connectivity or the query run manually and the result reported back.
+
+**New finding, not originally anticipated — informational, not a P0
+blocker:**
+
+Together.ai was investigated per a mid-spike suggestion as a fallback
+vision-tagging path. The `TOGETHER_API_KEY` in `pin-map/.env` works for
+serverless text models but **no vision model is enabled for serverless
+inference on this account** — all three tried need a paid dedicated
+endpoint. Not pursued further without an explicit go-ahead on that cost.
+Doesn't block `llava` as the P0-accepted choice; tracked as a P3
+follow-up below.
 
 **Acceptance criteria**
 
@@ -101,7 +138,7 @@ an Open Question from the plan with a real result on real data.
 
 - [ ] `revoke select on public.pinmap_place_photos from anon, authenticated;`
       then `grant select (id, user_id, place_query, storage_path,
-    created_at) on public.pinmap_place_photos to anon, authenticated;` —
+created_at) on public.pinmap_place_photos to anon, authenticated;` —
       restores exactly today's client-visible columns, nothing more.
 - [ ] Confirm every existing client-side query against this table still
       works after the revoke — `fetchPhotos`, `uploadPhoto`,
@@ -126,7 +163,7 @@ an Open Question from the plan with a real result on real data.
 - [ ] Advisory lock at script start (`pg_try_advisory_lock` with a fixed
       key), exits immediately with a clear message if already held.
 - [ ] Every write (success or failure) is a conditional `update ... where
-    id = :id and tag_status = 'pending'` (or the equivalent for the
+id = :id and tag_status = 'pending'` (or the equivalent for the
       failure-path increment), checked for exactly one affected row.
 
 **Acceptance criteria**
@@ -162,18 +199,26 @@ an Open Question from the plan with a real result on real data.
 
 ## P1 — Vision tagging
 
-- [ ] Prompt template asking for JSON `{"caption": "...", "tags": [...]}`
-      against the fixed, closed taxonomy.
-- [ ] Reject (as a failed attempt): invalid JSON, an out-of-taxonomy tag,
-      `other` combined with any other tag, or an empty `tags` array.
-- [ ] Model name is a single config constant per the spike's outcome.
+- [ ] The exact tightened prompt text from the spike (verbatim — it's part
+      of the `pipeline_version = 1` definition), against `llava`.
+- [ ] Sanitize before validating: drop any tag not in the fixed taxonomy,
+      then drop `other` specifically if it's combined with a remaining
+      real tag (per the spike's finding — llava's own content judgment was
+      reliable even when it disobeyed the `other`-exclusivity instruction,
+      so don't throw the whole response away over that alone).
+- [ ] Reject (as a failed attempt) only if, after sanitizing: the response
+      isn't valid JSON, or the resulting `tags` array is empty.
+- [ ] Model name (`llava`) is a single config constant, not hardcoded in
+      multiple places.
 
 **Acceptance criteria**
 
-- The 20-photo labeled-sample match rate from the spike is ≥85% for the
-  shipped model choice.
-- Automated tests (see below) cover the reject cases directly, not just via
-  manual spot-checking.
+- Re-running the spike's 20-photo labeled sample through the actual shipped
+  code (not the throwaway spike script) reproduces the same ballpark match
+  rate (75-90%, per the plan's accepted result) — a regression here means
+  the real implementation diverged from what was actually measured.
+- Automated tests (see below) cover the sanitize-then-reject logic
+  directly, not just via manual spot-checking.
 
 ## P1 — Embedding
 
@@ -188,9 +233,18 @@ an Open Question from the plan with a real result on real data.
 
 ## P1 — Face detection
 
-- [ ] Wire up `face-api.js` per the spike's outcome (direct Bun use, or the
-      Node-subprocess fallback), loading the committed `TinyFaceDetector`
-      weights from `scripts/lib/face-models/`.
+- [ ] `face-api.js` + `canvas` only — **no `@tensorflow/tfjs-node`
+      dependency** (confirmed incompatible by the spike; the plain `cpu`
+      backend face-api.js already bundles is what's actually used).
+- [ ] Decode via `sharp` (reuse the exact same call already made for the
+      phash step — don't decode twice), then build `canvas`'s `ImageData`
+      from that raw pixel buffer via `createImageData`/`putImageData`.
+      **Never call `canvas.loadImage()` on raw file bytes** — confirmed it
+      can't decode WebP, which is 97% of this backlog.
+- [ ] Commit the `TinyFaceDetector` weight files (already downloaded and
+      checksummed during the spike, commit
+      `3c3c83d03338c8de7e3d23999ae29f5634db210c`) into
+      `scripts/lib/face-models/` in this repo.
 - [ ] Column is `has_face: boolean` (not `has_person`) — true if one or more
       faces detected, false (not null) on a clean zero-face result.
 
@@ -307,3 +361,11 @@ coverage" below is done, so it gets real coverage:
       built speculatively now.
 - [ ] Scheduling the backfill script to run automatically (cron or
       similar) instead of manually — manual re-runs are sufficient to start.
+- [ ] Together.ai as a higher-quality vision-tagging alternative to local
+      `llava` — needs a paid dedicated endpoint (no serverless vision model
+      is enabled on the current account/project; confirmed by the spike
+      against `Llama-3.2-11B-Vision-Instruct-Turbo`, `Qwen2.5-VL-72B`, and
+      `Qwen3-VL-8B`, all `model_not_available`). Revisit if that cost is
+      acceptable, or if a serverless vision tier becomes available — would
+      remove the local-Ollama dependency and likely improve tag accuracy
+      past `llava`'s measured 75-90%.
