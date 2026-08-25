@@ -108,72 +108,132 @@ follow-up below.
 
 ## P0 — Schema
 
-- [ ] `supabase/schema_place_photos_ai_tags.sql` — all twelve new columns on
+- [x] `supabase/schema_place_photos_ai_tags.sql` — all twelve new columns on
       `pinmap_place_photos` per the plan (`caption`, `tags`, `has_face`,
       `phash`, `embedding`, `tagged_at`, `media_type`, `tag_status`,
       `tag_attempts`, `tag_last_error`, `tag_last_attempted_at`,
       `pipeline_version`), using values confirmed by the spike (embedding
-      dimension, phash length) rather than the plan's placeholders.
-- [ ] All five check constraints from the plan (`media_type`, `tag_status`,
-      tags-taxonomy, caption-nonblank, complete-implies-outputs).
-- [ ] The `tag_status = 'pending'` partial index.
-- [ ] The one-time `media_type`/`tag_status` backfill UPDATE for existing
-      rows, using the spike-confirmed extension regex — run once, directly
-      after the column-add migration, in the same migration file so it
-      can't be applied out of order.
+      dimension 768, phash length 64 hex chars) rather than placeholders.
+- [x] All five check constraints from the plan (`media_type`, `tag_status`,
+      tags-taxonomy, caption-nonblank, complete-implies-outputs), plus a
+      sixth not in the original plan text but implied by it: a
+      `phash_format_check` (`^[0-9a-f]{64}$`).
+- [x] The `tag_status = 'pending'` partial index.
+- [x] The one-time `media_type`/`tag_status` backfill UPDATE, in the same
+      migration file, using the spike-confirmed extension regex.
 - [ ] Apply to the live self-hosted instance via `psql -f` against a real
-      file (not a joined `psql -c` one-liner — that has silently no-op'd
-      before in this repo when the SQL contains `--` comments).
+      file. **Blocked**: this environment still can't reach `aorus4` over
+      SSH/LAN (same connectivity gap as the pgvector-version check). The
+      migration itself is fully written and verified (see below) — only
+      the actual application to production is pending restored access.
+
+**Verification performed** (2026-08-25, since production wasn't reachable):
+ran the exact migration file against a throwaway local `pgvector/pgvector:pg16`
+Docker container seeded with a minimal copy of the real table shape (same
+columns, same base grants as `schema_place_photos.sql`, one `.webp` row and
+one `.mp4` row). Confirmed directly, not assumed:
+
+- Migration applies with zero errors (`CREATE EXTENSION`, two `ALTER
+TABLE`s, `CREATE INDEX`, `UPDATE 2`, `REVOKE`, `GRANT` — no failures).
+- The `.mp4` row landed at `media_type='video', tag_status='skipped'`; the
+  `.webp` row stayed `media_type='image', tag_status='pending'` —
+  confirmed by direct `select`, not inferred.
+- All four schema-level constraints individually reject bad data:
+  `media_type='audio'` rejected, `tags=['bogus']` rejected (taxonomy),
+  `phash='notlongenough'` rejected (format), `tag_status='complete'` with
+  null outputs rejected (complete-implies-outputs). (`tags=['other',
+'people']` correctly **succeeds** at the DB level — `other`-exclusivity
+  is an application-layer sanitization rule per the plan, not a DB
+  constraint, since the app rewrites the tag array before it's ever
+  persisted.)
 
 **Acceptance criteria**
 
-- Migration applies cleanly to the live instance.
-- Every existing video row (per the confirmed extension check) is
-  `media_type = 'video', tag_status = 'skipped'` immediately after the
-  migration — not `pending`.
-- Every existing image row is `media_type = 'image', tag_status =
-'pending'`.
+- [x] Migration applies cleanly (verified against the local throwaway
+      container; verification against the actual live instance still pending
+      restored network access).
+- [x] Every existing video row (per the confirmed extension check) is
+      `media_type = 'video', tag_status = 'skipped'` immediately after the
+      migration — not `pending`. Verified.
+- [x] Every existing image row is `media_type = 'image', tag_status =
+'pending'`. Verified.
 
 ## P0 — Column-level exposure review
 
-- [ ] `revoke select on public.pinmap_place_photos from anon, authenticated;`
+- [x] `revoke select on public.pinmap_place_photos from anon, authenticated;`
       then `grant select (id, user_id, place_query, storage_path,
-created_at) on public.pinmap_place_photos to anon, authenticated;` —
+  created_at) on public.pinmap_place_photos to anon, authenticated;` —
       restores exactly today's client-visible columns, nothing more.
 - [ ] Confirm every existing client-side query against this table still
       works after the revoke — `fetchPhotos`, `uploadPhoto`,
       `fetchUnsortedPhotoCount`, `fetchUnsortedPhotos`, `assignPhotoPlace`
       in `photosRepository.ts` all already select explicit columns; run the
       app's existing test suite plus a manual smoke pass against a real
-      signed-in session to be sure.
+      signed-in session to be sure. **Still needs doing against the actual
+      live instance** once network access is restored — the local
+      container test below confirms the grants themselves are correct, not
+      that the deployed app behaves correctly against them.
 - [ ] Confirm the service-role key (used by the batch script and by
-      existing scripts like `import-mitm-photos.ts`) is unaffected — service
-      role bypasses grants and RLS entirely, so this should be a no-op to
-      verify, not assume.
+      existing scripts like `import-mitm-photos.ts`) is unaffected against
+      the live instance — service role bypasses grants and RLS entirely,
+      so this should be a no-op to verify, not assume.
+
+**Verification performed** (2026-08-25, local throwaway container, same as
+above): confirmed directly via `information_schema.column_privileges`
+that `anon` and `authenticated` retain `SELECT` on exactly
+`id, user_id, place_query, storage_path, created_at` and nothing else —
+every new AI-tagging column returns `permission denied for table
+pinmap_place_photos` when queried as either role. Also confirmed
+`authenticated`'s pre-existing `INSERT`/`DELETE` grants survived the
+`revoke select` untouched (`information_schema.role_table_grants` still
+shows both).
 
 **Acceptance criteria**
 
-- An anonymous `select embedding from pinmap_place_photos limit 1;` via the
-  anon key fails with a permission error.
-- The full existing test suite still passes; a manual pass through the
-  triage panel (assign, skip, preview) against production still works.
+- [x] An anonymous `select embedding from pinmap_place_photos limit 1;`
+      fails with a permission error. Verified (local container; live-instance
+      verification still pending).
+- [ ] The full existing test suite still passes; a manual pass through the
+      triage panel (assign, skip, preview) against production still works.
+      Not yet run against the live instance.
 
 ## P0 — Concurrency guard
 
 - [ ] Advisory lock at script start (`pg_try_advisory_lock` with a fixed
-      key), exits immediately with a clear message if already held.
+      key), exits immediately with a clear message if already held. **Not
+      yet built** — this section covers `scripts/backfill-photo-tags.ts`
+      itself, which doesn't exist until "P1 — Backfill script."
 - [ ] Every write (success or failure) is a conditional `update ... where
-id = :id and tag_status = 'pending'` (or the equivalent for the
-      failure-path increment), checked for exactly one affected row.
+    id = :id and tag_status = 'pending'` (or the equivalent for the
+      failure-path increment), checked for exactly one affected row. **Not
+      yet built**, same reason.
+
+**Mechanism verified independently of the script** (2026-08-25, local
+throwaway container): confirmed both Postgres primitives the script will
+rely on actually behave as designed, before writing any script code around
+them —
+
+- `pg_try_advisory_lock`: a second session calling it with the same key
+  while a first session holds it gets back `false` immediately (not a
+  block/wait) — confirmed directly (first session held the lock via
+  `pg_advisory_lock` + `pg_sleep(3)`, a concurrent second session's
+  `pg_try_advisory_lock` call returned `false` during that window).
+- Conditional `update ... where tag_status = 'pending'`: simulated two
+  writers racing for the same row — the first's conditional update
+  succeeds (`UPDATE 1`), the second's identical conditional update against
+  the now-changed row reports `UPDATE 0` and the row correctly still holds
+  the first writer's value, never silently overwritten.
 
 **Acceptance criteria**
 
-- Starting the script twice in quick succession: the second instance exits
-  immediately without processing anything, logged clearly.
-- A manually-simulated race (two conditional updates against the same row,
-  one after the other) leaves the row in the state the _first_ writer set,
-  and the second writer's update reports zero affected rows rather than
-  silently overwriting.
+- [ ] Starting the actual script twice in quick succession: the second
+      instance exits immediately without processing anything, logged clearly.
+      (Underlying lock behavior verified above; the script itself isn't built
+      yet.)
+- [x] A manually-simulated race (two conditional updates against the same
+      row, one after the other) leaves the row in the state the _first_ writer
+      set, and the second writer's update reports zero affected rows rather
+      than silently overwriting. Verified directly (see above).
 
 ## P1 — Perceptual hash
 
