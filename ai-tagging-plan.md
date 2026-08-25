@@ -483,16 +483,37 @@ solved speculatively now.
   the `people` tag — no consistency is enforced between them.
 
 **Ops note (not part of the pipeline itself, but a real trap hit during the
-spike)**: this machine has _two_ separate Ollama installations — a
-Homebrew formula and a completely separate `Ollama.app` (macOS menu-bar
-app) with its own bundled, independently-versioned server binary. The
-`Ollama.app` instance was silently holding port 11434 with a stale 0.32.7
-server while Homebrew's formula had already updated to 0.32.15, and
-`brew upgrade`/`brew services restart` has no effect on the `Ollama.app`
-instance at all. Whoever runs this pipeline needs `Ollama.app` fully quit
-(not just the menu-bar icon dismissed — check `ps aux | grep ollama` for
+spike)**: this machine (the MacBook Pro this pipeline was built on) had
+_two_ separate Ollama installations — a Homebrew formula and a completely
+separate `Ollama.app` (macOS menu-bar app) with its own bundled,
+independently-versioned server binary. The `Ollama.app` instance was
+silently holding port 11434 with a stale 0.32.7 server while Homebrew's
+formula had already updated to 0.32.15, and `brew upgrade`/
+`brew services restart` has no effect on the `Ollama.app` instance at all.
+Anyone hitting this again needs `Ollama.app` fully quit (not just the
+menu-bar icon dismissed — check `ps aux | grep ollama` for
 `/Applications/Ollama.app/...` processes) before assuming the Homebrew
 binary's version is what's actually serving requests.
+
+**Ops update (2026-08-25): Ollama moved off this machine entirely, to
+Mac Studio.** Running multi-GB vision models locally on a laptop that also
+needs to do other things was the wrong long-term call once a
+better-resourced machine with Ollama already running was available.
+`llava` and `nomic-embed-text` are pulled on `JoggerJoels-Mac-Studio`,
+reachable directly over Tailscale (no SSH tunnel needed — Ollama's server
+there already accepts connections on its Tailscale interface, not just
+`127.0.0.1`) at its stable Tailscale IP `100.69.192.40:11434` — confirmed
+reachable for both `/api/version` and a real `/api/embeddings` call
+(768-dimension response, matching what was measured locally). Configured
+via `OLLAMA_BASE_URL` in `pin-map/.env` (already an env-overridable
+constant in `tagPhoto.ts`, defaulting to `http://localhost:11434` when
+unset — no code change needed, just configuration). The local Ollama
+service on the MacBook Pro (`brew services stop ollama`) is stopped; this
+pipeline no longer needs Ollama installed locally at all, only network
+access to wherever `OLLAMA_BASE_URL` points. If Mac Studio's Tailscale IP
+ever changes, `tailscale status` reports the current one (its stable-IP
+guarantee is per-node for the life of that node, not permanent across a
+full reinstall).
 
 ### Embedding
 
