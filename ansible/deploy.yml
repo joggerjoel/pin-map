@@ -15,6 +15,25 @@
 # development is `bun run dev` on your own machine, entirely outside this
 # playbook. The only host deploy.yml can ever touch is whatever's listed
 # under pinmap_prod in your inventory.
+#
+# fb-import-relay + fb-import-upload (tusd) — opt-in, off by default.
+# Before this playbook existed, both were built and run by hand directly on
+# the prod host, from a directory that was never a git repo at all — the
+# whole-tree rsync below had already silently overwritten that directory's
+# source back down to an older, git-tracked copy by the time this was
+# caught (see the "Recover fb-import-relay..." commit). Wiring the
+# build/run steps into this playbook is what stops that from happening
+# again. Left conditional on three vars rather than unconditional so that
+# a deploy of just the main app keeps working without them:
+#
+#   fb_import_relay_supabase_url: "http://192.168.1.246:8000"
+#   fb_import_relay_supabase_anon_key: "..."     # same as VITE_SUPABASE_ANON_KEY
+#   fb_import_relay_mapbox_token: "pk...."        # a real Mapbox token — billable
+#
+# Add those three under pinmap_prod's `vars:` in inventory.local.yml (never
+# in this tracked file) to turn this section on. All three must be set —
+# any one missing skips the whole block, matching the service's own
+# requireEnv() philosophy of failing loudly rather than partially.
 - name: Deploy pin-map to production
   hosts: pinmap_prod
   gather_facts: true
@@ -24,6 +43,19 @@
     container_name: pin-map-web
     image_name: pin-map-web:latest
     container_port: 8090
+
+    fb_import_enabled: >-
+      {{ fb_import_relay_supabase_url is defined and
+         fb_import_relay_supabase_anon_key is defined and
+         fb_import_relay_mapbox_token is defined }}
+    fb_import_network: fb-import-net
+    fb_import_volume: fb-import-shared
+    fb_import_relay_container: pin-map-fb-import-relay
+    fb_import_relay_image: pin-map-fb-import-relay:latest
+    fb_import_relay_port: 8097
+    fb_import_upload_container: pin-map-fb-import-upload
+    fb_import_upload_image: tusproject/tusd:latest
+    fb_import_upload_port: 8096
   tasks:
     - name: Sync source to the server (excludes build artifacts and secrets)
       # Explicit -e "ssh ..." (rather than relying on the control machine's
@@ -61,6 +93,89 @@
           {{ image_name }}
       changed_when: true
 
+    # --- fb-import-relay + fb-import-upload (tusd) — see header comment ---
+
+    - name: Ensure the fb-import Docker network exists
+      ansible.builtin.command:
+        cmd: docker network create {{ fb_import_network }}
+      register: fb_import_net_result
+      failed_when: false
+      changed_when: fb_import_net_result.rc == 0
+      when: fb_import_enabled | bool
+
+    - name: Ensure the fb-import shared volume exists
+      ansible.builtin.command:
+        cmd: docker volume create {{ fb_import_volume }}
+      register: fb_import_vol_result
+      failed_when: false
+      changed_when: fb_import_vol_result.rc == 0
+      when: fb_import_enabled | bool
+
+    - name: Build the fb-import-relay Docker image
+      ansible.builtin.command:
+        cmd: docker build -t {{ fb_import_relay_image }} .
+        chdir: "{{ remote_project_dir }}/fb-import-relay"
+      changed_when: true
+      when: fb_import_enabled | bool
+
+    - name: Remove the previous fb-import-relay container (if any)
+      ansible.builtin.command:
+        cmd: docker rm -f {{ fb_import_relay_container }}
+      register: fb_import_relay_rm_result
+      failed_when: false
+      changed_when: fb_import_relay_rm_result.rc == 0
+      when: fb_import_enabled | bool
+
+    - name: Start the fb-import-relay container
+      # Bound to all interfaces (unlike the main app's loopback-only port),
+      # matching how it's actually run today — reachable directly over LAN
+      # and via whatever's fronting fb-import-relay.joggerjoel.com. Not
+      # tightened here since narrowing it could break that external path
+      # without knowing what's on the other end of it.
+      # no_log: the command line embeds the Mapbox token and Supabase anon
+      # key in plain text — never let those hit the playbook's own output.
+      ansible.builtin.command:
+        cmd: >-
+          docker run -d --name {{ fb_import_relay_container }}
+          --restart unless-stopped
+          --network {{ fb_import_network }}
+          -v {{ fb_import_volume }}:/data
+          -p {{ fb_import_relay_port }}:{{ fb_import_relay_port }}
+          -e PORT={{ fb_import_relay_port }}
+          -e UPLOAD_DIR=/data
+          -e SUPABASE_URL={{ fb_import_relay_supabase_url }}
+          -e SUPABASE_ANON_KEY={{ fb_import_relay_supabase_anon_key }}
+          -e MAPBOX_TOKEN={{ fb_import_relay_mapbox_token }}
+          {{ fb_import_relay_image }}
+      changed_when: true
+      no_log: true
+      when: fb_import_enabled | bool
+
+    - name: Remove the previous fb-import-upload (tusd) container (if any)
+      ansible.builtin.command:
+        cmd: docker rm -f {{ fb_import_upload_container }}
+      register: fb_import_upload_rm_result
+      failed_when: false
+      changed_when: fb_import_upload_rm_result.rc == 0
+      when: fb_import_enabled | bool
+
+    - name: Start the fb-import-upload (tusd) container
+      ansible.builtin.command:
+        cmd: >-
+          docker run -d --name {{ fb_import_upload_container }}
+          --restart unless-stopped
+          --network {{ fb_import_network }}
+          -v {{ fb_import_volume }}:/data
+          -p {{ fb_import_upload_port }}:8080
+          {{ fb_import_upload_image }}
+          -upload-dir=/data
+          -hooks-http=http://{{ fb_import_relay_container }}:{{ fb_import_relay_port }}/tusd-hook
+          -hooks-http-forward-headers=Authorization
+          -hooks-http-retry=1
+          -hooks-http-timeout=5s
+      changed_when: true
+      when: fb_import_enabled | bool
+
   post_tasks:
     - name: Wait for the container to answer locally
       ansible.builtin.uri:
@@ -71,6 +186,29 @@
       delay: 2
       until: health.status == 200
 
+    - name: Wait for fb-import-relay to answer locally
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ fb_import_relay_port }}/healthz"
+        status_code: 200
+      register: fb_import_health
+      retries: 10
+      delay: 2
+      until: fb_import_health.status == 200
+      when: fb_import_enabled | bool
+
     - name: Report
       ansible.builtin.debug:
         msg: "pin-map deployed and healthy on 127.0.0.1:{{ container_port }}"
+
+    - name: Report (fb-import-relay)
+      ansible.builtin.debug:
+        msg: "fb-import-relay deployed and healthy on :{{ fb_import_relay_port }}"
+      when: fb_import_enabled | bool
+
+    - name: Report (fb-import skipped)
+      ansible.builtin.debug:
+        msg: >-
+          fb-import-relay/upload skipped — fb_import_relay_supabase_url,
+          fb_import_relay_supabase_anon_key, and fb_import_relay_mapbox_token
+          aren't all set in inventory.local.yml. See this file's header.
+      when: not (fb_import_enabled | bool)
