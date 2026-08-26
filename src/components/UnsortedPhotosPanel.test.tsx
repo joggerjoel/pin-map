@@ -1,4 +1,10 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UnsortedPhotosPanel } from "./UnsortedPhotosPanel";
@@ -9,6 +15,9 @@ import type { PinnedPlace } from "../hooks/useGeocoder";
 vi.mock("../lib/photosRepository", () => ({
   fetchUnsortedPhotos: vi.fn(),
   assignPhotoPlace: vi.fn(),
+  skipPhoto: vi.fn(),
+  setPhotoLabel: vi.fn(),
+  PHOTO_LABEL_MAX_LENGTH: 100,
   unsortedPhotoUrl: vi.fn(
     (photo: UnsortedPhoto, variant: string) =>
       `https://cdn.example.com/${photo.storagePath}?${variant}`,
@@ -19,12 +28,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function photo(id: string, kind: "image" | "video" = "image"): UnsortedPhoto {
+function photo(
+  id: string,
+  kind: "image" | "video" = "image",
+  label: string | null = null,
+): UnsortedPhoto {
   return {
     id,
     storagePath: `user-1/${id}.${kind === "video" ? "mp4" : "jpg"}`,
     createdAt: "2026-01-01T00:00:00.000Z",
     kind,
+    label,
   };
 }
 
@@ -111,6 +125,37 @@ describe("UnsortedPhotosPanel", () => {
     expect(
       screen.getByRole("button", { name: /Assign unsorted video/ }),
     ).toBeInTheDocument();
+    // A visible, stable per-card label so a person can reference a
+    // specific photo when reporting a problem.
+    expect(screen.getByText("p0")).toBeInTheDocument();
+    expect(screen.getByText("p1")).toBeInTheDocument();
+  });
+
+  it("clicking a card's ID label copies the full ID to the clipboard", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      photo("p0"),
+    ]);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    // fireEvent, not userEvent, for this one: userEvent's pointer-position
+    // machinery misses this button in jsdom (zero-size bounding rect with
+    // no real layout engine) -- confirmed as a testing-library/jsdom
+    // interaction quirk, not an app bug (fireEvent.click and a real browser
+    // both fire it correctly; only userEvent's synthetic pointer sequence
+    // doesn't).
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Copy photo ID p0" }),
+    );
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("p0"));
+    expect(await screen.findByText("Copied p0")).toHaveAttribute(
+      "role",
+      "status",
+    );
   });
 
   it("clicking Preview calls onOpenLightbox with the untransformed URL", async () => {
@@ -267,10 +312,11 @@ describe("UnsortedPhotosPanel", () => {
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("Skip removes the photo without calling assignPhotoPlace or onAssigned", async () => {
+  it("Skip persists via skipPhoto, removes the photo, and doesn't touch assign", async () => {
     vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
       .mockResolvedValueOnce([photo("p0"), photo("p1")])
       .mockResolvedValueOnce([]);
+    vi.mocked(photosRepositoryModule.skipPhoto).mockResolvedValue("ok");
     const props = baseProps();
     const user = userEvent.setup();
 
@@ -283,15 +329,42 @@ describe("UnsortedPhotosPanel", () => {
       screen.getAllByRole("button", { name: /Skip unsorted photo/ })[0],
     );
 
-    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    await waitFor(() =>
+      expect(screen.getAllByRole("listitem")).toHaveLength(1),
+    );
+    expect(photosRepositoryModule.skipPhoto).toHaveBeenCalledWith("p0");
     expect(photosRepositoryModule.assignPhotoPlace).not.toHaveBeenCalled();
     expect(props.onAssigned).not.toHaveBeenCalled();
+    expect(await screen.findByText("Skipped")).toHaveAttribute(
+      "role",
+      "status",
+    );
+  });
+
+  it("a failed skip shows a notice and keeps the photo", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      photo("p0"),
+    ]);
+    vi.mocked(photosRepositoryModule.skipPhoto).mockResolvedValue("error");
+    const props = baseProps();
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...props} />);
+    await user.click(
+      await screen.findByRole("button", { name: /Skip unsorted photo/ }),
+    );
+
+    expect(
+      await screen.findByText("Couldn't skip — try again."),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
   });
 
   it("Skip on a video card works too and collapses an expanded row", async () => {
     vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
       photo("p0", "video"),
     ]);
+    vi.mocked(photosRepositoryModule.skipPhoto).mockResolvedValue("ok");
     const props = baseProps();
     const user = userEvent.setup();
 
@@ -305,7 +378,9 @@ describe("UnsortedPhotosPanel", () => {
       screen.getByRole("button", { name: /Skip unsorted video/ }),
     );
 
-    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("listitem")).not.toBeInTheDocument(),
+    );
     expect(screen.queryByPlaceholderText("Place name")).not.toBeInTheDocument();
   });
 
@@ -373,5 +448,81 @@ describe("UnsortedPhotosPanel", () => {
       resolveAssign("ok");
       await Promise.resolve();
     });
+  });
+
+  it("shows the custom label instead of the id prefix once one is set", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      photo("p0", "image", "the beach one"),
+    ]);
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+
+    expect(await screen.findByText("the beach one")).toBeInTheDocument();
+    expect(screen.queryByText("p0")).not.toBeInTheDocument();
+  });
+
+  it("renaming a photo: pencil opens a prefilled input, Enter saves it", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      photo("p0", "image", "old name"),
+    ]);
+    vi.mocked(photosRepositoryModule.setPhotoLabel).mockResolvedValue("ok");
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Rename photo p0" }),
+    );
+
+    const input = screen.getByDisplayValue("old name");
+    await user.clear(input);
+    await user.type(input, "new name{Enter}");
+
+    await waitFor(() =>
+      expect(photosRepositoryModule.setPhotoLabel).toHaveBeenCalledWith(
+        "p0",
+        "new name",
+      ),
+    );
+    expect(await screen.findByText("new name")).toBeInTheDocument();
+    expect(await screen.findByText("Renamed")).toHaveAttribute(
+      "role",
+      "status",
+    );
+  });
+
+  it("Escape cancels a rename without saving", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      photo("p0", "image", "old name"),
+    ]);
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Rename photo p0" }),
+    );
+    const input = screen.getByDisplayValue("old name");
+    await user.type(input, " more{Escape}");
+
+    expect(photosRepositoryModule.setPhotoLabel).not.toHaveBeenCalled();
+    expect(await screen.findByText("old name")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue(/old name/)).not.toBeInTheDocument();
+  });
+
+  it("a failed rename shows a notice", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      photo("p0"),
+    ]);
+    vi.mocked(photosRepositoryModule.setPhotoLabel).mockResolvedValue("error");
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Rename photo p0" }),
+    );
+    await user.type(screen.getByRole("textbox"), "x{Enter}");
+
+    expect(
+      await screen.findByText("Couldn't rename — try again."),
+    ).toBeInTheDocument();
   });
 });

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useUnsortedPhotos } from "../hooks/useUnsortedPhotos";
-import { unsortedPhotoUrl } from "../lib/photosRepository";
+import {
+  PHOTO_LABEL_MAX_LENGTH,
+  unsortedPhotoUrl,
+} from "../lib/photosRepository";
 import type { UnsortedPhoto } from "../lib/photosRepository";
 import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PinPlaceResult } from "../hooks/useGeocoder";
@@ -36,7 +39,11 @@ export function UnsortedPhotosPanel({
   const [searchText, setSearchText] = useState("");
   const [assignErrors, setAssignErrors] = useState<Record<string, string>>({});
   const [isAssigning, setIsAssigning] = useState(false);
+  const [skippingIds, setSkippingIds] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
+  const [labelDraft, setLabelDraft] = useState("");
+  const [isSavingLabel, setIsSavingLabel] = useState(false);
 
   const mountedRef = useRef(true);
   const isAssigningRef = useRef(false);
@@ -123,12 +130,63 @@ export function UnsortedPhotosPanel({
     });
   }, []);
 
-  const handleSkip = useCallback(
-    (photo: UnsortedPhoto) => {
-      unsorted.skip(photo);
-      collapseRow(photo.id);
+  const handleCopyId = useCallback(
+    async (photoId: string) => {
+      try {
+        await navigator.clipboard.writeText(photoId);
+        showNotice(`Copied ${photoId.slice(0, 8)}`);
+      } catch {
+        showNotice("Couldn't copy — select and copy the label text instead.");
+      }
     },
-    [unsorted, collapseRow],
+    [showNotice],
+  );
+
+  const startEditingLabel = useCallback((photo: UnsortedPhoto) => {
+    setEditingLabelId(photo.id);
+    setLabelDraft(photo.label ?? "");
+  }, []);
+
+  const cancelEditingLabel = useCallback(() => {
+    setEditingLabelId(null);
+    setLabelDraft("");
+  }, []);
+
+  const saveLabel = useCallback(
+    async (photo: UnsortedPhoto) => {
+      setIsSavingLabel(true);
+      const result = await unsorted.setLabel(photo, labelDraft);
+      if (!mountedRef.current) return;
+      setIsSavingLabel(false);
+      if (result === "ok") {
+        setEditingLabelId(null);
+        setLabelDraft("");
+        showNotice("Renamed");
+      } else {
+        showNotice("Couldn't rename — try again.");
+      }
+    },
+    [unsorted, labelDraft, showNotice],
+  );
+
+  const handleSkip = useCallback(
+    async (photo: UnsortedPhoto) => {
+      setSkippingIds((prev) => new Set(prev).add(photo.id));
+      const result = await unsorted.skip(photo);
+      if (!mountedRef.current) return;
+      setSkippingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(photo.id);
+        return next;
+      });
+      if (result === "ok" || result === "conflict") {
+        collapseRow(photo.id);
+        showNotice(result === "ok" ? "Skipped" : "Already handled elsewhere");
+      } else {
+        showNotice("Couldn't skip — try again.");
+      }
+    },
+    [unsorted, collapseRow, showNotice],
   );
 
   const resolveAssignment = useCallback(
@@ -268,6 +326,47 @@ export function UnsortedPhotosPanel({
                 const assignError = assignErrors[photo.id];
                 return (
                   <li key={photo.id} className="unsorted-photos-panel__card">
+                    {editingLabelId === photo.id ? (
+                      <input
+                        type="text"
+                        className="unsorted-photos-panel__card-label-input"
+                        value={labelDraft}
+                        autoFocus
+                        maxLength={PHOTO_LABEL_MAX_LENGTH}
+                        disabled={isSavingLabel}
+                        onChange={(event) => setLabelDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            void saveLabel(photo);
+                          } else if (event.key === "Escape") {
+                            cancelEditingLabel();
+                          }
+                        }}
+                        onBlur={() => {
+                          if (!isSavingLabel) cancelEditingLabel();
+                        }}
+                      />
+                    ) : (
+                      <div className="unsorted-photos-panel__card-label-row">
+                        <button
+                          type="button"
+                          className="unsorted-photos-panel__card-label"
+                          title={photo.id}
+                          aria-label={`Copy photo ID ${photo.id}`}
+                          onClick={() => void handleCopyId(photo.id)}
+                        >
+                          {photo.label ?? photo.id.slice(0, 8)}
+                        </button>
+                        <button
+                          type="button"
+                          className="unsorted-photos-panel__card-label-edit"
+                          aria-label={`Rename photo ${photo.id.slice(0, 8)}`}
+                          onClick={() => startEditingLabel(photo)}
+                        >
+                          ✏️
+                        </button>
+                      </div>
+                    )}
                     {photo.kind === "image" ? (
                       <>
                         <button
@@ -297,8 +396,11 @@ export function UnsortedPhotosPanel({
                           type="button"
                           className="unsorted-photos-panel__skip"
                           aria-label={`Skip unsorted photo for now`}
-                          disabled={expanded && isAssigning}
-                          onClick={() => handleSkip(photo)}
+                          disabled={
+                            (expanded && isAssigning) ||
+                            skippingIds.has(photo.id)
+                          }
+                          onClick={() => void handleSkip(photo)}
                         >
                           Skip
                         </button>
@@ -323,8 +425,11 @@ export function UnsortedPhotosPanel({
                           type="button"
                           className="unsorted-photos-panel__skip"
                           aria-label={`Skip unsorted video for now`}
-                          disabled={expanded && isAssigning}
-                          onClick={() => handleSkip(photo)}
+                          disabled={
+                            (expanded && isAssigning) ||
+                            skippingIds.has(photo.id)
+                          }
+                          onClick={() => void handleSkip(photo)}
                         >
                           Skip
                         </button>
