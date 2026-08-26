@@ -1803,7 +1803,8 @@ body {
 }
 
 .unsorted-photos-panel__skip,
-.unsorted-photos-panel__unskip {
+.unsorted-photos-panel__unskip,
+.unsorted-photos-panel__unassign {
   font-size: 0.8rem;
   color: #9ca3af;
   background: none;
@@ -1811,6 +1812,15 @@ body {
   border-radius: 4px;
   padding: 0.15rem 0;
   cursor: pointer;
+}
+
+.unsorted-photos-panel__card-place {
+  font-size: 0.7rem;
+  color: #9ca3af;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .unsorted-photos-panel__load-more {

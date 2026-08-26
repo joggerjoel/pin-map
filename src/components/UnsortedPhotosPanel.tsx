@@ -245,6 +245,30 @@ export function UnsortedPhotosPanel({
     [unsorted, showNotice, refetchTabCounts],
   );
 
+  const handleUnassign = useCallback(
+    async (photo: UnsortedPhoto) => {
+      setSkippingIds((prev) => new Set(prev).add(photo.id));
+      const result = await unsorted.unassign(photo);
+      if (!mountedRef.current) return;
+      setSkippingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(photo.id);
+        return next;
+      });
+      if (result === "ok" || result === "conflict") {
+        showNotice(
+          result === "ok"
+            ? "Moved back to Unassigned"
+            : "Already handled elsewhere",
+        );
+        refetchTabCounts();
+      } else {
+        showNotice("Couldn't unassign — try again.");
+      }
+    },
+    [unsorted, showNotice, refetchTabCounts],
+  );
+
   const resolveAssignment = useCallback(
     async (photo: UnsortedPhoto, placeQuery: string) => {
       isAssigningRef.current = true;
@@ -423,6 +447,7 @@ export function UnsortedPhotosPanel({
                 const assignError = assignErrors[photo.id];
                 const showAssignSkip = activeTab === "unassigned";
                 const showUnskip = activeTab === "skipped";
+                const showUnassign = activeTab === "assigned";
                 // Assigned photos are immutable via label_own's RLS (scoped
                 // to place_query is null) — editing here would silently
                 // no-op against a real backend rejection, so hide the entry
@@ -472,6 +497,11 @@ export function UnsortedPhotosPanel({
                           </button>
                         )}
                       </div>
+                    )}
+                    {photo.placeQuery !== null && (
+                      <p className="unsorted-photos-panel__card-place">
+                        {photo.placeQuery}
+                      </p>
                     )}
                     {photo.kind === "image" ? (
                       <>
@@ -523,6 +553,17 @@ export function UnsortedPhotosPanel({
                             onClick={() => void handleUnskip(photo)}
                           >
                             Unskip
+                          </button>
+                        )}
+                        {showUnassign && (
+                          <button
+                            type="button"
+                            className="unsorted-photos-panel__unassign"
+                            aria-label={`Unassign photo, moving it back to Unassigned`}
+                            disabled={skippingIds.has(photo.id)}
+                            onClick={() => void handleUnassign(photo)}
+                          >
+                            Unassign
                           </button>
                         )}
                       </>
@@ -585,6 +626,17 @@ export function UnsortedPhotosPanel({
                             onClick={() => void handleUnskip(photo)}
                           >
                             Unskip
+                          </button>
+                        )}
+                        {showUnassign && (
+                          <button
+                            type="button"
+                            className="unsorted-photos-panel__unassign"
+                            aria-label={`Unassign video, moving it back to Unassigned`}
+                            disabled={skippingIds.has(photo.id)}
+                            onClick={() => void handleUnassign(photo)}
+                          >
+                            Unassign
                           </button>
                         )}
                       </>

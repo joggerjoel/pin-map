@@ -7,6 +7,7 @@ import {
   fetchUnsortedPhotos,
   setPhotoLabel,
   skipPhoto,
+  unassignPhoto,
   unskipPhoto,
   unsortedPhotoUrl,
   uploadPhoto,
@@ -611,6 +612,50 @@ describe("unskipPhoto", () => {
     );
 
     await expect(unskipPhoto("photo-1")).resolves.toBe("error");
+  });
+});
+
+describe("unassignPhoto", () => {
+  it("returns 'ok' when the update affects a row", async () => {
+    const chain = createChain({ data: [{ id: "photo-1" }], error: null });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await unassignPhoto("photo-1")).toBe("ok");
+    expect(chain.update).toHaveBeenCalledWith({
+      place_query: null,
+      skipped_at: null,
+    });
+    expect(chain.eq).toHaveBeenCalledWith("id", "photo-1");
+    expect(chain.not).toHaveBeenCalledWith("place_query", "is", null);
+  });
+
+  it("returns 'conflict' when the update matches zero rows with no error", async () => {
+    const chain = createChain({ data: [], error: null });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await unassignPhoto("photo-1")).toBe("conflict");
+  });
+
+  it("returns 'error' on a resolved error", async () => {
+    const chain = createChain({ data: null, error: { message: "boom" } });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await unassignPhoto("photo-1")).toBe("error");
+  });
+
+  it("returns 'error' instead of throwing when the call rejects", async () => {
+    const chain = createRejectingChain();
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    await expect(unassignPhoto("photo-1")).resolves.toBe("error");
   });
 });
 

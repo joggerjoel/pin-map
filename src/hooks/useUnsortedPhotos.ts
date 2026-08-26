@@ -4,6 +4,7 @@ import {
   fetchUnsortedPhotos,
   setPhotoLabel,
   skipPhoto,
+  unassignPhoto,
   unskipPhoto,
 } from "../lib/photosRepository";
 import type {
@@ -29,6 +30,7 @@ export interface UseUnsortedPhotosResult {
   ) => Promise<"ok" | "conflict" | "error">;
   skip: (photo: UnsortedPhoto) => Promise<"ok" | "conflict" | "error">;
   unskip: (photo: UnsortedPhoto) => Promise<"ok" | "conflict" | "error">;
+  unassign: (photo: UnsortedPhoto) => Promise<"ok" | "conflict" | "error">;
   setLabel: (photo: UnsortedPhoto, label: string) => Promise<"ok" | "error">;
 }
 
@@ -132,8 +134,8 @@ export function useUnsortedPhotos(
   const hasMoreRef = useRef(hasMore);
   hasMoreRef.current = hasMore;
 
-  // Shared by assign/skip/unskip: all three remove one photo from the
-  // visible grid (each moves the photo to a *different* status than the
+  // Shared by assign/skip/unskip/unassign: all four remove one photo from
+  // the visible grid (each moves the photo to a *different* status than the
   // one this hook instance is currently showing) and, if that drains it
   // while more pages remain, trigger a refill of the same status/page.
   const removeFromView = useCallback(
@@ -190,9 +192,23 @@ export function useUnsortedPhotos(
     [removeFromView],
   );
 
-  // Unlike assign/skip/unskip, a label edit doesn't remove the photo from
-  // view — it updates that one photo's `label` in place, keeping every
-  // other photo's identity/reference untouched.
+  // Inverse of assign -- brings a photo from the Assigned view back to
+  // Unassigned, clearing any skip history in the same write (see
+  // schema_place_photos_unassign.sql).
+  const unassign = useCallback(
+    async (photo: UnsortedPhoto) => {
+      const result = await unassignPhoto(photo.id);
+      if (result === "ok" || result === "conflict") {
+        removeFromView(photo.id);
+      }
+      return result;
+    },
+    [removeFromView],
+  );
+
+  // Unlike assign/skip/unskip/unassign, a label edit doesn't remove the
+  // photo from view — it updates that one photo's `label` in place,
+  // keeping every other photo's identity/reference untouched.
   const setLabel = useCallback(async (photo: UnsortedPhoto, label: string) => {
     const result = await setPhotoLabel(photo.id, label);
     if (result === "ok") {
@@ -220,6 +236,7 @@ export function useUnsortedPhotos(
     assign,
     skip,
     unskip,
+    unassign,
     setLabel,
   };
 }

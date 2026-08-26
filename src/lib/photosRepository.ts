@@ -290,6 +290,31 @@ export async function unskipPhoto(
   }
 }
 
+// Clears both place_query and skipped_at in one write, always landing the
+// photo back in Unassigned regardless of skip history -- see
+// schema_place_photos_unassign.sql.
+export async function unassignPhoto(
+  photoId: string,
+): Promise<"ok" | "conflict" | "error"> {
+  try {
+    const { data, error } = await supabase
+      .from("pinmap_place_photos")
+      .update({ place_query: null, skipped_at: null })
+      .eq("id", photoId)
+      .not("place_query", "is", null)
+      .select("id");
+    if (error) {
+      return "error";
+    }
+    if (data === null || data.length === 0) {
+      return "conflict";
+    }
+    return "ok";
+  } catch {
+    return "error";
+  }
+}
+
 export async function setPhotoLabel(
   photoId: string,
   label: string,

@@ -18,6 +18,7 @@ vi.mock("../lib/photosRepository", () => ({
   assignPhotoPlace: vi.fn(),
   skipPhoto: vi.fn(),
   unskipPhoto: vi.fn(),
+  unassignPhoto: vi.fn(),
   setPhotoLabel: vi.fn(),
   PHOTO_LABEL_MAX_LENGTH: 100,
   unsortedPhotoUrl: vi.fn(
@@ -434,7 +435,7 @@ describe("UnsortedPhotosPanel", () => {
     );
   });
 
-  it("the Assigned tab is view-only: no Assign/Skip/Unskip buttons and no rename pencil", async () => {
+  it("the Assigned tab shows the place and an Unassign action, but no Assign/Skip/rename", async () => {
     vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
       .mockResolvedValueOnce([photo("p0")]) // unassigned (initial)
       .mockResolvedValueOnce([photo("p1", "image", null, "Paris")]); // assigned
@@ -446,6 +447,10 @@ describe("UnsortedPhotosPanel", () => {
     await user.click(screen.getByRole("tab", { name: /Assigned/ }));
 
     await screen.findByRole("button", { name: /Preview unsorted photo/ });
+    expect(screen.getByText("Paris")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Unassign photo/ }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Assign unsorted photo/ }),
     ).not.toBeInTheDocument();
@@ -458,6 +463,27 @@ describe("UnsortedPhotosPanel", () => {
     expect(
       screen.queryByRole("button", { name: /Rename photo/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("Unassign on the Assigned tab calls unassignPhoto and removes the photo from view", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
+      .mockResolvedValueOnce([]) // unassigned (initial)
+      .mockResolvedValueOnce([photo("p0", "image", null, "Paris")]); // assigned
+    vi.mocked(photosRepositoryModule.unassignPhoto).mockResolvedValue("ok");
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await screen.findByText("All caught up — nothing left to triage.");
+
+    await user.click(screen.getByRole("tab", { name: /Assigned/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /Unassign photo/ }),
+    );
+
+    expect(photosRepositoryModule.unassignPhoto).toHaveBeenCalledWith("p0");
+    await waitFor(() =>
+      expect(screen.queryByRole("listitem")).not.toBeInTheDocument(),
+    );
   });
 
   it("Unskip on the Skipped tab calls unskipPhoto and removes the photo from view", async () => {

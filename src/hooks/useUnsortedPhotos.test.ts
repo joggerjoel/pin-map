@@ -9,6 +9,7 @@ vi.mock("../lib/photosRepository", () => ({
   assignPhotoPlace: vi.fn(),
   skipPhoto: vi.fn(),
   unskipPhoto: vi.fn(),
+  unassignPhoto: vi.fn(),
   setPhotoLabel: vi.fn(),
 }));
 
@@ -304,6 +305,64 @@ describe("useUnsortedPhotos", () => {
       // eslint-disable-next-line no-await-in-loop
       await act(async () => {
         await result.current.unskip(p);
+      });
+    }
+
+    await waitFor(() =>
+      expect(photosRepositoryModule.fetchUnsortedPhotos).toHaveBeenCalledTimes(
+        2,
+      ),
+    );
+    expect(result.current.photos).toEqual([]);
+  });
+
+  it("unassign removes on 'ok'/'conflict', keeps on 'error'", async () => {
+    const p = photo("p0", "2026-01-01T00:00:00.000Z");
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      p,
+    ]);
+    const { result } = renderHook(() =>
+      useUnsortedPhotos("user-1", "assigned"),
+    );
+    await waitFor(() => expect(result.current.photos).toHaveLength(1));
+
+    vi.mocked(photosRepositoryModule.unassignPhoto).mockResolvedValueOnce(
+      "error",
+    );
+    await act(async () => {
+      const outcome = await result.current.unassign(p);
+      expect(outcome).toBe("error");
+    });
+    expect(result.current.photos).toHaveLength(1);
+    expect(photosRepositoryModule.unassignPhoto).toHaveBeenCalledWith(p.id);
+
+    vi.mocked(photosRepositoryModule.unassignPhoto).mockResolvedValueOnce(
+      "conflict",
+    );
+    await act(async () => {
+      await result.current.unassign(p);
+    });
+    expect(result.current.photos).toHaveLength(0);
+  });
+
+  it("unassigning away the last loaded photo while hasMore is true auto-triggers exactly one refill", async () => {
+    const fullPage = Array.from({ length: 60 }, (_, i) =>
+      photo(`p${i}`, `2026-01-01T00:00:0${i % 10}.000Z`),
+    );
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
+      .mockResolvedValueOnce(fullPage)
+      .mockResolvedValueOnce([]);
+    vi.mocked(photosRepositoryModule.unassignPhoto).mockResolvedValue("ok");
+
+    const { result } = renderHook(() =>
+      useUnsortedPhotos("user-1", "assigned"),
+    );
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+
+    for (const p of fullPage) {
+      // eslint-disable-next-line no-await-in-loop
+      await act(async () => {
+        await result.current.unassign(p);
       });
     }
 
