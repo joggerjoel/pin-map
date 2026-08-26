@@ -21,6 +21,12 @@ const ALLOWED_PATTERNS = [
   /^your_facebook_activity\/posts\/your_posts__check_ins__photos_and_videos_.*\.html$/,
   /^your_facebook_activity\/comments_and_reactions\/[^/]+\.html$/,
   /^your_facebook_activity\/posts\/media\/your_posts\//,
+  // A post's own photo batch lives in its own "Photos_{album_id}/"
+  // subdirectory rather than under "your_posts/" — verified against a real
+  // export: the post HTML's <a href> for an attached photo points here,
+  // not at the your_posts/ flat layout above (both exist side by side in
+  // the same zip).
+  /^your_facebook_activity\/posts\/media\/Photos_[^/]+\//,
 ];
 
 export function isAllowedZipPath(entryPath: string): boolean {
