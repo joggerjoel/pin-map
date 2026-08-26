@@ -25,6 +25,9 @@ function photo(id: string, createdAt: string): UnsortedPhoto {
     kind: "image",
     label: null,
     placeQuery: null,
+    skippedAt: null,
+    caption: null,
+    tags: null,
   };
 }
 
@@ -478,5 +481,30 @@ describe("useUnsortedPhotos", () => {
     });
 
     expect(result.current.photos[0].label).toBeNull();
+  });
+
+  it("threads the tag filter through to fetchUnsortedPhotos and re-fetches when it changes", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([]);
+    const { rerender } = renderHook(
+      ({ tag }: { tag?: "animal" | "untagged" }) =>
+        useUnsortedPhotos("user-1", "unassigned", tag),
+      { initialProps: { tag: undefined as "animal" | "untagged" | undefined } },
+    );
+    await waitFor(() =>
+      expect(photosRepositoryModule.fetchUnsortedPhotos).toHaveBeenCalledWith(
+        "user-1",
+        expect.objectContaining({ tag: undefined }),
+      ),
+    );
+
+    rerender({ tag: "animal" });
+    await waitFor(() =>
+      expect(
+        photosRepositoryModule.fetchUnsortedPhotos,
+      ).toHaveBeenLastCalledWith(
+        "user-1",
+        expect.objectContaining({ tag: "animal" }),
+      ),
+    );
   });
 });

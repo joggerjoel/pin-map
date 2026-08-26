@@ -1,23 +1,48 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useUnsortedPhotos } from "../hooks/useUnsortedPhotos";
+import { useSelection } from "../hooks/useSelection";
+import { useMassActions } from "../hooks/useMassActions";
+import { useSimilarPhotos } from "../hooks/useSimilarPhotos";
+import { PhotoGrid } from "./PhotoGrid";
+import { walkAllPages } from "../lib/pagination";
 import {
   PHOTO_LABEL_MAX_LENGTH,
+  PHOTO_TAG_TAXONOMY,
+  assignPhotoPlace,
+  createGroup as createGroupRepo,
+  fetchGroups,
   fetchUnsortedPhotoCount,
+  fetchUnsortedPhotos,
+  skipPhoto,
+  unassignPhoto,
+  unskipPhoto,
   unsortedPhotoUrl,
 } from "../lib/photosRepository";
-import type { PhotoTriageStatus, UnsortedPhoto } from "../lib/photosRepository";
+import type {
+  PhotoGroup,
+  PhotoTagFilter,
+  PhotoTriageStatus,
+  UnsortedPhoto,
+} from "../lib/photosRepository";
 import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PinPlaceResult } from "../hooks/useGeocoder";
 import { DEFAULT_TAG } from "./TagPicker";
 import type { PinTag } from "./TagPicker";
+import { MassActionToolbar } from "./MassActionToolbar";
 
 const NOTICE_DISMISS_MS = 2500;
 const MAX_MATCHES = 8;
+const PAGE_SIZE = 60;
 
 const TABS: { status: PhotoTriageStatus; label: string }[] = [
   { status: "unassigned", label: "Unassigned" },
   { status: "skipped", label: "Skipped" },
   { status: "assigned", label: "Assigned" },
+];
+
+const TAG_CHIPS: { value: PhotoTagFilter; label: string }[] = [
+  ...PHOTO_TAG_TAXONOMY.map((tag) => ({ value: tag, label: tag })),
+  { value: "untagged", label: "Untagged" },
 ];
 
 export interface UnsortedPhotosPanelProps {
@@ -42,7 +67,10 @@ export function UnsortedPhotosPanel({
   onClose,
 }: UnsortedPhotosPanelProps) {
   const [activeTab, setActiveTab] = useState<PhotoTriageStatus>("unassigned");
-  const unsorted = useUnsortedPhotos(userId, activeTab);
+  const [tagFilter, setTagFilter] = useState<PhotoTagFilter | undefined>(
+    undefined,
+  );
+  const unsorted = useUnsortedPhotos(userId, activeTab, tagFilter);
   const [expandedPhotoId, setExpandedPhotoId] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
   const [assignErrors, setAssignErrors] = useState<Record<string, string>>({});
@@ -55,6 +83,40 @@ export function UnsortedPhotosPanel({
   const [tabCounts, setTabCounts] = useState<
     Record<PhotoTriageStatus, number | null>
   >({ unassigned: null, skipped: null, assigned: null });
+
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const selection = useSelection();
+  const [walkedSelection, setWalkedSelection] = useState<
+    UnsortedPhoto[] | null
+  >(null);
+  const [isSelectingAll, setIsSelectingAll] = useState(false);
+  const massActions = useMassActions();
+  const [groups, setGroups] = useState<PhotoGroup[]>([]);
+  // Filters "more like this" results to the current tab's status, the same
+  // way every other status-scoped part of this panel works -- results
+  // outside the active tab exist (the RPC isn't status-aware) but aren't
+  // shown here.
+  const similar = useSimilarPhotos((candidate) => {
+    if (activeTab === "unassigned") {
+      return candidate.placeQuery === null && candidate.skippedAt === null;
+    }
+    if (activeTab === "skipped") {
+      return candidate.placeQuery === null && candidate.skippedAt !== null;
+    }
+    return candidate.placeQuery !== null;
+  });
+  // Which looped action last ran, so "Retry N failed" replays the exact
+  // same action rather than guessing one from the current tab -- Assign
+  // and Skip are both valid on an all-Unassigned selection, so the tab
+  // alone can't disambiguate which of the two actually produced the
+  // failures being retried.
+  const lastLoopedActionRef = useRef<
+    | { kind: "assign"; placeQuery: string }
+    | { kind: "skip" }
+    | { kind: "unskip" }
+    | { kind: "unassign" }
+    | null
+  >(null);
 
   const mountedRef = useRef(true);
   const isAssigningRef = useRef(false);
@@ -75,18 +137,31 @@ export function UnsortedPhotosPanel({
   // Tab counts are their own fetch, independent of the sidebar's
   // "Unsorted (N)" badge (useUnsortedPhotoCount) — that hook only ever
   // tracks the unassigned count and has its own refetch-on-focus timing.
+  // Reflects the active tag filter too, so a tab's own badge and the
+  // "Select all N" control (which uses this same count) never disagree.
   const refetchTabCounts = useCallback(() => {
     TABS.forEach(({ status }) => {
-      fetchUnsortedPhotoCount(userId, status).then((count) => {
+      fetchUnsortedPhotoCount(userId, status, tagFilter).then((count) => {
         if (!mountedRef.current) return;
         setTabCounts((prev) => ({ ...prev, [status]: count }));
       });
     });
-  }, [userId]);
+  }, [userId, tagFilter]);
 
   useEffect(() => {
     refetchTabCounts();
   }, [refetchTabCounts]);
+
+  const refetchGroups = useCallback(() => {
+    fetchGroups(userId).then((result) => {
+      if (!mountedRef.current || result === null) return;
+      setGroups(result);
+    });
+  }, [userId]);
+
+  useEffect(() => {
+    refetchGroups();
+  }, [refetchGroups]);
 
   const isCurrentTabEmpty =
     unsorted.photos.length === 0 &&
@@ -319,6 +394,12 @@ export function UnsortedPhotosPanel({
     [onPinPlace, resolveAssignment],
   );
 
+  const clearSelection = useCallback(() => {
+    selection.clear();
+    setWalkedSelection(null);
+    massActions.clearSummary();
+  }, [selection, massActions]);
+
   function handleTabChange(status: PhotoTriageStatus) {
     if (status === activeTab) return;
     setActiveTab(status);
@@ -327,6 +408,14 @@ export function UnsortedPhotosPanel({
     setAssignErrors({});
     setEditingLabelId(null);
     setLabelDraft("");
+    clearSelection();
+    similar.exit();
+  }
+
+  function handleTagFilterChange(next: PhotoTagFilter | undefined) {
+    if (next === tagFilter) return;
+    setTagFilter(next);
+    clearSelection();
   }
 
   function toggleExpand(photoId: string) {
@@ -348,6 +437,179 @@ export function UnsortedPhotosPanel({
           )
           .slice(0, MAX_MATCHES)
       : [];
+
+  // Manual selection is always drawn from what's on screen -- a checkbox
+  // can only ever be next to a rendered card. "Select all N" is the one
+  // case that can exceed the current page, so its walked full-row result
+  // takes precedence over deriving rows from `unsorted.photos` whenever
+  // it's present. Cleared by any manual toggle, by a tab/tag change, or
+  // once a batch completes.
+  const selectedRows: UnsortedPhoto[] =
+    walkedSelection ??
+    unsorted.photos.filter((photo) => selection.isSelected(photo.id));
+
+  const handleToggleSelect = useCallback(
+    (photoId: string) => {
+      setWalkedSelection(null);
+      selection.toggle(photoId);
+    },
+    [selection],
+  );
+
+  const handleSelectAllRequest = useCallback(async () => {
+    setIsSelectingAll(true);
+    const rows = await walkAllPages(
+      (after) =>
+        fetchUnsortedPhotos(userId, {
+          limit: PAGE_SIZE,
+          after,
+          status: activeTab,
+          tag: tagFilter,
+        }),
+      PAGE_SIZE,
+    );
+    if (!mountedRef.current) return;
+    setIsSelectingAll(false);
+    if (rows === null) {
+      showNotice("Couldn't select all — try again.");
+      return;
+    }
+    selection.selectAll(rows.map((row) => row.id));
+    setWalkedSelection(rows);
+  }, [userId, activeTab, tagFilter, selection, showNotice]);
+
+  // Deliberately does NOT clear massActions.summary/failedRows -- doing so
+  // here would hide "Retry N failed" the instant the batch that produced
+  // it finishes, before the user ever sees it. Only the (now-stale)
+  // checkbox selection is cleared; the summary stays until the user
+  // dismisses it or retries.
+  const afterMassActionBatch = useCallback(() => {
+    selection.clear();
+    setWalkedSelection(null);
+    unsorted.retry();
+    refetchTabCounts();
+    refetchGroups();
+  }, [selection, unsorted, refetchTabCounts, refetchGroups]);
+
+  const handleMassAssign = useCallback(
+    (placeQuery: string) => {
+      lastLoopedActionRef.current = { kind: "assign", placeQuery };
+      void massActions
+        .runLooped(selectedRows, (row) => assignPhotoPlace(row.id, placeQuery))
+        .then(afterMassActionBatch);
+    },
+    [massActions, selectedRows, afterMassActionBatch],
+  );
+
+  const handleMassSkip = useCallback(() => {
+    lastLoopedActionRef.current = { kind: "skip" };
+    void massActions
+      .runLooped(selectedRows, (row) => skipPhoto(row.id))
+      .then(afterMassActionBatch);
+  }, [massActions, selectedRows, afterMassActionBatch]);
+
+  const handleMassUnskip = useCallback(() => {
+    lastLoopedActionRef.current = { kind: "unskip" };
+    void massActions
+      .runLooped(selectedRows, (row) => unskipPhoto(row.id))
+      .then(afterMassActionBatch);
+  }, [massActions, selectedRows, afterMassActionBatch]);
+
+  const handleMassUnassign = useCallback(() => {
+    lastLoopedActionRef.current = { kind: "unassign" };
+    void massActions
+      .runLooped(selectedRows, (row) => unassignPhoto(row.id))
+      .then(afterMassActionBatch);
+  }, [massActions, selectedRows, afterMassActionBatch]);
+
+  const handleAddToGroup = useCallback(
+    (groupId: string) => {
+      void massActions
+        .runAddToGroup(
+          groupId,
+          selectedRows.map((row) => row.id),
+        )
+        .then(afterMassActionBatch);
+    },
+    [massActions, selectedRows, afterMassActionBatch],
+  );
+
+  const handleCreateGroupAndAdd = useCallback(
+    async (name: string) => {
+      const result = await createGroupRepo(userId, name);
+      if (!mountedRef.current) return;
+      if (result === "invalid") {
+        showNotice("Group name can't be blank or over 100 characters.");
+        return;
+      }
+      if (result === "limit") {
+        showNotice("Group limit reached (200 per account).");
+        return;
+      }
+      if (result === "error") {
+        showNotice("Couldn't create group — try again.");
+        return;
+      }
+      handleAddToGroup(result.id);
+    },
+    [userId, handleAddToGroup, showNotice],
+  );
+
+  // Replays the exact action that produced these failures -- tracked
+  // explicitly in lastLoopedActionRef, not guessed from the active tab
+  // (Assign and Skip are both valid on an all-Unassigned selection, so the
+  // tab alone can't tell them apart).
+  const handleRetryFailed = useCallback(() => {
+    const rows = massActions.failedRows as UnsortedPhoto[];
+    const lastAction = lastLoopedActionRef.current;
+    if (lastAction === null) return;
+    if (lastAction.kind === "assign") {
+      const { placeQuery } = lastAction;
+      void massActions
+        .runLooped(rows, (row) => assignPhotoPlace(row.id, placeQuery))
+        .then(afterMassActionBatch);
+    } else if (lastAction.kind === "skip") {
+      void massActions
+        .runLooped(rows, (row) => skipPhoto(row.id))
+        .then(afterMassActionBatch);
+    } else if (lastAction.kind === "unskip") {
+      void massActions
+        .runLooped(rows, (row) => unskipPhoto(row.id))
+        .then(afterMassActionBatch);
+    } else {
+      void massActions
+        .runLooped(rows, (row) => unassignPhoto(row.id))
+        .then(afterMassActionBatch);
+    }
+  }, [massActions, afterMassActionBatch]);
+
+  if (similar.isActive) {
+    const backLabel = `‹ Back to ${TABS.find((t) => t.status === activeTab)?.label ?? "Unassigned"}`;
+    return (
+      <div className="unsorted-photos-panel">
+        <button type="button" onClick={similar.exit}>
+          {backLabel}
+        </button>
+        <p>
+          Showing {similar.results.length} of {similar.totalReturned} similar
+          photos
+        </p>
+        {similar.isLoading ? (
+          <p>Loading…</p>
+        ) : (
+          <PhotoGrid
+            photos={similar.results}
+            isSelectMode={false}
+            isSelected={() => false}
+            onToggleSelect={() => {}}
+            onOpenLightbox={onOpenLightbox}
+            onMoreLikeThis={similar.enter}
+            showRemoveButton={false}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="unsorted-photos-panel">
@@ -385,6 +647,82 @@ export function UnsortedPhotosPanel({
           );
         })}
       </div>
+
+      <div
+        className="unsorted-photos-panel__tag-chips"
+        role="group"
+        aria-label="Filter by tag"
+      >
+        <button
+          type="button"
+          className={
+            tagFilter === undefined
+              ? "unsorted-photos-panel__tag-chip unsorted-photos-panel__tag-chip--active"
+              : "unsorted-photos-panel__tag-chip"
+          }
+          onClick={() => handleTagFilterChange(undefined)}
+        >
+          All
+        </button>
+        {TAG_CHIPS.map(({ value, label }) => (
+          <button
+            key={value}
+            type="button"
+            className={
+              tagFilter === value
+                ? "unsorted-photos-panel__tag-chip unsorted-photos-panel__tag-chip--active"
+                : "unsorted-photos-panel__tag-chip"
+            }
+            onClick={() => handleTagFilterChange(value)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        className="unsorted-photos-panel__select-toggle"
+        aria-pressed={isSelectMode}
+        onClick={() => {
+          setIsSelectMode((v) => !v);
+          clearSelection();
+        }}
+      >
+        {isSelectMode ? "Done selecting" : "Select"}
+      </button>
+
+      {isSelectMode &&
+        (selectedRows.length > 0 || massActions.summary !== null) && (
+          <MassActionToolbar
+            selectedRows={selectedRows.map((row) => ({
+              id: row.id,
+              placeQuery: row.placeQuery,
+              skippedAt: row.skippedAt,
+            }))}
+            onClearSelection={clearSelection}
+            totalMatchingCount={tabCounts[activeTab]}
+            onSelectAllRequest={() => void handleSelectAllRequest()}
+            isSelectingAll={isSelectingAll}
+            groups={groups}
+            showRemoveFromGroup={false}
+            onAddToGroup={handleAddToGroup}
+            onCreateGroupAndAdd={(name) => void handleCreateGroupAndAdd(name)}
+            onRemoveFromGroup={() => {}}
+            pinnedPlaces={pinnedPlaces}
+            canCreatePin={canCreatePin}
+            onCreatePin={(query) => onPinPlace(query, DEFAULT_TAG)}
+            onMassAssign={handleMassAssign}
+            onMassSkip={handleMassSkip}
+            onMassUnskip={handleMassUnskip}
+            onMassUnassign={handleMassUnassign}
+            isRunning={massActions.isRunning}
+            summary={massActions.summary}
+            failedCount={massActions.failedRows.length}
+            onRetryFailed={handleRetryFailed}
+            onDismissSummary={massActions.clearSummary}
+          />
+        )}
 
       {notice !== null && (
         <div
@@ -455,6 +793,15 @@ export function UnsortedPhotosPanel({
                 const canEditLabel = activeTab !== "assigned";
                 return (
                   <li key={photo.id} className="unsorted-photos-panel__card">
+                    {isSelectMode && (
+                      <input
+                        type="checkbox"
+                        className="unsorted-photos-panel__card-checkbox"
+                        aria-label={`Select photo ${photo.id.slice(0, 8)}`}
+                        checked={selection.isSelected(photo.id)}
+                        onChange={() => handleToggleSelect(photo.id)}
+                      />
+                    )}
                     {editingLabelId === photo.id ? (
                       <input
                         type="text"
@@ -502,6 +849,15 @@ export function UnsortedPhotosPanel({
                       <p className="unsorted-photos-panel__card-place">
                         {photo.placeQuery}
                       </p>
+                    )}
+                    {photo.caption !== null && (
+                      <button
+                        type="button"
+                        className="unsorted-photos-panel__more-like-this"
+                        onClick={() => similar.enter(photo)}
+                      >
+                        More like this
+                      </button>
                     )}
                     {photo.kind === "image" ? (
                       <>

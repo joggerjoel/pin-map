@@ -8,6 +8,7 @@ import {
   unskipPhoto,
 } from "../lib/photosRepository";
 import type {
+  PhotoTagFilter,
   PhotoTriageStatus,
   UnsortedPhoto,
   UnsortedPhotoCursor,
@@ -37,6 +38,7 @@ export interface UseUnsortedPhotosResult {
 export function useUnsortedPhotos(
   userId: string,
   status: PhotoTriageStatus = "unassigned",
+  tag?: PhotoTagFilter,
 ): UseUnsortedPhotosResult {
   const [photos, setPhotos] = useState<UnsortedPhoto[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -51,6 +53,8 @@ export function useUnsortedPhotos(
   const isInitialLoadingRef = useRef(true);
   const statusRef = useRef(status);
   statusRef.current = status;
+  const tagRef = useRef(tag);
+  tagRef.current = tag;
   // The count backing the "did this assign drain the grid?" check in
   // `assign`, updated synchronously and independent of React's state/render
   // timing — `photos` (state) is the source of truth for what renders, but
@@ -71,6 +75,7 @@ export function useUnsortedPhotos(
       limit: PAGE_SIZE,
       after: null,
       status: statusRef.current,
+      tag: tagRef.current,
     }).then((result) => {
       if (generationRef.current !== generation) return;
       isInitialLoadingRef.current = false;
@@ -92,7 +97,7 @@ export function useUnsortedPhotos(
   useEffect(() => {
     loadInitial();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, status]);
+  }, [userId, status, tag]);
 
   const loadMore = useCallback(() => {
     if (isLoadingMoreRef.current || isInitialLoadingRef.current) {
@@ -105,6 +110,7 @@ export function useUnsortedPhotos(
       limit: PAGE_SIZE,
       after: cursorRef.current,
       status: statusRef.current,
+      tag: tagRef.current,
     }).then((result) => {
       isLoadingMoreRef.current = false;
       if (generationRef.current !== generation) return;

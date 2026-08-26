@@ -23,6 +23,8 @@ import { ImportsPanel } from "./components/ImportsPanel";
 import { PlaceInput } from "./components/PlaceInput";
 import { PlaceList } from "./components/PlaceList";
 import { UnsortedPhotosPanel } from "./components/UnsortedPhotosPanel";
+import { BrowsePanel } from "./components/BrowsePanel";
+import { GroupsPanel } from "./components/GroupsPanel";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { MapView } from "./components/MapView";
 import type { MapSelection } from "./components/MapView";
@@ -75,6 +77,8 @@ export function App() {
   const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
   const [showImports, setShowImports] = useState(false);
   const [showUnsortedPhotos, setShowUnsortedPhotos] = useState(false);
+  const [showBrowse, setShowBrowse] = useState(false);
+  const [showGroups, setShowGroups] = useState(false);
   const selectionNonceRef = useRef(0);
   const removalNonce = useRef(0);
   const sidebarLayout = useSidebarLayout();
@@ -282,6 +286,8 @@ export function App() {
               className="app__imports-toggle"
               onClick={() => {
                 setShowUnsortedPhotos(false);
+                setShowBrowse(false);
+                setShowGroups(false);
                 setShowImports(true);
               }}
             >
@@ -296,6 +302,9 @@ export function App() {
                 className="app__unsorted-toggle"
                 onClick={() => {
                   unsortedCount.refetch();
+                  setShowImports(false);
+                  setShowBrowse(false);
+                  setShowGroups(false);
                   setShowUnsortedPhotos(true);
                 }}
               >
@@ -304,6 +313,34 @@ export function App() {
                   : `Unsorted (${unsortedCount.totalCount})`}
               </button>
             )}
+          {auth.status === "signed-in" && (
+            <button
+              type="button"
+              className="app__browse-toggle"
+              onClick={() => {
+                setShowImports(false);
+                setShowUnsortedPhotos(false);
+                setShowGroups(false);
+                setShowBrowse(true);
+              }}
+            >
+              Browse
+            </button>
+          )}
+          {auth.status === "signed-in" && (
+            <button
+              type="button"
+              className="app__groups-toggle"
+              onClick={() => {
+                setShowImports(false);
+                setShowUnsortedPhotos(false);
+                setShowBrowse(false);
+                setShowGroups(true);
+              }}
+            >
+              Groups
+            </button>
+          )}
           {auth.status === "signed-in" && (
             <button
               type="button"
@@ -354,69 +391,113 @@ export function App() {
               onClose={() => setShowUnsortedPhotos(false)}
             />
           )}
-        {auth.status === "signed-in" && !showUnsortedPhotos && (
-          <>
-            {effectiveToken !== null ? (
-              <>
-                <AddPin
-                  onAdd={(city, tag) =>
-                    geocoder.pinPlace(
-                      city,
-                      tag.kind === "category"
-                        ? { category: tag.value }
-                        : tag.kind === "icon"
-                          ? { icon: tag.value }
-                          : { customTag: tag.value },
-                    )
-                  }
-                  isLoading={geocoder.isLoading}
-                  customTags={customTags}
-                  onCreateCustomTag={handleCreateCustomTag}
-                  builtinAppearance={builtinAppearance}
-                  onEditBuiltinTag={handleEditBuiltinTag}
-                  onEditCustomTag={handleEditCustomTag}
-                />
-                <PlaceInput
-                  onSubmit={geocoder.pinPlaces}
-                  isLoading={geocoder.isLoading}
-                  removedPlace={lastRemoval}
-                />
-              </>
-            ) : (
-              <p className="app__no-token-notice">
-                Connect a Mapbox token to add new places or move pins on the
-                map. Your existing places below can still be edited, tagged, and
-                reordered.
-              </p>
-            )}
-            {geocoder.error !== null && (
-              <ErrorBanner message={geocoder.error} onRetry={geocoder.retry} />
-            )}
-            <PlaceList
-              pinnedPlaces={geocoder.pinnedPlaces}
-              failedLines={geocoder.failedLines}
-              onSelect={handleSelect}
-              onRemove={(query) => {
-                geocoder.removePlace(query);
-                removalNonce.current += 1;
-                setLastRemoval({ query, nonce: removalNonce.current });
-              }}
-              onChangeTag={geocoder.changeTag}
-              highlightedQuery={highlightedQuery}
-              customTags={customTags}
-              onCreateCustomTag={handleCreateCustomTag}
-              onReorder={geocoder.reorderPlaces}
-              onRelocate={geocoder.relocatePlace}
-              onSetLocation={geocoder.setLocation}
-              builtinAppearance={builtinAppearance}
-              onEditBuiltinTag={handleEditBuiltinTag}
-              onEditCustomTag={handleEditCustomTag}
-              photosByQuery={photos.photosByQuery}
-              onAddPhoto={photos.addPhoto}
-              onRemovePhoto={photos.removePhoto}
-            />
-          </>
+        {auth.status === "signed-in" && showBrowse && userId !== null && (
+          <BrowsePanel
+            userId={userId}
+            pinnedPlaces={geocoder.pinnedPlaces}
+            canCreatePin={effectiveToken !== null}
+            onPinPlace={(query, tag) =>
+              geocoder.pinPlaceSilent(
+                query,
+                tag.kind === "category"
+                  ? { category: tag.value }
+                  : tag.kind === "icon"
+                    ? { icon: tag.value }
+                    : { customTag: tag.value },
+              )
+            }
+            onOpenLightbox={openPhotoLightbox}
+            onClose={() => setShowBrowse(false)}
+          />
         )}
+        {auth.status === "signed-in" && showGroups && userId !== null && (
+          <GroupsPanel
+            userId={userId}
+            pinnedPlaces={geocoder.pinnedPlaces}
+            canCreatePin={effectiveToken !== null}
+            onPinPlace={(query, tag) =>
+              geocoder.pinPlaceSilent(
+                query,
+                tag.kind === "category"
+                  ? { category: tag.value }
+                  : tag.kind === "icon"
+                    ? { icon: tag.value }
+                    : { customTag: tag.value },
+              )
+            }
+            onOpenLightbox={openPhotoLightbox}
+            onClose={() => setShowGroups(false)}
+          />
+        )}
+        {auth.status === "signed-in" &&
+          !showUnsortedPhotos &&
+          !showBrowse &&
+          !showGroups && (
+            <>
+              {effectiveToken !== null ? (
+                <>
+                  <AddPin
+                    onAdd={(city, tag) =>
+                      geocoder.pinPlace(
+                        city,
+                        tag.kind === "category"
+                          ? { category: tag.value }
+                          : tag.kind === "icon"
+                            ? { icon: tag.value }
+                            : { customTag: tag.value },
+                      )
+                    }
+                    isLoading={geocoder.isLoading}
+                    customTags={customTags}
+                    onCreateCustomTag={handleCreateCustomTag}
+                    builtinAppearance={builtinAppearance}
+                    onEditBuiltinTag={handleEditBuiltinTag}
+                    onEditCustomTag={handleEditCustomTag}
+                  />
+                  <PlaceInput
+                    onSubmit={geocoder.pinPlaces}
+                    isLoading={geocoder.isLoading}
+                    removedPlace={lastRemoval}
+                  />
+                </>
+              ) : (
+                <p className="app__no-token-notice">
+                  Connect a Mapbox token to add new places or move pins on the
+                  map. Your existing places below can still be edited, tagged,
+                  and reordered.
+                </p>
+              )}
+              {geocoder.error !== null && (
+                <ErrorBanner
+                  message={geocoder.error}
+                  onRetry={geocoder.retry}
+                />
+              )}
+              <PlaceList
+                pinnedPlaces={geocoder.pinnedPlaces}
+                failedLines={geocoder.failedLines}
+                onSelect={handleSelect}
+                onRemove={(query) => {
+                  geocoder.removePlace(query);
+                  removalNonce.current += 1;
+                  setLastRemoval({ query, nonce: removalNonce.current });
+                }}
+                onChangeTag={geocoder.changeTag}
+                highlightedQuery={highlightedQuery}
+                customTags={customTags}
+                onCreateCustomTag={handleCreateCustomTag}
+                onReorder={geocoder.reorderPlaces}
+                onRelocate={geocoder.relocatePlace}
+                onSetLocation={geocoder.setLocation}
+                builtinAppearance={builtinAppearance}
+                onEditBuiltinTag={handleEditBuiltinTag}
+                onEditCustomTag={handleEditCustomTag}
+                photosByQuery={photos.photosByQuery}
+                onAddPhoto={photos.addPhoto}
+                onRemovePhoto={photos.removePhoto}
+              />
+            </>
+          )}
       </aside>
       <div
         className="app__splitter"

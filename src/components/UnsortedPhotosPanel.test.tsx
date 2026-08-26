@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,7 +21,21 @@ vi.mock("../lib/photosRepository", () => ({
   unskipPhoto: vi.fn(),
   unassignPhoto: vi.fn(),
   setPhotoLabel: vi.fn(),
+  fetchGroups: vi.fn(),
+  createGroup: vi.fn(),
+  addPhotosToGroup: vi.fn(),
+  removePhotosFromGroup: vi.fn(),
+  findSimilarPhotos: vi.fn(),
   PHOTO_LABEL_MAX_LENGTH: 100,
+  PHOTO_TAG_TAXONOMY: [
+    "landscape",
+    "people",
+    "screenshot",
+    "document",
+    "food",
+    "animal",
+    "other",
+  ],
   unsortedPhotoUrl: vi.fn(
     (photo: UnsortedPhoto, variant: string) =>
       `https://cdn.example.com/${photo.storagePath}?${variant}`,
@@ -34,6 +49,8 @@ beforeEach(() => {
   vi.mocked(photosRepositoryModule.fetchUnsortedPhotoCount).mockResolvedValue(
     0,
   );
+  // Same reasoning for the "My Groups" fetch the panel now issues on mount.
+  vi.mocked(photosRepositoryModule.fetchGroups).mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -53,6 +70,9 @@ function photo(
     kind,
     label,
     placeQuery,
+    skippedAt: null,
+    caption: null,
+    tags: null,
   };
 }
 
@@ -666,5 +686,209 @@ describe("UnsortedPhotosPanel", () => {
     expect(
       await screen.findByText("Couldn't rename — try again."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("UnsortedPhotosPanel tag filter", () => {
+  it("clicking a tag chip re-fetches with that tag, narrowing the active tab", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([]);
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await screen.findByText("All caught up — nothing left to triage.");
+
+    await user.click(screen.getByRole("button", { name: "animal" }));
+
+    await waitFor(() =>
+      expect(
+        photosRepositoryModule.fetchUnsortedPhotos,
+      ).toHaveBeenLastCalledWith(
+        "user-1",
+        expect.objectContaining({ status: "unassigned", tag: "animal" }),
+      ),
+    );
+  });
+
+  it("the 'Untagged' chip filters via the reserved 'untagged' value", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([]);
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await screen.findByText("All caught up — nothing left to triage.");
+
+    await user.click(screen.getByRole("button", { name: "Untagged" }));
+
+    await waitFor(() =>
+      expect(
+        photosRepositoryModule.fetchUnsortedPhotos,
+      ).toHaveBeenLastCalledWith(
+        "user-1",
+        expect.objectContaining({ tag: "untagged" }),
+      ),
+    );
+  });
+
+  it("clicking 'All' after a chip clears the tag filter", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([]);
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await screen.findByText("All caught up — nothing left to triage.");
+    await user.click(screen.getByRole("button", { name: "food" }));
+    await user.click(screen.getByRole("button", { name: "All" }));
+
+    await waitFor(() =>
+      expect(
+        photosRepositoryModule.fetchUnsortedPhotos,
+      ).toHaveBeenLastCalledWith(
+        "user-1",
+        expect.objectContaining({ tag: undefined }),
+      ),
+    );
+  });
+});
+
+describe("UnsortedPhotosPanel mass actions", () => {
+  it("Select mode shows a checkbox per card; toggling one selects it", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      photo("p0"),
+      photo("p1"),
+    ]);
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await screen.findByText("p0");
+    await user.click(screen.getByRole("button", { name: "Select" }));
+
+    const checkboxes = screen.getAllByRole("checkbox");
+    expect(checkboxes).toHaveLength(2);
+    await user.click(checkboxes[0]);
+    expect(checkboxes[0]).toBeChecked();
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+  });
+
+  it("a homogeneous all-unassigned selection offers Assign and Skip, and Mass Skip calls skipPhoto per selected photo", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      photo("p0"),
+      photo("p1"),
+    ]);
+    vi.mocked(photosRepositoryModule.skipPhoto).mockResolvedValue("ok");
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await screen.findByText("p0");
+    await user.click(screen.getByRole("button", { name: "Select" }));
+    const checkboxes = screen.getAllByRole("checkbox");
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+
+    // Disambiguate from the per-card "Skip" buttons that already exist on
+    // each unassigned card -- only the toolbar's own Skip button lives
+    // inside role="toolbar".
+    const toolbar = within(screen.getByRole("toolbar"));
+    await user.click(toolbar.getByText("Skip"));
+
+    await waitFor(() =>
+      expect(photosRepositoryModule.skipPhoto).toHaveBeenCalledTimes(2),
+    );
+    expect(photosRepositoryModule.skipPhoto).toHaveBeenCalledWith("p0");
+    expect(photosRepositoryModule.skipPhoto).toHaveBeenCalledWith("p1");
+  });
+
+  it("'Select all N' walks every page via fetchUnsortedPhotos, not just the on-screen page", async () => {
+    const manyPhotos = Array.from({ length: 3 }, (_, i) => photo(`p${i}`));
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
+      .mockResolvedValueOnce(manyPhotos)
+      .mockResolvedValueOnce(manyPhotos) // walkAllPages' own first page
+      .mockResolvedValueOnce([]); // walkAllPages exhausts on a short page
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotoCount).mockResolvedValue(
+      3,
+    );
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await screen.findByText("p0");
+    await user.click(screen.getByRole("button", { name: "Select" }));
+    const checkboxes = screen.getAllByRole("checkbox");
+    await user.click(checkboxes[0]);
+
+    await waitFor(() =>
+      expect(screen.getByText("Select all 3")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByText("Select all 3"));
+
+    await waitFor(() =>
+      expect(screen.getByText("3 selected")).toBeInTheDocument(),
+    );
+  });
+
+  it("mixed-status selection is impossible from within one tab (each tab is single-status)", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      photo("p0", "image", null, null),
+    ]);
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await screen.findByText("p0");
+    await user.click(screen.getByRole("button", { name: "Select" }));
+    await user.click(screen.getAllByRole("checkbox")[0]);
+
+    // Single-tab selections are always homogeneous by construction (the
+    // fetch itself is status-filtered), so exactly one triage action shows.
+    const toolbar = screen.getByRole("toolbar");
+    expect(toolbar).toHaveTextContent("Assign");
+    expect(toolbar).not.toHaveTextContent("Unskip");
+    expect(toolbar).not.toHaveTextContent("Unassign");
+  });
+});
+
+describe("UnsortedPhotosPanel more like this", () => {
+  it("hides the link entirely when caption is null", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      photo("p0"),
+    ]);
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+
+    await screen.findByText("p0");
+    expect(screen.queryByText("More like this")).not.toBeInTheDocument();
+  });
+
+  it("clicking 'More like this' switches into similar-photos mode, filtered to the active tab's status", async () => {
+    const captioned: UnsortedPhoto = {
+      ...photo("p0"),
+      caption: "a cat",
+    };
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      captioned,
+    ]);
+    vi.mocked(photosRepositoryModule.findSimilarPhotos).mockResolvedValue([
+      { ...photo("p1"), placeQuery: null, skippedAt: null }, // unassigned: matches
+      { ...photo("p2"), placeQuery: "Paris" }, // assigned: filtered out
+    ]);
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await user.click(await screen.findByText("More like this"));
+
+    expect(
+      await screen.findByText(/Showing 1 of 2 similar photos/),
+    ).toBeInTheDocument();
+    expect(photosRepositoryModule.findSimilarPhotos).toHaveBeenCalledWith("p0");
+  });
+
+  it("'Back to Unassigned' exits similar-photos mode", async () => {
+    const captioned: UnsortedPhoto = { ...photo("p0"), caption: "a cat" };
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      captioned,
+    ]);
+    vi.mocked(photosRepositoryModule.findSimilarPhotos).mockResolvedValue([]);
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await user.click(await screen.findByText("More like this"));
+    await screen.findByText(/Showing 0 of 0 similar photos/);
+
+    await user.click(screen.getByText("‹ Back to Unassigned"));
+    expect(await screen.findByText("p0")).toBeInTheDocument();
   });
 });

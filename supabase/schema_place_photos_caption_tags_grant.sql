@@ -1,0 +1,23 @@
+-- Lets a signed-in user read a photo's AI-generated caption/tags -- a
+-- deliberate, separate loosening of the lockdown schema_place_photos_ai_tags.sql
+-- put in place, not folded into that file (that file's job was locking
+-- these columns down; this is the opposite decision, worth its own
+-- commit/history).
+--
+-- Granted to `authenticated`, not `anon`: this is the one column-exposure
+-- decision on this table that diverges from place_query/label/skipped_at's
+-- existing public grant. Nothing on this table has ever been owner-exclusive
+-- for reads (pinmap_place_photos_select_own_or_owner's USING clause lets any
+-- authenticated user read any owner's rows, not just the caller's own), so
+-- this doesn't achieve owner-exclusive access -- it's still real, meaningful
+-- tightening relative to every other column: it blocks anonymous, no-account
+-- scraping of the backlog, which is the actual concern the original lockdown
+-- named. See image-group-plan.md, "Decisions made during brainstorming."
+--
+-- embedding, phash, and has_face stay ungranted entirely (service-role-only,
+-- unchanged) -- nothing in this feature's UI needs a client to read a raw
+-- embedding vector or phash directly; find_similar_photos (see
+-- schema_find_similar_photos.sql) does the embedding comparison server-side
+-- and returns only display columns.
+
+grant select (caption, tags) on public.pinmap_place_photos to authenticated;
