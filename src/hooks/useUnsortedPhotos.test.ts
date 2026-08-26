@@ -8,6 +8,7 @@ vi.mock("../lib/photosRepository", () => ({
   fetchUnsortedPhotos: vi.fn(),
   assignPhotoPlace: vi.fn(),
   skipPhoto: vi.fn(),
+  unskipPhoto: vi.fn(),
   setPhotoLabel: vi.fn(),
 }));
 
@@ -22,6 +23,7 @@ function photo(id: string, createdAt: string): UnsortedPhoto {
     createdAt,
     kind: "image",
     label: null,
+    placeQuery: null,
   };
 }
 
@@ -257,6 +259,105 @@ describe("useUnsortedPhotos", () => {
       ),
     );
     expect(result.current.photos).toEqual([]);
+  });
+
+  it("unskip removes on 'ok'/'conflict', keeps on 'error'", async () => {
+    const p = photo("p0", "2026-01-01T00:00:00.000Z");
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      p,
+    ]);
+    const { result } = renderHook(() => useUnsortedPhotos("user-1", "skipped"));
+    await waitFor(() => expect(result.current.photos).toHaveLength(1));
+
+    vi.mocked(photosRepositoryModule.unskipPhoto).mockResolvedValueOnce(
+      "error",
+    );
+    await act(async () => {
+      const outcome = await result.current.unskip(p);
+      expect(outcome).toBe("error");
+    });
+    expect(result.current.photos).toHaveLength(1);
+    expect(photosRepositoryModule.unskipPhoto).toHaveBeenCalledWith(p.id);
+
+    vi.mocked(photosRepositoryModule.unskipPhoto).mockResolvedValueOnce(
+      "conflict",
+    );
+    await act(async () => {
+      await result.current.unskip(p);
+    });
+    expect(result.current.photos).toHaveLength(0);
+  });
+
+  it("unskipping away the last loaded photo while hasMore is true auto-triggers exactly one refill", async () => {
+    const fullPage = Array.from({ length: 60 }, (_, i) =>
+      photo(`p${i}`, `2026-01-01T00:00:0${i % 10}.000Z`),
+    );
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
+      .mockResolvedValueOnce(fullPage)
+      .mockResolvedValueOnce([]);
+    vi.mocked(photosRepositoryModule.unskipPhoto).mockResolvedValue("ok");
+
+    const { result } = renderHook(() => useUnsortedPhotos("user-1", "skipped"));
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+
+    for (const p of fullPage) {
+      // eslint-disable-next-line no-await-in-loop
+      await act(async () => {
+        await result.current.unskip(p);
+      });
+    }
+
+    await waitFor(() =>
+      expect(photosRepositoryModule.fetchUnsortedPhotos).toHaveBeenCalledTimes(
+        2,
+      ),
+    );
+    expect(result.current.photos).toEqual([]);
+  });
+
+  it("defaults to the 'unassigned' status and threads a given status through to every fetch", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([]);
+
+    const { result: defaulted } = renderHook(() => useUnsortedPhotos("user-1"));
+    await waitFor(() => expect(defaulted.current.isInitialLoading).toBe(false));
+    expect(photosRepositoryModule.fetchUnsortedPhotos).toHaveBeenLastCalledWith(
+      "user-1",
+      expect.objectContaining({ status: "unassigned" }),
+    );
+
+    const { result: skipped } = renderHook(() =>
+      useUnsortedPhotos("user-1", "skipped"),
+    );
+    await waitFor(() => expect(skipped.current.isInitialLoading).toBe(false));
+    expect(photosRepositoryModule.fetchUnsortedPhotos).toHaveBeenLastCalledWith(
+      "user-1",
+      expect.objectContaining({ status: "skipped" }),
+    );
+  });
+
+  it("changing status triggers a fresh initial load with the new status", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos).mockResolvedValue([
+      photo("p0", "2026-01-01T00:00:00.000Z"),
+    ]);
+
+    const { result, rerender } = renderHook(
+      ({ status }: { status: "unassigned" | "skipped" }) =>
+        useUnsortedPhotos("user-1", status),
+      { initialProps: { status: "unassigned" } },
+    );
+    await waitFor(() => expect(result.current.photos).toHaveLength(1));
+    expect(photosRepositoryModule.fetchUnsortedPhotos).toHaveBeenCalledTimes(1);
+
+    rerender({ status: "skipped" });
+    await waitFor(() =>
+      expect(photosRepositoryModule.fetchUnsortedPhotos).toHaveBeenCalledTimes(
+        2,
+      ),
+    );
+    expect(photosRepositoryModule.fetchUnsortedPhotos).toHaveBeenLastCalledWith(
+      "user-1",
+      expect.objectContaining({ status: "skipped", after: null }),
+    );
   });
 
   it("setLabel updates the photo in place on 'ok', leaving other photos untouched", async () => {

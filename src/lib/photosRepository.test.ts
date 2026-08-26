@@ -7,6 +7,7 @@ import {
   fetchUnsortedPhotos,
   setPhotoLabel,
   skipPhoto,
+  unskipPhoto,
   unsortedPhotoUrl,
   uploadPhoto,
 } from "./photosRepository";
@@ -40,6 +41,7 @@ interface Chain {
   update: ReturnType<typeof vi.fn>;
   single: ReturnType<typeof vi.fn>;
   is: ReturnType<typeof vi.fn>;
+  not: ReturnType<typeof vi.fn>;
   order: ReturnType<typeof vi.fn>;
   limit: ReturnType<typeof vi.fn>;
   or: ReturnType<typeof vi.fn>;
@@ -58,6 +60,7 @@ function createChain(result: ChainResult = { data: null, error: null }): Chain {
     update: vi.fn(() => chain),
     single: vi.fn(() => chain),
     is: vi.fn(() => chain),
+    not: vi.fn(() => chain),
     order: vi.fn(() => chain),
     limit: vi.fn(() => chain),
     or: vi.fn(() => chain),
@@ -75,6 +78,7 @@ function createRejectingChain(): Chain {
     update: vi.fn(() => chain),
     single: vi.fn(() => chain),
     is: vi.fn(() => chain),
+    not: vi.fn(() => chain),
     order: vi.fn(() => chain),
     limit: vi.fn(() => chain),
     or: vi.fn(() => chain),
@@ -239,6 +243,27 @@ describe("fetchUnsortedPhotoCount", () => {
     expect(chain.is).toHaveBeenCalledWith("skipped_at", null);
   });
 
+  it("status: 'skipped' filters on place_query null and skipped_at not null", async () => {
+    const chain = createChain({ data: null, error: null, count: 3 });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await fetchUnsortedPhotoCount("user-1", "skipped")).toBe(3);
+    expect(chain.is).toHaveBeenCalledWith("place_query", null);
+    expect(chain.not).toHaveBeenCalledWith("skipped_at", "is", null);
+  });
+
+  it("status: 'assigned' filters on place_query not null", async () => {
+    const chain = createChain({ data: null, error: null, count: 5 });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await fetchUnsortedPhotoCount("user-1", "assigned")).toBe(5);
+    expect(chain.not).toHaveBeenCalledWith("place_query", "is", null);
+  });
+
   it("returns null (not 0) when the response carries a resolved error", async () => {
     const chain = createChain({
       data: null,
@@ -269,12 +294,14 @@ describe("fetchUnsortedPhotos", () => {
       storage_path: "user-1/a.jpg",
       created_at: "2026-01-01T00:00:00.000Z",
       label: "the beach one",
+      place_query: null,
     },
     {
       id: "22222222-2222-2222-2222-222222222222",
       storage_path: "user-1/b.mp4",
       created_at: "2026-01-02T00:00:00.000Z",
       label: null,
+      place_query: null,
     },
   ];
 
@@ -296,6 +323,7 @@ describe("fetchUnsortedPhotos", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         kind: "image",
         label: "the beach one",
+        placeQuery: null,
       },
       {
         id: "22222222-2222-2222-2222-222222222222",
@@ -303,12 +331,58 @@ describe("fetchUnsortedPhotos", () => {
         createdAt: "2026-01-02T00:00:00.000Z",
         kind: "video",
         label: null,
+        placeQuery: null,
       },
     ]);
     expect(chain.is).toHaveBeenCalledWith("place_query", null);
     expect(chain.is).toHaveBeenCalledWith("skipped_at", null);
     expect(chain.limit).toHaveBeenCalledWith(60);
     expect(chain.or).not.toHaveBeenCalled();
+  });
+
+  it("defaults to the 'unassigned' status filter", async () => {
+    const chain = createChain({ data: [], error: null });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    await fetchUnsortedPhotos("user-1", { limit: 60, after: null });
+
+    expect(chain.is).toHaveBeenCalledWith("place_query", null);
+    expect(chain.is).toHaveBeenCalledWith("skipped_at", null);
+    expect(chain.not).not.toHaveBeenCalled();
+  });
+
+  it("status: 'skipped' filters on place_query null and skipped_at not null", async () => {
+    const chain = createChain({ data: [], error: null });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    await fetchUnsortedPhotos("user-1", {
+      limit: 60,
+      after: null,
+      status: "skipped",
+    });
+
+    expect(chain.is).toHaveBeenCalledWith("place_query", null);
+    expect(chain.not).toHaveBeenCalledWith("skipped_at", "is", null);
+  });
+
+  it("status: 'assigned' filters on place_query not null, ignoring skipped_at", async () => {
+    const chain = createChain({ data: [], error: null });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    await fetchUnsortedPhotos("user-1", {
+      limit: 60,
+      after: null,
+      status: "assigned",
+    });
+
+    expect(chain.not).toHaveBeenCalledWith("place_query", "is", null);
+    expect(chain.is).not.toHaveBeenCalledWith("skipped_at", null);
   });
 
   it("builds the keyset .or() filter with the nested and() group when a cursor is given", async () => {
@@ -370,6 +444,7 @@ describe("unsortedPhotoUrl", () => {
     createdAt: "2026-01-01T00:00:00.000Z",
     kind: "image",
     label: null,
+    placeQuery: null,
   };
   const video: UnsortedPhoto = {
     id: "2",
@@ -377,6 +452,7 @@ describe("unsortedPhotoUrl", () => {
     createdAt: "2026-01-01T00:00:00.000Z",
     kind: "video",
     label: null,
+    placeQuery: null,
   };
 
   it("requests a transform for an image thumbnail", () => {
@@ -493,6 +569,48 @@ describe("skipPhoto", () => {
     );
 
     await expect(skipPhoto("photo-1")).resolves.toBe("error");
+  });
+});
+
+describe("unskipPhoto", () => {
+  it("returns 'ok' when the update affects a row", async () => {
+    const chain = createChain({ data: [{ id: "photo-1" }], error: null });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await unskipPhoto("photo-1")).toBe("ok");
+    expect(chain.update).toHaveBeenCalledWith({ skipped_at: null });
+    expect(chain.eq).toHaveBeenCalledWith("id", "photo-1");
+    expect(chain.is).toHaveBeenCalledWith("place_query", null);
+    expect(chain.not).toHaveBeenCalledWith("skipped_at", "is", null);
+  });
+
+  it("returns 'conflict' when the update matches zero rows with no error", async () => {
+    const chain = createChain({ data: [], error: null });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await unskipPhoto("photo-1")).toBe("conflict");
+  });
+
+  it("returns 'error' on a resolved error", async () => {
+    const chain = createChain({ data: null, error: { message: "boom" } });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await unskipPhoto("photo-1")).toBe("error");
+  });
+
+  it("returns 'error' instead of throwing when the call rejects", async () => {
+    const chain = createRejectingChain();
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    await expect(unskipPhoto("photo-1")).resolves.toBe("error");
   });
 });
 

@@ -15,9 +15,19 @@ export interface UnsortedPhoto {
   createdAt: string;
   kind: "image" | "video";
   label: string | null;
+  placeQuery: string | null;
 }
 
 export const PHOTO_LABEL_MAX_LENGTH = 100;
+
+/**
+ * The three-way partition of pinmap_place_photos by triage state:
+ * "unassigned" = place_query is null and skipped_at is null (needs triage),
+ * "skipped" = place_query is null and skipped_at is not null (set aside),
+ * "assigned" = place_query is not null (done, regardless of skip history --
+ * once assigned, a photo's skip history stops mattering).
+ */
+export type PhotoTriageStatus = "unassigned" | "skipped" | "assigned";
 
 export interface UnsortedPhotoCursor {
   createdAt: string;
@@ -113,14 +123,21 @@ export async function uploadPhoto(
 
 export async function fetchUnsortedPhotoCount(
   userId: string,
+  status: PhotoTriageStatus = "unassigned",
 ): Promise<number | null> {
   try {
-    const { count, error } = await supabase
+    let query = supabase
       .from("pinmap_place_photos")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .is("place_query", null)
-      .is("skipped_at", null);
+      .eq("user_id", userId);
+    if (status === "unassigned") {
+      query = query.is("place_query", null).is("skipped_at", null);
+    } else if (status === "skipped") {
+      query = query.is("place_query", null).not("skipped_at", "is", null);
+    } else {
+      query = query.not("place_query", "is", null);
+    }
+    const { count, error } = await query;
     if (error || count === null) {
       return null;
     }
@@ -132,7 +149,15 @@ export async function fetchUnsortedPhotoCount(
 
 export async function fetchUnsortedPhotos(
   userId: string,
-  { limit, after }: { limit: number; after: UnsortedPhotoCursor | null },
+  {
+    limit,
+    after,
+    status = "unassigned",
+  }: {
+    limit: number;
+    after: UnsortedPhotoCursor | null;
+    status?: PhotoTriageStatus;
+  },
 ): Promise<UnsortedPhoto[] | null> {
   if (after !== null && !isValidCursor(after)) {
     return null;
@@ -140,10 +165,16 @@ export async function fetchUnsortedPhotos(
   try {
     let query = supabase
       .from("pinmap_place_photos")
-      .select("id, storage_path, created_at, label")
-      .eq("user_id", userId)
-      .is("place_query", null)
-      .is("skipped_at", null)
+      .select("id, storage_path, created_at, label, place_query")
+      .eq("user_id", userId);
+    if (status === "unassigned") {
+      query = query.is("place_query", null).is("skipped_at", null);
+    } else if (status === "skipped") {
+      query = query.is("place_query", null).not("skipped_at", "is", null);
+    } else {
+      query = query.not("place_query", "is", null);
+    }
+    query = query
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
       .limit(limit);
@@ -162,6 +193,7 @@ export async function fetchUnsortedPhotos(
         storage_path: string;
         created_at: string;
         label: string | null;
+        place_query: string | null;
       }[]
     ).map((row) => ({
       id: row.id,
@@ -169,6 +201,7 @@ export async function fetchUnsortedPhotos(
       createdAt: row.created_at,
       kind: kindFromStoragePath(row.storage_path),
       label: row.label,
+      placeQuery: row.place_query,
     }));
   } catch {
     return null;
@@ -221,6 +254,29 @@ export async function skipPhoto(
       .eq("id", photoId)
       .is("place_query", null)
       .is("skipped_at", null)
+      .select("id");
+    if (error) {
+      return "error";
+    }
+    if (data === null || data.length === 0) {
+      return "conflict";
+    }
+    return "ok";
+  } catch {
+    return "error";
+  }
+}
+
+export async function unskipPhoto(
+  photoId: string,
+): Promise<"ok" | "conflict" | "error"> {
+  try {
+    const { data, error } = await supabase
+      .from("pinmap_place_photos")
+      .update({ skipped_at: null })
+      .eq("id", photoId)
+      .is("place_query", null)
+      .not("skipped_at", "is", null)
       .select("id");
     if (error) {
       return "error";

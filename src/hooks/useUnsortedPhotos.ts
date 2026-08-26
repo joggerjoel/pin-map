@@ -4,8 +4,10 @@ import {
   fetchUnsortedPhotos,
   setPhotoLabel,
   skipPhoto,
+  unskipPhoto,
 } from "../lib/photosRepository";
 import type {
+  PhotoTriageStatus,
   UnsortedPhoto,
   UnsortedPhotoCursor,
 } from "../lib/photosRepository";
@@ -26,10 +28,14 @@ export interface UseUnsortedPhotosResult {
     placeQuery: string,
   ) => Promise<"ok" | "conflict" | "error">;
   skip: (photo: UnsortedPhoto) => Promise<"ok" | "conflict" | "error">;
+  unskip: (photo: UnsortedPhoto) => Promise<"ok" | "conflict" | "error">;
   setLabel: (photo: UnsortedPhoto, label: string) => Promise<"ok" | "error">;
 }
 
-export function useUnsortedPhotos(userId: string): UseUnsortedPhotosResult {
+export function useUnsortedPhotos(
+  userId: string,
+  status: PhotoTriageStatus = "unassigned",
+): UseUnsortedPhotosResult {
   const [photos, setPhotos] = useState<UnsortedPhoto[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [photosLoadError, setPhotosLoadError] = useState(false);
@@ -41,6 +47,8 @@ export function useUnsortedPhotos(userId: string): UseUnsortedPhotosResult {
   const generationRef = useRef(0);
   const isLoadingMoreRef = useRef(false);
   const isInitialLoadingRef = useRef(true);
+  const statusRef = useRef(status);
+  statusRef.current = status;
   // The count backing the "did this assign drain the grid?" check in
   // `assign`, updated synchronously and independent of React's state/render
   // timing — `photos` (state) is the source of truth for what renders, but
@@ -57,30 +65,32 @@ export function useUnsortedPhotos(userId: string): UseUnsortedPhotosResult {
     isInitialLoadingRef.current = true;
     setIsInitialLoading(true);
     setPhotosLoadError(false);
-    fetchUnsortedPhotos(userId, { limit: PAGE_SIZE, after: null }).then(
-      (result) => {
-        if (generationRef.current !== generation) return;
-        isInitialLoadingRef.current = false;
-        setIsInitialLoading(false);
-        if (result === null) {
-          setPhotosLoadError(true);
-          return;
-        }
-        setPhotos(result);
-        remainingRef.current = result.length;
-        setHasMore(result.length === PAGE_SIZE);
-        const last = result[result.length - 1];
-        cursorRef.current = last
-          ? { createdAt: last.createdAt, id: last.id }
-          : null;
-      },
-    );
+    fetchUnsortedPhotos(userId, {
+      limit: PAGE_SIZE,
+      after: null,
+      status: statusRef.current,
+    }).then((result) => {
+      if (generationRef.current !== generation) return;
+      isInitialLoadingRef.current = false;
+      setIsInitialLoading(false);
+      if (result === null) {
+        setPhotosLoadError(true);
+        return;
+      }
+      setPhotos(result);
+      remainingRef.current = result.length;
+      setHasMore(result.length === PAGE_SIZE);
+      const last = result[result.length - 1];
+      cursorRef.current = last
+        ? { createdAt: last.createdAt, id: last.id }
+        : null;
+    });
   }, [userId]);
 
   useEffect(() => {
     loadInitial();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [userId, status]);
 
   const loadMore = useCallback(() => {
     if (isLoadingMoreRef.current || isInitialLoadingRef.current) {
@@ -92,6 +102,7 @@ export function useUnsortedPhotos(userId: string): UseUnsortedPhotosResult {
     fetchUnsortedPhotos(userId, {
       limit: PAGE_SIZE,
       after: cursorRef.current,
+      status: statusRef.current,
     }).then((result) => {
       isLoadingMoreRef.current = false;
       if (generationRef.current !== generation) return;
@@ -121,14 +132,16 @@ export function useUnsortedPhotos(userId: string): UseUnsortedPhotosResult {
   const hasMoreRef = useRef(hasMore);
   hasMoreRef.current = hasMore;
 
-  // Shared by `assign` and `skip`: both remove one photo from the visible
-  // grid and, if that drains it while more pages remain, trigger a refill.
+  // Shared by assign/skip/unskip: all three remove one photo from the
+  // visible grid (each moves the photo to a *different* status than the
+  // one this hook instance is currently showing) and, if that drains it
+  // while more pages remain, trigger a refill of the same status/page.
   const removeFromView = useCallback(
     (photoId: string) => {
       // The functional updater form is required for correctness — several
-      // removals can happen in close succession (assigning/skipping several
-      // photos in a row), and each must filter against the *actual* latest
-      // `photos`, not a value captured at call time.
+      // removals can happen in close succession, and each must filter
+      // against the *actual* latest `photos`, not a value captured at call
+      // time.
       setPhotos((prev) => prev.filter((p) => p.id !== photoId));
       remainingRef.current -= 1;
       if (remainingRef.current <= 0 && hasMoreRef.current) {
@@ -164,9 +177,22 @@ export function useUnsortedPhotos(userId: string): UseUnsortedPhotosResult {
     [removeFromView],
   );
 
-  // Unlike assign/skip, a label edit doesn't remove the photo from view —
-  // it updates that one photo's `label` in place, keeping every other
-  // photo's identity/reference untouched.
+  // Inverse of skip -- brings a photo from the Skipped view back to
+  // Unassigned.
+  const unskip = useCallback(
+    async (photo: UnsortedPhoto) => {
+      const result = await unskipPhoto(photo.id);
+      if (result === "ok" || result === "conflict") {
+        removeFromView(photo.id);
+      }
+      return result;
+    },
+    [removeFromView],
+  );
+
+  // Unlike assign/skip/unskip, a label edit doesn't remove the photo from
+  // view — it updates that one photo's `label` in place, keeping every
+  // other photo's identity/reference untouched.
   const setLabel = useCallback(async (photo: UnsortedPhoto, label: string) => {
     const result = await setPhotoLabel(photo.id, label);
     if (result === "ok") {
@@ -193,6 +219,7 @@ export function useUnsortedPhotos(userId: string): UseUnsortedPhotosResult {
     retry,
     assign,
     skip,
+    unskip,
     setLabel,
   };
 }

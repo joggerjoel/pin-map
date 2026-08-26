@@ -6,7 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UnsortedPhotosPanel } from "./UnsortedPhotosPanel";
 import * as photosRepositoryModule from "../lib/photosRepository";
 import type { UnsortedPhoto } from "../lib/photosRepository";
@@ -14,8 +14,10 @@ import type { PinnedPlace } from "../hooks/useGeocoder";
 
 vi.mock("../lib/photosRepository", () => ({
   fetchUnsortedPhotos: vi.fn(),
+  fetchUnsortedPhotoCount: vi.fn(),
   assignPhotoPlace: vi.fn(),
   skipPhoto: vi.fn(),
+  unskipPhoto: vi.fn(),
   setPhotoLabel: vi.fn(),
   PHOTO_LABEL_MAX_LENGTH: 100,
   unsortedPhotoUrl: vi.fn(
@@ -23,6 +25,15 @@ vi.mock("../lib/photosRepository", () => ({
       `https://cdn.example.com/${photo.storagePath}?${variant}`,
   ),
 }));
+
+beforeEach(() => {
+  // Tab-count badges aren't what most of these tests are about — default
+  // them to a settled value so every test doesn't have to stub it just to
+  // avoid an unresolved promise.
+  vi.mocked(photosRepositoryModule.fetchUnsortedPhotoCount).mockResolvedValue(
+    0,
+  );
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -32,6 +43,7 @@ function photo(
   id: string,
   kind: "image" | "video" = "image",
   label: string | null = null,
+  placeQuery: string | null = null,
 ): UnsortedPhoto {
   return {
     id,
@@ -39,6 +51,7 @@ function photo(
     createdAt: "2026-01-01T00:00:00.000Z",
     kind,
     label,
+    placeQuery,
   };
 }
 
@@ -335,10 +348,9 @@ describe("UnsortedPhotosPanel", () => {
     expect(photosRepositoryModule.skipPhoto).toHaveBeenCalledWith("p0");
     expect(photosRepositoryModule.assignPhotoPlace).not.toHaveBeenCalled();
     expect(props.onAssigned).not.toHaveBeenCalled();
-    expect(await screen.findByText("Skipped")).toHaveAttribute(
-      "role",
-      "status",
-    );
+    // findByText("Skipped") collides with the Skipped tab's bare label text
+    // node, so scope this to the notice via its role instead.
+    expect(await screen.findByRole("status")).toHaveTextContent("Skipped");
   });
 
   it("a failed skip shows a notice and keeps the photo", async () => {
@@ -381,6 +393,110 @@ describe("UnsortedPhotosPanel", () => {
     await waitFor(() =>
       expect(screen.queryByRole("listitem")).not.toBeInTheDocument(),
     );
+    expect(screen.queryByPlaceholderText("Place name")).not.toBeInTheDocument();
+  });
+
+  it("switching tabs re-fetches with the new status and shows tab-appropriate actions", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
+      .mockResolvedValueOnce([photo("p0")]) // unassigned (initial)
+      .mockResolvedValueOnce([photo("p1")]); // skipped (after tab switch)
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Assign unsorted photo/ }),
+      ).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("tab", { name: /Skipped/ }));
+
+    await waitFor(() =>
+      expect(
+        photosRepositoryModule.fetchUnsortedPhotos,
+      ).toHaveBeenLastCalledWith(
+        "user-1",
+        expect.objectContaining({ status: "skipped" }),
+      ),
+    );
+    expect(
+      await screen.findByRole("button", { name: /Move unsorted photo back/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Assign unsorted photo/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Skip unsorted photo/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Skipped/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("the Assigned tab is view-only: no Assign/Skip/Unskip buttons and no rename pencil", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
+      .mockResolvedValueOnce([photo("p0")]) // unassigned (initial)
+      .mockResolvedValueOnce([photo("p1", "image", null, "Paris")]); // assigned
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await screen.findByRole("button", { name: /Assign unsorted photo/ });
+
+    await user.click(screen.getByRole("tab", { name: /Assigned/ }));
+
+    await screen.findByRole("button", { name: /Preview unsorted photo/ });
+    expect(
+      screen.queryByRole("button", { name: /Assign unsorted photo/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Skip unsorted photo/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Move unsorted photo back/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Rename photo/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("Unskip on the Skipped tab calls unskipPhoto and removes the photo from view", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
+      .mockResolvedValueOnce([]) // unassigned (initial)
+      .mockResolvedValueOnce([photo("p0")]); // skipped
+    vi.mocked(photosRepositoryModule.unskipPhoto).mockResolvedValue("ok");
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await screen.findByText("All caught up — nothing left to triage.");
+
+    await user.click(screen.getByRole("tab", { name: /Skipped/ }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Move unsorted photo back/,
+      }),
+    );
+
+    expect(photosRepositoryModule.unskipPhoto).toHaveBeenCalledWith("p0");
+    await waitFor(() =>
+      expect(screen.queryByRole("listitem")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("switching tabs clears an in-progress Assign expansion", async () => {
+    vi.mocked(photosRepositoryModule.fetchUnsortedPhotos)
+      .mockResolvedValueOnce([photo("p0")])
+      .mockResolvedValueOnce([]);
+    const user = userEvent.setup();
+
+    render(<UnsortedPhotosPanel {...baseProps()} />);
+    await user.click(
+      await screen.findByRole("button", { name: /Assign unsorted photo/ }),
+    );
+    expect(screen.getByPlaceholderText("Place name")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /Skipped/ }));
+
     expect(screen.queryByPlaceholderText("Place name")).not.toBeInTheDocument();
   });
 

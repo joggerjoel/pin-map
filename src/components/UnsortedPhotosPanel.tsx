@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useUnsortedPhotos } from "../hooks/useUnsortedPhotos";
 import {
   PHOTO_LABEL_MAX_LENGTH,
+  fetchUnsortedPhotoCount,
   unsortedPhotoUrl,
 } from "../lib/photosRepository";
-import type { UnsortedPhoto } from "../lib/photosRepository";
+import type { PhotoTriageStatus, UnsortedPhoto } from "../lib/photosRepository";
 import type { PinnedPlace } from "../hooks/useGeocoder";
 import type { PinPlaceResult } from "../hooks/useGeocoder";
 import { DEFAULT_TAG } from "./TagPicker";
@@ -12,6 +13,12 @@ import type { PinTag } from "./TagPicker";
 
 const NOTICE_DISMISS_MS = 2500;
 const MAX_MATCHES = 8;
+
+const TABS: { status: PhotoTriageStatus; label: string }[] = [
+  { status: "unassigned", label: "Unassigned" },
+  { status: "skipped", label: "Skipped" },
+  { status: "assigned", label: "Assigned" },
+];
 
 export interface UnsortedPhotosPanelProps {
   userId: string;
@@ -34,7 +41,8 @@ export function UnsortedPhotosPanel({
   onEmpty,
   onClose,
 }: UnsortedPhotosPanelProps) {
-  const unsorted = useUnsortedPhotos(userId);
+  const [activeTab, setActiveTab] = useState<PhotoTriageStatus>("unassigned");
+  const unsorted = useUnsortedPhotos(userId, activeTab);
   const [expandedPhotoId, setExpandedPhotoId] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
   const [assignErrors, setAssignErrors] = useState<Record<string, string>>({});
@@ -44,6 +52,9 @@ export function UnsortedPhotosPanel({
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
   const [labelDraft, setLabelDraft] = useState("");
   const [isSavingLabel, setIsSavingLabel] = useState(false);
+  const [tabCounts, setTabCounts] = useState<
+    Record<PhotoTriageStatus, number | null>
+  >({ unassigned: null, skipped: null, assigned: null });
 
   const mountedRef = useRef(true);
   const isAssigningRef = useRef(false);
@@ -61,11 +72,31 @@ export function UnsortedPhotosPanel({
     };
   }, []);
 
-  const isConfirmedEmpty =
+  // Tab counts are their own fetch, independent of the sidebar's
+  // "Unsorted (N)" badge (useUnsortedPhotoCount) — that hook only ever
+  // tracks the unassigned count and has its own refetch-on-focus timing.
+  const refetchTabCounts = useCallback(() => {
+    TABS.forEach(({ status }) => {
+      fetchUnsortedPhotoCount(userId, status).then((count) => {
+        if (!mountedRef.current) return;
+        setTabCounts((prev) => ({ ...prev, [status]: count }));
+      });
+    });
+  }, [userId]);
+
+  useEffect(() => {
+    refetchTabCounts();
+  }, [refetchTabCounts]);
+
+  const isCurrentTabEmpty =
     unsorted.photos.length === 0 &&
     !unsorted.hasMore &&
     !unsorted.isInitialLoading &&
     !unsorted.photosLoadError;
+
+  // Only the Unassigned tab drives the sidebar badge — the Skipped/Assigned
+  // tabs going empty says nothing about whether triage work remains.
+  const isConfirmedEmpty = activeTab === "unassigned" && isCurrentTabEmpty;
 
   useEffect(() => {
     if (isConfirmedEmpty && !emptyNotifiedRef.current) {
@@ -182,11 +213,36 @@ export function UnsortedPhotosPanel({
       if (result === "ok" || result === "conflict") {
         collapseRow(photo.id);
         showNotice(result === "ok" ? "Skipped" : "Already handled elsewhere");
+        refetchTabCounts();
       } else {
         showNotice("Couldn't skip — try again.");
       }
     },
-    [unsorted, collapseRow, showNotice],
+    [unsorted, collapseRow, showNotice, refetchTabCounts],
+  );
+
+  const handleUnskip = useCallback(
+    async (photo: UnsortedPhoto) => {
+      setSkippingIds((prev) => new Set(prev).add(photo.id));
+      const result = await unsorted.unskip(photo);
+      if (!mountedRef.current) return;
+      setSkippingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(photo.id);
+        return next;
+      });
+      if (result === "ok" || result === "conflict") {
+        showNotice(
+          result === "ok"
+            ? "Moved back to Unassigned"
+            : "Already handled elsewhere",
+        );
+        refetchTabCounts();
+      } else {
+        showNotice("Couldn't unskip — try again.");
+      }
+    },
+    [unsorted, showNotice, refetchTabCounts],
   );
 
   const resolveAssignment = useCallback(
@@ -201,6 +257,7 @@ export function UnsortedPhotosPanel({
         onAssigned();
         collapseRow(photo.id);
         showNotice(result === "ok" ? "Saved" : "Already assigned elsewhere");
+        refetchTabCounts();
       } else {
         setAssignErrors((prev) => ({
           ...prev,
@@ -208,7 +265,7 @@ export function UnsortedPhotosPanel({
         }));
       }
     },
-    [unsorted, onAssigned, collapseRow, showNotice],
+    [unsorted, onAssigned, collapseRow, showNotice, refetchTabCounts],
   );
 
   const handleSelectExisting = useCallback(
@@ -237,6 +294,16 @@ export function UnsortedPhotosPanel({
     },
     [onPinPlace, resolveAssignment],
   );
+
+  function handleTabChange(status: PhotoTriageStatus) {
+    if (status === activeTab) return;
+    setActiveTab(status);
+    setExpandedPhotoId(null);
+    setSearchText("");
+    setAssignErrors({});
+    setEditingLabelId(null);
+    setLabelDraft("");
+  }
 
   function toggleExpand(photoId: string) {
     if (isAssigningRef.current && expandedPhotoId !== photoId) {
@@ -267,6 +334,33 @@ export function UnsortedPhotosPanel({
       >
         ‹ Back to places
       </button>
+
+      <div className="unsorted-photos-panel__tabs" role="tablist">
+        {TABS.map(({ status, label }) => {
+          const count = tabCounts[status];
+          return (
+            <button
+              key={status}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === status}
+              className={
+                activeTab === status
+                  ? "unsorted-photos-panel__tab unsorted-photos-panel__tab--active"
+                  : "unsorted-photos-panel__tab"
+              }
+              onClick={() => handleTabChange(status)}
+            >
+              {label}
+              {count !== null && (
+                <span className="unsorted-photos-panel__tab-count">
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
 
       {notice !== null && (
         <div
@@ -309,9 +403,12 @@ export function UnsortedPhotosPanel({
           </div>
         )}
 
-      {isConfirmedEmpty && (
+      {isCurrentTabEmpty && (
         <p className="unsorted-photos-panel__empty">
-          All caught up — nothing left to triage.
+          {activeTab === "unassigned" &&
+            "All caught up — nothing left to triage."}
+          {activeTab === "skipped" && "No skipped photos."}
+          {activeTab === "assigned" && "No assigned photos yet."}
         </p>
       )}
 
@@ -324,6 +421,13 @@ export function UnsortedPhotosPanel({
                 const expanded = expandedPhotoId === photo.id;
                 const alt = photo.storagePath.split("/").pop() ?? "";
                 const assignError = assignErrors[photo.id];
+                const showAssignSkip = activeTab === "unassigned";
+                const showUnskip = activeTab === "skipped";
+                // Assigned photos are immutable via label_own's RLS (scoped
+                // to place_query is null) — editing here would silently
+                // no-op against a real backend rejection, so hide the entry
+                // point rather than let the "Renamed" notice lie.
+                const canEditLabel = activeTab !== "assigned";
                 return (
                   <li key={photo.id} className="unsorted-photos-panel__card">
                     {editingLabelId === photo.id ? (
@@ -357,14 +461,16 @@ export function UnsortedPhotosPanel({
                         >
                           {photo.label ?? photo.id.slice(0, 8)}
                         </button>
-                        <button
-                          type="button"
-                          className="unsorted-photos-panel__card-label-edit"
-                          aria-label={`Rename photo ${photo.id.slice(0, 8)}`}
-                          onClick={() => startEditingLabel(photo)}
-                        >
-                          ✏️
-                        </button>
+                        {canEditLabel && (
+                          <button
+                            type="button"
+                            className="unsorted-photos-panel__card-label-edit"
+                            aria-label={`Rename photo ${photo.id.slice(0, 8)}`}
+                            onClick={() => startEditingLabel(photo)}
+                          >
+                            ✏️
+                          </button>
+                        )}
                       </div>
                     )}
                     {photo.kind === "image" ? (
@@ -383,56 +489,104 @@ export function UnsortedPhotosPanel({
                             loading="lazy"
                           />
                         </button>
-                        <button
-                          type="button"
-                          className="unsorted-photos-panel__assign-toggle"
-                          aria-label={`Assign unsorted photo to a place`}
-                          disabled={isAssigning && !expanded}
-                          onClick={() => toggleExpand(photo.id)}
-                        >
-                          Assign
-                        </button>
-                        <button
-                          type="button"
-                          className="unsorted-photos-panel__skip"
-                          aria-label={`Skip unsorted photo for now`}
-                          disabled={
-                            (expanded && isAssigning) ||
-                            skippingIds.has(photo.id)
-                          }
-                          onClick={() => void handleSkip(photo)}
-                        >
-                          Skip
-                        </button>
+                        {showAssignSkip && (
+                          <button
+                            type="button"
+                            className="unsorted-photos-panel__assign-toggle"
+                            aria-label={`Assign unsorted photo to a place`}
+                            disabled={isAssigning && !expanded}
+                            onClick={() => toggleExpand(photo.id)}
+                          >
+                            Assign
+                          </button>
+                        )}
+                        {showAssignSkip && (
+                          <button
+                            type="button"
+                            className="unsorted-photos-panel__skip"
+                            aria-label={`Skip unsorted photo for now`}
+                            disabled={
+                              (expanded && isAssigning) ||
+                              skippingIds.has(photo.id)
+                            }
+                            onClick={() => void handleSkip(photo)}
+                          >
+                            Skip
+                          </button>
+                        )}
+                        {showUnskip && (
+                          <button
+                            type="button"
+                            className="unsorted-photos-panel__unskip"
+                            aria-label={`Move unsorted photo back to Unassigned`}
+                            disabled={skippingIds.has(photo.id)}
+                            onClick={() => void handleUnskip(photo)}
+                          >
+                            Unskip
+                          </button>
+                        )}
                       </>
                     ) : (
                       <>
-                        <button
-                          type="button"
-                          className="unsorted-photos-panel__assign-toggle"
-                          aria-label={`Assign unsorted video to a place`}
-                          disabled={isAssigning && !expanded}
-                          onClick={() => toggleExpand(photo.id)}
-                        >
-                          <video
-                            src={unsortedPhotoUrl(photo, "full")}
-                            preload="metadata"
-                            muted
-                          />
-                          <span>Assign</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="unsorted-photos-panel__skip"
-                          aria-label={`Skip unsorted video for now`}
-                          disabled={
-                            (expanded && isAssigning) ||
-                            skippingIds.has(photo.id)
-                          }
-                          onClick={() => void handleSkip(photo)}
-                        >
-                          Skip
-                        </button>
+                        {showAssignSkip ? (
+                          <button
+                            type="button"
+                            className="unsorted-photos-panel__assign-toggle"
+                            aria-label={`Assign unsorted video to a place`}
+                            disabled={isAssigning && !expanded}
+                            onClick={() => toggleExpand(photo.id)}
+                          >
+                            <video
+                              src={unsortedPhotoUrl(photo, "full")}
+                              preload="metadata"
+                              muted
+                            />
+                            <span>Assign</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="unsorted-photos-panel__preview"
+                            aria-label={`Preview unsorted video`}
+                            onClick={() =>
+                              onOpenLightbox(
+                                unsortedPhotoUrl(photo, "full"),
+                                alt,
+                              )
+                            }
+                          >
+                            <video
+                              src={unsortedPhotoUrl(photo, "full")}
+                              preload="metadata"
+                              muted
+                            />
+                          </button>
+                        )}
+                        {showAssignSkip && (
+                          <button
+                            type="button"
+                            className="unsorted-photos-panel__skip"
+                            aria-label={`Skip unsorted video for now`}
+                            disabled={
+                              (expanded && isAssigning) ||
+                              skippingIds.has(photo.id)
+                            }
+                            onClick={() => void handleSkip(photo)}
+                          >
+                            Skip
+                          </button>
+                        )}
+                        {showUnskip && (
+                          <button
+                            type="button"
+                            className="unsorted-photos-panel__unskip"
+                            aria-label={`Move unsorted video back to Unassigned`}
+                            disabled={skippingIds.has(photo.id)}
+                            onClick={() => void handleUnskip(photo)}
+                          >
+                            Unskip
+                          </button>
+                        )}
                       </>
                     )}
 
