@@ -5,7 +5,23 @@
 // design and the P0 spike's findings behind every choice made here (model
 // picks, the sharp-first decode requirement, the sanitize-not-reject tag
 // validation).
-import * as faceapi from "face-api.js";
+// @vladmandic/face-api replaced the original, unmaintained face-api.js:
+// that package bundled its own tfjs-core@1.7.0, which created a second,
+// incompatible kernel registry alongside any modern tfjs-node, and
+// crashed at inference time ("forwardFunc_1 is not a function"),
+// confirmed against real production photos before switching. This fork
+// has no bundled tfjs-core -- but its own Node build (dist/face-api.node.js)
+// unconditionally requires plain `@tensorflow/tfjs-node` internally, so
+// that package must stay a real dependency even though nothing here
+// imports it directly. Do NOT also import `@tensorflow/tfjs-node-gpu`
+// here: loading both native TF runtimes in one process fatally crashed
+// ("Duplicate registration of device factory for type XLA_CPU") on
+// macOS -- confirmed by the local test suite. It happened not to crash
+// in one manual test on aorus (Linux), but that's an unvalidated,
+// fragile state (two native runtimes racing to register the same global
+// C++ statics), not a supported pattern -- see macstudio-backfill-spec.md
+// for the GPU story on that machine specifically.
+import * as faceapi from "@vladmandic/face-api";
 import { Canvas, Image, ImageData } from "canvas";
 import sharp from "sharp";
 import * as blockhash from "blockhash-core";
