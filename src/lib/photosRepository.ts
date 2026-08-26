@@ -14,7 +14,10 @@ export interface UnsortedPhoto {
   storagePath: string;
   createdAt: string;
   kind: "image" | "video";
+  label: string | null;
 }
+
+export const PHOTO_LABEL_MAX_LENGTH = 100;
 
 export interface UnsortedPhotoCursor {
   createdAt: string;
@@ -116,7 +119,8 @@ export async function fetchUnsortedPhotoCount(
       .from("pinmap_place_photos")
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
-      .is("place_query", null);
+      .is("place_query", null)
+      .is("skipped_at", null);
     if (error || count === null) {
       return null;
     }
@@ -136,9 +140,10 @@ export async function fetchUnsortedPhotos(
   try {
     let query = supabase
       .from("pinmap_place_photos")
-      .select("id, storage_path, created_at")
+      .select("id, storage_path, created_at, label")
       .eq("user_id", userId)
       .is("place_query", null)
+      .is("skipped_at", null)
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
       .limit(limit);
@@ -152,12 +157,18 @@ export async function fetchUnsortedPhotos(
       return null;
     }
     return (
-      data as { id: string; storage_path: string; created_at: string }[]
+      data as {
+        id: string;
+        storage_path: string;
+        created_at: string;
+        label: string | null;
+      }[]
     ).map((row) => ({
       id: row.id,
       storagePath: row.storage_path,
       createdAt: row.created_at,
       kind: kindFromStoragePath(row.storage_path),
+      label: row.label,
     }));
   } catch {
     return null;
@@ -193,6 +204,52 @@ export async function assignPhotoPlace(
     }
     if (data === null || data.length === 0) {
       return "conflict";
+    }
+    return "ok";
+  } catch {
+    return "error";
+  }
+}
+
+export async function skipPhoto(
+  photoId: string,
+): Promise<"ok" | "conflict" | "error"> {
+  try {
+    const { data, error } = await supabase
+      .from("pinmap_place_photos")
+      .update({ skipped_at: new Date().toISOString() })
+      .eq("id", photoId)
+      .is("place_query", null)
+      .is("skipped_at", null)
+      .select("id");
+    if (error) {
+      return "error";
+    }
+    if (data === null || data.length === 0) {
+      return "conflict";
+    }
+    return "ok";
+  } catch {
+    return "error";
+  }
+}
+
+export async function setPhotoLabel(
+  photoId: string,
+  label: string,
+): Promise<"ok" | "error"> {
+  const trimmed = label.trim();
+  if (trimmed.length > PHOTO_LABEL_MAX_LENGTH) {
+    return "error";
+  }
+  try {
+    const { error } = await supabase
+      .from("pinmap_place_photos")
+      .update({ label: trimmed === "" ? null : trimmed })
+      .eq("id", photoId)
+      .is("place_query", null);
+    if (error) {
+      return "error";
     }
     return "ok";
   } catch {

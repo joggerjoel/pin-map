@@ -5,6 +5,8 @@ import {
   fetchPhotos,
   fetchUnsortedPhotoCount,
   fetchUnsortedPhotos,
+  setPhotoLabel,
+  skipPhoto,
   unsortedPhotoUrl,
   uploadPhoto,
 } from "./photosRepository";
@@ -234,6 +236,7 @@ describe("fetchUnsortedPhotoCount", () => {
     expect(await fetchUnsortedPhotoCount("user-1")).toBe(42);
     expect(chain.eq).toHaveBeenCalledWith("user_id", "user-1");
     expect(chain.is).toHaveBeenCalledWith("place_query", null);
+    expect(chain.is).toHaveBeenCalledWith("skipped_at", null);
   });
 
   it("returns null (not 0) when the response carries a resolved error", async () => {
@@ -265,15 +268,17 @@ describe("fetchUnsortedPhotos", () => {
       id: "11111111-1111-1111-1111-111111111111",
       storage_path: "user-1/a.jpg",
       created_at: "2026-01-01T00:00:00.000Z",
+      label: "the beach one",
     },
     {
       id: "22222222-2222-2222-2222-222222222222",
       storage_path: "user-1/b.mp4",
       created_at: "2026-01-02T00:00:00.000Z",
+      label: null,
     },
   ];
 
-  it("maps rows and derives kind from the extension", async () => {
+  it("maps rows, derives kind from the extension, and carries the label", async () => {
     const chain = createChain({ data: rows, error: null });
     vi.mocked(supabase.from).mockReturnValue(
       chain as unknown as ReturnType<typeof supabase.from>,
@@ -290,15 +295,18 @@ describe("fetchUnsortedPhotos", () => {
         storagePath: "user-1/a.jpg",
         createdAt: "2026-01-01T00:00:00.000Z",
         kind: "image",
+        label: "the beach one",
       },
       {
         id: "22222222-2222-2222-2222-222222222222",
         storagePath: "user-1/b.mp4",
         createdAt: "2026-01-02T00:00:00.000Z",
         kind: "video",
+        label: null,
       },
     ]);
     expect(chain.is).toHaveBeenCalledWith("place_query", null);
+    expect(chain.is).toHaveBeenCalledWith("skipped_at", null);
     expect(chain.limit).toHaveBeenCalledWith(60);
     expect(chain.or).not.toHaveBeenCalled();
   });
@@ -361,12 +369,14 @@ describe("unsortedPhotoUrl", () => {
     storagePath: "user-1/a.jpg",
     createdAt: "2026-01-01T00:00:00.000Z",
     kind: "image",
+    label: null,
   };
   const video: UnsortedPhoto = {
     id: "2",
     storagePath: "user-1/b.mp4",
     createdAt: "2026-01-01T00:00:00.000Z",
     kind: "video",
+    label: null,
   };
 
   it("requests a transform for an image thumbnail", () => {
@@ -439,5 +449,96 @@ describe("assignPhotoPlace", () => {
     );
 
     await expect(assignPhotoPlace("photo-1", "Paris")).resolves.toBe("error");
+  });
+});
+
+describe("skipPhoto", () => {
+  it("returns 'ok' when the update affects a row", async () => {
+    const chain = createChain({ data: [{ id: "photo-1" }], error: null });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await skipPhoto("photo-1")).toBe("ok");
+    expect(chain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ skipped_at: expect.any(String) }),
+    );
+    expect(chain.eq).toHaveBeenCalledWith("id", "photo-1");
+    expect(chain.is).toHaveBeenCalledWith("place_query", null);
+    expect(chain.is).toHaveBeenCalledWith("skipped_at", null);
+  });
+
+  it("returns 'conflict' when the update matches zero rows with no error (already assigned or already skipped)", async () => {
+    const chain = createChain({ data: [], error: null });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await skipPhoto("photo-1")).toBe("conflict");
+  });
+
+  it("returns 'error' on a resolved error", async () => {
+    const chain = createChain({ data: null, error: { message: "boom" } });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await skipPhoto("photo-1")).toBe("error");
+  });
+
+  it("returns 'error' instead of throwing when the call rejects", async () => {
+    const chain = createRejectingChain();
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    await expect(skipPhoto("photo-1")).resolves.toBe("error");
+  });
+});
+
+describe("setPhotoLabel", () => {
+  it("saves a trimmed label", async () => {
+    const chain = createChain({ data: null, error: null });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await setPhotoLabel("photo-1", "  the beach one  ")).toBe("ok");
+    expect(chain.update).toHaveBeenCalledWith({ label: "the beach one" });
+    expect(chain.eq).toHaveBeenCalledWith("id", "photo-1");
+    expect(chain.is).toHaveBeenCalledWith("place_query", null);
+  });
+
+  it("clears the label to null when given a blank string", async () => {
+    const chain = createChain({ data: null, error: null });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await setPhotoLabel("photo-1", "   ")).toBe("ok");
+    expect(chain.update).toHaveBeenCalledWith({ label: null });
+  });
+
+  it("returns 'error' for a label over the length cap without calling Supabase", async () => {
+    expect(await setPhotoLabel("photo-1", "x".repeat(101))).toBe("error");
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("returns 'error' on a resolved error", async () => {
+    const chain = createChain({ data: null, error: { message: "boom" } });
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    expect(await setPhotoLabel("photo-1", "x")).toBe("error");
+  });
+
+  it("returns 'error' instead of throwing when the call rejects", async () => {
+    const chain = createRejectingChain();
+    vi.mocked(supabase.from).mockReturnValue(
+      chain as unknown as ReturnType<typeof supabase.from>,
+    );
+
+    await expect(setPhotoLabel("photo-1", "x")).resolves.toBe("error");
   });
 });
