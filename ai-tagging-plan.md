@@ -35,8 +35,19 @@ Ollama and real backlog photos, 28 automated tests, a clean `bun run
 build`. One real design correction surfaced only by actually building it:
 the planned Postgres advisory lock doesn't work through PostgREST's
 pooled connections — replaced with a local file lock (see "Concurrency and
-ownership"). Still blocked on production network access: applying the
-migration itself, and any run of the actual scripts against live data.
+ownership").
+
+**Revision note (2026-08-25, shipped to production):** network access to
+`aorus4` was restored later the same day. The migration is now **applied
+to the live instance** (`UPDATE 8039`, matching the real row count
+exactly), pgvector confirmed at `0.8.0`, and the backfill script has
+**actually tagged real production photos** (19, in a short supervised
+run, plus one real transient failure that correctly stayed `pending` for
+retry) — see "Still open" below for the one thing deliberately not done
+yet (the full unattended run over the whole backlog). Ollama itself also
+moved off the original build machine to a better-resourced one (Mac
+Studio) reachable over Tailscale — see the "Ops update" note under
+"Vision tagging + caption" below.
 
 ## Scope: pipeline only, no UI
 
@@ -796,22 +807,27 @@ false`), not an error.
   caption/tag call + embedding + face detection) timing across the whole
   8,037-photo backlog was **not** separately measured — see below.
 
+### Resolved once production access was restored (2026-08-25)
+
+- **pgvector version**: `0.8.0` — confirmed directly against the live
+  instance. New enough for `hnsw`.
+- **Migration applied to production**: `UPDATE 8039` (exact real row
+  count). Post-migration: `image/pending` 7995, `video/skipped` 44 —
+  exactly matching the spike's extension scan.
+- **The full pipeline ran against real data**: `backfill-photo-tags.ts`
+  tagged 19 real photos successfully (spot-checked output — real
+  captions, correct taxonomy tags, correct `has_face`, 64-char `phash`)
+  and correctly logged one real transient failure (`tag_attempts=1`,
+  still `pending`, will retry next run) before being interrupted with
+  `SIGINT`, which behaved exactly as designed.
+
 ### Still open — not yet resolved
 
-- **pgvector version** on the self-hosted instance. **Blocked**: this
-  spike's environment can't currently reach the production host (`aorus4`)
-  over SSH/LAN — confirmed unreachable via direct IP, the configured SSH
-  jump-host alias, and a raw TCP connectivity check on port 22, despite the
-  public HTTPS domain (`map.joggerjoel.com`) working fine throughout this
-  spike for the REST-API-based checks above. Needs either restored
-  LAN/SSH access, or the owner running
-  `select extversion from pg_extension where extname = 'vector';` directly
-  and reporting the result.
-- **Full end-to-end per-photo throughput** at production batch size —
-  worth a real timed run over ~50-100 photos through the actual (not yet
-  built) `tagPhoto.ts` pipeline before committing to running the full
-  8,037-photo backfill unattended, so an unexpectedly slow run isn't a
-  surprise partway through.
+- **Full end-to-end per-photo throughput at the complete-backlog scale**:
+  the short supervised run above gives real per-photo timing, but running
+  the entire ~7,995-image backlog to completion is a multi-hour
+  unattended operation — deliberately not started without an explicit
+  go-ahead (see `ai-tagging-todo.md`, "P1 — Backfill script").
 - **Together.ai as a vision-tagging alternative**: investigated at the
   user's suggestion as a fallback "for when we don't have Ollama." The
   account's `TOGETHER_API_KEY` works for serverless text models (confirmed

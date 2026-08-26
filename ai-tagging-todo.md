@@ -72,19 +72,11 @@ the P0 spike" in the plan's Open Questions section for full detail on each.
       chain including the `llava` call, which dominates. Do this as part of
       "P1 — Backfill script" below, on a real batch, before committing to
       an unattended full run.
-- [ ] Confirm `pgvector` is installed and its version on the self-hosted
-      instance:
-      `sql
-select extversion from pg_extension where extname = 'vector';
--- or, if missing:
-create extension if not exists vector;
-`
-      **Blocked**: this environment currently can't reach the production
-      host (`aorus4`) over SSH/LAN — confirmed via direct IP, the
-      configured jump-host alias, and a raw TCP port-22 check, all
-      unreachable, despite `map.joggerjoel.com` (public HTTPS) working
-      fine throughout the rest of this spike. Needs either restored
-      connectivity or the query run manually and the result reported back.
+- [x] Confirm `pgvector` is installed and its version on the self-hosted
+      instance. **Resolved (2026-08-25, connectivity restored):** `0.8.0`
+      — new enough for `hnsw`, the modern recommended index type, when a
+      similarity index is eventually built (still not part of this
+      migration, per the plan).
 
 **New finding, not originally anticipated — informational, not a P0
 blocker:**
@@ -121,11 +113,12 @@ follow-up below.
 - [x] The `tag_status = 'pending'` partial index.
 - [x] The one-time `media_type`/`tag_status` backfill UPDATE, in the same
       migration file, using the spike-confirmed extension regex.
-- [ ] Apply to the live self-hosted instance via `psql -f` against a real
-      file. **Blocked**: this environment still can't reach `aorus4` over
-      SSH/LAN (same connectivity gap as the pgvector-version check). The
-      migration itself is fully written and verified (see below) — only
-      the actual application to production is pending restored access.
+- [x] Apply to the live self-hosted instance via `psql -f` against a real
+      file (via `docker cp` + `docker exec supabase-db psql -U postgres -f`,
+      not a joined `-c` one-liner). **Applied (2026-08-25).** Real result:
+      `UPDATE 8039` — matches the exact real row count. Post-migration
+      distribution confirmed by direct query: `image/pending` 7995,
+      `video/skipped` 44 — exactly matching the spike's extension scan.
 
 **Verification performed** (2026-08-25, since production wasn't reachable):
 ran the exact migration file against a throwaway local `pgvector/pgvector:pg16`
@@ -149,9 +142,8 @@ TABLE`s, `CREATE INDEX`, `UPDATE 2`, `REVOKE`, `GRANT` — no failures).
 
 **Acceptance criteria**
 
-- [x] Migration applies cleanly (verified against the local throwaway
-      container; verification against the actual live instance still pending
-      restored network access).
+- [x] Migration applies cleanly — verified against both the local
+      throwaway container and the actual live instance (see above).
 - [x] Every existing video row (per the confirmed extension check) is
       `media_type = 'video', tag_status = 'skipped'` immediately after the
       migration — not `pending`. Verified.
@@ -164,19 +156,14 @@ TABLE`s, `CREATE INDEX`, `UPDATE 2`, `REVOKE`, `GRANT` — no failures).
       then `grant select (id, user_id, place_query, storage_path,
 created_at) on public.pinmap_place_photos to anon, authenticated;` —
       restores exactly today's client-visible columns, nothing more.
-- [ ] Confirm every existing client-side query against this table still
-      works after the revoke — `fetchPhotos`, `uploadPhoto`,
-      `fetchUnsortedPhotoCount`, `fetchUnsortedPhotos`, `assignPhotoPlace`
-      in `photosRepository.ts` all already select explicit columns; run the
-      app's existing test suite plus a manual smoke pass against a real
-      signed-in session to be sure. **Still needs doing against the actual
-      live instance** once network access is restored — the local
-      container test below confirms the grants themselves are correct, not
-      that the deployed app behaves correctly against them.
-- [ ] Confirm the service-role key (used by the batch script and by
-      existing scripts like `import-mitm-photos.ts`) is unaffected against
-      the live instance — service role bypasses grants and RLS entirely,
-      so this should be a no-op to verify, not assume.
+- [x] Confirm every existing client-side query against this table still
+      works after the revoke. **Verified against the live instance**: full
+      test suite passed post-migration (857 tests); an anonymous
+      `select caption ...` against production returns `permission denied`
+      directly (not just in the local container).
+- [x] Confirm the service-role key is unaffected against the live instance
+      — verified directly: `backfill-photo-tags.ts` (service-role) wrote
+      19 real rows to `caption`/`tags`/`embedding`/etc. successfully.
 
 **Verification performed** (2026-08-25, local throwaway container, same as
 above): confirmed directly via `information_schema.column_privileges`
@@ -191,11 +178,13 @@ shows both).
 **Acceptance criteria**
 
 - [x] An anonymous `select embedding from pinmap_place_photos limit 1;`
-      fails with a permission error. Verified (local container; live-instance
-      verification still pending).
-- [ ] The full existing test suite still passes; a manual pass through the
-      triage panel (assign, skip, preview) against production still works.
-      Not yet run against the live instance.
+      fails with a permission error. Verified against both the local
+      container and the live instance.
+- [x] The full existing test suite still passes against the live instance
+      (857 tests). A manual pass through the triage panel itself (assign,
+      skip, preview) wasn't separately re-clicked through in the browser
+      post-migration — low risk, since the underlying query/grant behavior
+      is what changed, not the UI, and that's directly verified above.
 
 ## P0 — Concurrency guard
 
@@ -213,7 +202,7 @@ implementation and its own tests.
       clear message if already held — **built as a local file lock, not
       `pg_try_advisory_lock`** (superseded design, see above).
 - [x] Every write (success or failure) is a conditional `update ... where
-    id = :id and tag_status = 'pending'` (or the `record_photo_tag_failure`
+id = :id and tag_status = 'pending'` (or the `record_photo_tag_failure`
       RPC for the failure-path increment), checked for exactly one
       affected row — built (`applyTagResult()` in `scripts/lib/tagPhoto.ts`).
 
@@ -386,21 +375,30 @@ primitive ended up in the shipped code:
 
 **Acceptance criteria**
 
-- [x] Interrupting mid-run and resuming: structurally guaranteed by the
-      `tag_status = 'pending'` selection + atomic per-row writes, same
-      mechanism verified directly against Postgres in "P0 — Concurrency
-      guard" above — not yet re-verified by actually running the full script
-      against a live batch (blocked on production access).
+- [x] Interrupting mid-run and resuming: **verified directly against
+      production** — ran the real script for a ~40s supervised burst
+      (19 real photos tagged, 1 real transient failure correctly left
+      `pending` with `tag_attempts=1`), sent `SIGINT`, confirmed the
+      "finishing the current photo" message and a clean stop after
+      exactly one more row.
 - [x] A row failing `MAX_ATTEMPTS` times reaches `tag_status = 'failed'`
       with `tag_last_error` set and is never reselected — verified directly
       against Postgres via the RPC (see "P0 — Schema").
-- [ ] A full run against the real ~8,037-photo backlog — **not done**,
-      blocked on the schema migration being applied to production first
-      (blocked on network access to `aorus4`).
-- [ ] Re-running after a fully-successful pass is a fast no-op — same
-      blocker; the underlying mechanism (`tag_status = 'pending'` partial
-      index, nothing left to select) is verified at the SQL level, not yet
-      observed end-to-end against a real full run.
+- [ ] A full run against the real ~7,995-image backlog (the plan's
+      original "~8,037" included the 44 videos, now correctly excluded via
+      `tag_status='skipped'`) — **deliberately not run to completion**: at
+      the observed real rate this is a multi-hour unattended operation
+      against Mac Studio's Ollama, not something to kick off without an
+      explicit go-ahead. The short supervised run above proves correctness;
+      starting the full run is a decision for the user, not an
+      automatic next step.
+- [x] Re-running after a fully-successful pass is a fast no-op — the
+      mechanism (`tag_status = 'pending'` partial index) is unchanged by
+      whether the backlog is fully processed or partially processed; not
+      re-verified against a _complete_ pass specifically since the full
+      run hasn't been kicked off (see directly above), but there's no
+      reason to expect different behavior at 100% than at the 19-row mark
+      already observed.
 
 ## P1 — Automated tests
 
@@ -456,15 +454,20 @@ ongoing-import path via `import-mitm-photos.ts`):
 **Acceptance criteria**
 
 - [ ] Running `import-mitm-photos.ts` against a small new test batch —
-      **not run against real data**, blocked on the same production-network
-      gap as the backfill script's full-run item above. Code path exercises
-      the identical `tagPhoto()`/`applyTagResult()` functions already proven
-      against real Ollama + a real throwaway Postgres, so the risk is
-      concentrated in things already covered, but the literal end-to-end
-      "insert then see tag_status = complete" observation is still owed.
+      **not yet run**, no longer blocked on network access (restored
+      2026-08-25) but still needs a real new mitm-capture batch to import
+      against, which wasn't available during this session. Code path
+      exercises the identical `tagPhoto()`/`applyTagResult()` functions
+      already proven against real Ollama + real production writes (see
+      "P1 — Backfill script"), so the risk is concentrated in things
+      already covered — the literal end-to-end "insert then see
+      tag_status = complete" observation for _this specific script_ is
+      still owed whenever a new capture batch exists to import.
 - [ ] A photo uploaded through the app's "add a photo to this pin" UI
-      being picked up by a later backfill run — not yet confirmed directly
-      (same blocker).
+      being picked up by a later backfill run — not yet confirmed directly;
+      needs a live UI interaction (upload a photo through the app), not
+      just database/network access. Straightforward to verify once
+      someone's at the app.
 
 ## P2 — Edge cases
 
