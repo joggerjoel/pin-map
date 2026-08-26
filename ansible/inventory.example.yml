@@ -8,13 +8,28 @@
 #
 # There is deliberately no "dev" group here. Local development is
 # `bun run dev` on your own machine — entirely outside this inventory, so
-# there is nothing a playbook run could ever point at by mistake. The only
-# host any playbook in this directory can touch is whatever you list under
-# pinmap_prod.
+# there is nothing a playbook run could ever point at by mistake.
+#
+# Two groups are defined:
+#
+#   pinmap_prod    — deploy.yml targets this. The live site.
+#   pinmap_review  — deploy-review.yml targets this. A disposable slot for
+#                    looking at a build before it goes live.
+#
+# They may point at the same machine (that's the common case — one box, two
+# containers). Isolation between them is by container name, port, and source
+# directory, which each playbook hard-codes; see deploy-review.yml's header
+# for the table. Point pinmap_review at a different host instead if you'd
+# rather keep review off the production machine entirely.
+#
+# The YAML anchors (&aorus4 / &conn and their *references) just avoid
+# repeating the host and connection settings — delete them and write both
+# groups out longhand if you find that clearer.
+
 pinmap_prod:
   hosts:
-    prodserver: { ansible_host: 192.0.2.10 }
-  vars:
+    prodserver: &host { ansible_host: 192.0.2.10 }
+  vars: &conn
     ansible_user: youruser
     # ProxyJump is optional — drop the line if you reach the host directly.
     # Baking it in here (rather than relying on ~/.ssh/config) means this
@@ -23,3 +38,8 @@ pinmap_prod:
       -o ProxyJump=203.0.113.1
       -o ConnectTimeout=15
       -o StrictHostKeyChecking=accept-new
+
+pinmap_review:
+  hosts:
+    prodserver: *host
+  vars: *conn

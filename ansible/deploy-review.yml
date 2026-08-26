@@ -1,0 +1,185 @@
+---
+# Deploy pin-map to the REVIEW slot. Same mechanics as deploy.yml, but every
+# name it touches is distinct from production's, so a review deploy can never
+# disturb the live site.
+#
+# Review and production share a host (aorus4) — isolation here is at the
+# container/port/directory level, not the host level. The three names that
+# keep them apart:
+#
+#                       production            review
+#   container           pin-map-web           pin-map-review
+#   image               pin-map-web:latest    pin-map-review:latest
+#   port (on host)      127.0.0.1:8090        127.0.0.1:8091
+#   source dir          ~/…/pin-map           ~/…/pin-map-review
+#
+# `docker rm -f` below names pin-map-review explicitly, so it cannot remove
+# the production container. The assert task fails the run if any of these
+# vars has been edited to collide with production.
+#
+# The bundle itself is IDENTICAL to production's: the Dockerfile runs
+# `bun run build`, and vite's production mode loads .env.production either
+# way. That's the point — a review deploy shows exactly what prod will serve,
+# not a differently-configured approximation.
+#
+#   Reachability:  cd ansible && ansible pinmap_review -m ping
+#   Deploy:        cd ansible && ansible-playbook deploy-review.yml
+#   View it:       ssh -L 8091:127.0.0.1:8091 aorus4   # then localhost:8091
+#
+# Like deploy.yml, the tasks are raw `command`s wrapping the proven shell
+# steps, so `--check` reports them skipped rather than dry-running. Use the
+# ping above to verify connectivity before a real run.
+- name: Deploy pin-map to review
+  hosts: pinmap_review
+  gather_facts: true
+  vars:
+    remote_project_dir: "{{ ansible_env.HOME }}/Documents/Projects/pin-map-review"
+    local_project_dir: "{{ playbook_dir }}/.."
+    container_name: pin-map-review
+    image_name: pin-map-review:latest
+    # 8091 was already taken on the host. This is just a default — override
+    # per-run with `-e container_port=NNNN`. The preflight below will tell
+    # you what's holding a port rather than letting docker fail cryptically.
+    container_port: 8099
+    # Loopback-only, matching production's posture — nothing is exposed to the
+    # LAN. Reach it over an SSH tunnel (see the header). Override to 0.0.0.0
+    # only if you deliberately want it open on the network.
+    bind_address: "127.0.0.1"
+    # Derived from the port preflight below. Ansible evaluates vars lazily, so
+    # these are only meaningful after the two "Find any …" tasks have run.
+    # `select` drops the empty string docker emits when nothing matches.
+    published_containers: >-
+      {{ port_containers.stdout_lines | default([]) | select | list }}
+    conflicting_containers: >-
+      {{ published_containers | reject('equalto', container_name) | list }}
+
+  pre_tasks:
+    - name: Refuse to run if any name collides with production
+      # Cheap insurance against a careless edit to the vars above turning a
+      # review deploy into a production one. Checked before anything is
+      # rsynced, built, or removed.
+      ansible.builtin.assert:
+        that:
+          - container_name != 'pin-map-web'
+          - image_name != 'pin-map-web:latest'
+          - container_port | int != 8090
+          - "'pin-map-review' in remote_project_dir"
+        fail_msg: >-
+          Review vars collide with production (container pin-map-web /
+          port 8090 / the prod source dir). Refusing to deploy.
+        quiet: true
+
+    - name: Find any container already publishing the review port
+      ansible.builtin.command:
+        cmd: >-
+          docker ps --filter publish={{ container_port }}
+          --format {{ '{{' }}.Names{{ '}}' }}
+      register: port_containers
+      changed_when: false
+      failed_when: false
+
+    - name: Find any non-docker process listening on the review port
+      # docker ps only knows about published container ports; a plain daemon
+      # holding the port wouldn't show up there at all. `ss` catches those.
+      ansible.builtin.shell:
+        cmd: >-
+          ss -ltnH 2>/dev/null
+          | awk '{print $4}'
+          | grep -E '[:.]{{ container_port }}$' || true
+      register: port_sockets
+      changed_when: false
+      failed_when: false
+
+    - name: Refuse to run if another container publishes the review port
+      # Our own review container legitimately holds the port on a redeploy —
+      # it's removed further down before the new one starts — so it's excluded
+      # here. Anything else is a genuine conflict, and failing now with the
+      # holder's name beats `docker run` dying with a bare
+      # "address already in use".
+      ansible.builtin.assert:
+        that: conflicting_containers | length == 0
+        fail_msg: >-
+          Port {{ container_port }} on {{ inventory_hostname }} is already
+          published by container(s): {{ conflicting_containers | join(', ') }}.
+          Pick a free port with `-e container_port=NNNN`, or stop that container.
+        quiet: true
+
+    - name: Refuse to run if a non-container process holds the review port
+      # Only meaningful when no container at all publishes the port: if one
+      # does, the socket `ss` sees is that container's docker-proxy, not a
+      # separate process.
+      when: published_containers | length == 0
+      ansible.builtin.assert:
+        that: port_sockets.stdout | trim | length == 0
+        fail_msg: >-
+          Port {{ container_port }} on {{ inventory_hostname }} is held by a
+          non-container process (listening on {{ port_sockets.stdout | trim }}).
+          Pick a free port with `-e container_port=NNNN`, or free this one.
+        quiet: true
+
+  tasks:
+    - name: Sync source to the review directory (excludes build artifacts)
+      # Explicit -e "ssh ..." rather than relying on the control machine's
+      # ~/.ssh/config, so this works the same regardless of local SSH config
+      # state — same reasoning as ansible_ssh_common_args in the inventory.
+      delegate_to: localhost
+      ansible.builtin.command:
+        cmd: >-
+          rsync -az --delete
+          --exclude node_modules --exclude dist --exclude .git --exclude '*.log'
+          -e "ssh {{ ansible_ssh_common_args | default('') }}"
+          {{ local_project_dir }}/
+          {{ ansible_user }}@{{ ansible_host }}:{{ remote_project_dir }}/
+      changed_when: true
+
+    - name: Build the review Docker image
+      ansible.builtin.command:
+        cmd: docker build -t {{ image_name }} .
+        chdir: "{{ remote_project_dir }}"
+      changed_when: true
+
+    - name: Remove the previous review container (if any)
+      ansible.builtin.command:
+        cmd: docker rm -f {{ container_name }}
+      register: rm_result
+      failed_when: false
+      changed_when: rm_result.rc == 0
+
+    - name: Start the new review container
+      # No --restart policy: a review container is disposable and shouldn't
+      # outlive a reboot the way production does.
+      ansible.builtin.command:
+        cmd: >-
+          docker run -d --name {{ container_name }}
+          -p {{ bind_address }}:{{ container_port }}:80
+          {{ image_name }}
+      changed_when: true
+
+  post_tasks:
+    - name: Wait for the review container to answer locally
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ container_port }}/"
+        status_code: 200
+      register: health
+      retries: 10
+      delay: 2
+      until: health.status == 200
+
+    - name: Confirm production is still running and untouched
+      # The whole promise of this playbook is that it leaves prod alone.
+      # Assert it rather than trust it.
+      ansible.builtin.command:
+        cmd: docker inspect -f '{{ '{{' }}.State.Running{{ '}}' }}' pin-map-web
+      register: prod_state
+      changed_when: false
+      failed_when: false
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: >-
+          pin-map review deployed and healthy on
+          {{ bind_address }}:{{ container_port }}.
+          Production container pin-map-web running={{ prod_state.stdout | default('unknown') | trim }}.
+          View review with:
+          ssh -L {{ container_port }}:127.0.0.1:{{ container_port }} {{ inventory_hostname }}
+          then open http://localhost:{{ container_port }}
