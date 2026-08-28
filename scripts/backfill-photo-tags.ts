@@ -6,18 +6,20 @@
 // resolves to a fast no-op, since nothing is left 'pending'.
 //
 //   bun run scripts/backfill-photo-tags.ts
+//   bun run scripts/backfill-photo-tags.ts --limit=10   # stop after 10 rows
 //
 // Multiple machines against the same DB: fileLock.ts only stops a second
 // instance on the *same* machine -- it does nothing across machines, so
 // running this unsharded from two boxes at once means both race the same
 // pending rows (wasted, not corrupting -- the write path is guarded by a
 // conditional WHERE, confirmed by reading applyTagResult). To split the
-// pending queue across N machines with no overlap, pass --index/--of on
-// each one (0-indexed, all must agree on the same total):
+// pending queue with no overlap, pass --index on each machine (0-indexed);
+// the total shard count is the hardcoded SHARD_OF constant below, not a
+// flag -- both machines run the same checked-out source, so the total can
+// never drift the way a copied --of value or .env entry could:
 //
-//   bun run scripts/backfill-photo-tags.ts --index=0 --of=3
-//   bun run scripts/backfill-photo-tags.ts --index=1 --of=3
-//   bun run scripts/backfill-photo-tags.ts --index=2 --of=3
+//   bun run scripts/backfill-photo-tags.ts --index=0   # e.g. aorus (GPU)
+//   bun run scripts/backfill-photo-tags.ts --index=1   # e.g. macstudio
 //
 // This only removes the *duplicate-work* problem -- every shard still
 // calls the same shared Ollama instance, so it doesn't fix contention/
@@ -30,7 +32,12 @@ import { applyTagResult, tagPhoto, DEFAULT_MAX_ATTEMPTS } from "./lib/tagPhoto";
 
 const BUCKET = "pin-photos";
 const BATCH_SIZE = 50;
-const LOCK_PATH = join(tmpdir(), "pin-map-backfill-photo-tags.lock");
+const STORAGE_DOWNLOAD_TIMEOUT_MS = 60_000;
+
+// Bump in lockstep with the --index range above if a third machine is ever
+// added -- see the header comment for why this is a source constant, not a
+// flag or .env value.
+const SHARD_OF = 2;
 
 interface PendingRow {
   id: string;
@@ -42,36 +49,69 @@ interface Shard {
   of: number;
 }
 
-export function parseShardArgs(argv: string[]): Shard | null {
+interface RunArgs {
+  shard: Shard | null;
+  limit: number | null;
+}
+
+export function parseRunArgs(argv: string[]): RunArgs {
   const indexArg = argv.find((a) => a.startsWith("--index="));
-  const ofArg = argv.find((a) => a.startsWith("--of="));
-  if (!indexArg && !ofArg) return null;
-  if (!indexArg || !ofArg) {
-    throw new Error("--index and --of must be passed together");
+  const limitArg = argv.find((a) => a.startsWith("--limit="));
+
+  let shard: Shard | null = null;
+  if (indexArg) {
+    const index = Number(indexArg.slice("--index=".length));
+    if (!Number.isInteger(index) || index < 0 || index >= SHARD_OF) {
+      throw new Error(
+        `--index must satisfy 0 <= index < ${SHARD_OF}, got "${indexArg}"`,
+      );
+    }
+    shard = { index, of: SHARD_OF };
   }
-  const index = Number(indexArg.slice("--index=".length));
-  const of = Number(ofArg.slice("--of=".length));
-  if (!Number.isInteger(of) || of < 1) {
-    throw new Error(`--of must be a positive integer, got "${ofArg}"`);
+
+  let limit: number | null = null;
+  if (limitArg) {
+    limit = Number(limitArg.slice("--limit=".length));
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new Error(`--limit must be a positive integer, got "${limitArg}"`);
+    }
   }
-  if (!Number.isInteger(index) || index < 0 || index >= of) {
-    throw new Error(
-      `--index must satisfy 0 <= index < ${of}, got "${indexArg}"`,
-    );
-  }
-  return { index, of };
+
+  return { shard, limit };
 }
 
 // Deterministic, no DB schema change needed: a UUID's first 8 hex chars are
 // already uniformly random, so hashing on them spreads rows evenly across
-// shards without needing every shard to agree on anything but `of`.
+// shards.
 export function isInShard(id: string, shard: Shard): boolean {
   const n = parseInt(id.replace(/-/g, "").slice(0, 8), 16);
   return n % shard.of === shard.index;
 }
 
+function lockPathFor(shard: Shard | null): string {
+  const suffix = shard ? `-shard${shard.index}` : "";
+  return join(tmpdir(), `pin-map-backfill-photo-tags${suffix}.lock`);
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => Error,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(onTimeout()), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeout!);
+  }
+}
+
 async function main() {
-  const shard = parseShardArgs(process.argv.slice(2));
+  const { shard, limit } = parseRunArgs(process.argv.slice(2));
+  const lockPath = lockPathFor(shard);
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
   const serviceRoleKey = process.env.SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceRoleKey) {
@@ -84,17 +124,30 @@ async function main() {
       `[${new Date().toISOString()}] Running shard ${shard.index}/${shard.of}.`,
     );
   }
-
-  if (!acquireLock(LOCK_PATH)) {
+  if (limit !== null) {
     console.error(
-      `Another instance is already running (lock held at ${LOCK_PATH}). Exiting.`,
+      `[${new Date().toISOString()}] Limiting this run to ${limit} rows.`,
+    );
+  }
+
+  if (!acquireLock(lockPath)) {
+    console.error(
+      `Another instance is already running (lock held at ${lockPath}). Exiting.`,
     );
     process.exit(1);
   }
 
   let stopRequested = false;
   const onSigint = () => {
-    if (stopRequested) return; // second Ctrl+C: let the default handler kill it
+    if (stopRequested) {
+      // Second Ctrl+C: the operator wants out now, not after the current
+      // photo finishes -- exit immediately rather than silently no-op'ing
+      // (registering a SIGINT listener suppresses Node's default
+      // terminate-on-signal behavior for every subsequent signal, not just
+      // the first, so this has to be explicit).
+      console.log("\nSecond interrupt -- exiting immediately.");
+      process.exit(130);
+    }
     stopRequested = true;
     console.log(
       "\nStop requested -- finishing the current photo, then exiting cleanly.",
@@ -115,10 +168,14 @@ async function main() {
   const fetchLimit = shard ? BATCH_SIZE * shard.of : BATCH_SIZE;
 
   try {
-    while (!stopRequested) {
-      const { data: rows, error } = await supabase
+    while (!stopRequested && (limit === null || completed + failed < limit)) {
+      const {
+        data: rows,
+        error,
+        count,
+      } = await supabase
         .from("pinmap_place_photos")
-        .select("id, storage_path")
+        .select("id, storage_path", { count: "exact" })
         .eq("tag_status", "pending")
         .order("created_at", { ascending: true })
         .order("id", { ascending: true })
@@ -133,6 +190,17 @@ async function main() {
       const batch = shard
         ? fetched.filter((row) => isInShard(row.id, shard))
         : fetched;
+      // Total pending across ALL shards, not just this one's slice -- a
+      // sharded run's own "done" condition (batch.length === 0 after
+      // fetching this window) says nothing about whether every shard is
+      // actually converging on zero. Surfacing this every round makes a
+      // gap (e.g. a machine accidentally running against a different
+      // SHARD_OF) visible immediately instead of silently unnoticed.
+      if (shard) {
+        console.error(
+          `[${new Date().toISOString()}] ${count ?? "?"} pending total (all shards).`,
+        );
+      }
       // Fetched rows exist but none are this shard's -- don't spin hot on
       // an empty slice; give other shards time to clear the window first.
       if (batch.length === 0) {
@@ -142,10 +210,19 @@ async function main() {
 
       for (const row of batch) {
         if (stopRequested) break;
+        if (limit !== null && completed + failed >= limit) break;
 
-        const { data: blob, error: downloadError } = await supabase.storage
-          .from(BUCKET)
-          .download(row.storage_path);
+        const { data: blob, error: downloadError } = await withTimeout(
+          supabase.storage.from(BUCKET).download(row.storage_path),
+          STORAGE_DOWNLOAD_TIMEOUT_MS,
+          () =>
+            new Error(
+              `download timed out after ${STORAGE_DOWNLOAD_TIMEOUT_MS}ms`,
+            ),
+        ).catch((err) => ({
+          data: null,
+          error: err instanceof Error ? err : new Error(String(err)),
+        }));
 
         const result =
           downloadError || !blob
@@ -178,16 +255,22 @@ async function main() {
     }
   } finally {
     process.off("SIGINT", onSigint);
-    releaseLock(LOCK_PATH);
+    releaseLock(lockPath);
   }
 
   console.error(
     `[${new Date().toISOString()}] Done. ${completed} complete, ${failed} failed this run.` +
-      (stopRequested ? " (stopped early by request)" : ""),
+      (stopRequested ? " (stopped early by request)" : "") +
+      (limit !== null && completed + failed >= limit ? " (hit --limit)" : ""),
   );
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Guarded so scripts/backfill-photo-tags.test.ts can import parseRunArgs/
+// isInShard without triggering a real run (which would exit the test
+// process the moment it hit the missing-env-vars check).
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

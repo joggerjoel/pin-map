@@ -9,19 +9,23 @@
 // that package bundled its own tfjs-core@1.7.0, which created a second,
 // incompatible kernel registry alongside any modern tfjs-node, and
 // crashed at inference time ("forwardFunc_1 is not a function"),
-// confirmed against real production photos before switching. This fork
-// has no bundled tfjs-core -- but its own Node build (dist/face-api.node.js)
-// unconditionally requires plain `@tensorflow/tfjs-node` internally, so
-// that package must stay a real dependency even though nothing here
-// imports it directly. Do NOT also import `@tensorflow/tfjs-node-gpu`
-// here: loading both native TF runtimes in one process fatally crashed
-// ("Duplicate registration of device factory for type XLA_CPU") on
-// macOS -- confirmed by the local test suite. It happened not to crash
-// in one manual test on aorus (Linux), but that's an unvalidated,
-// fragile state (two native runtimes racing to register the same global
-// C++ statics), not a supported pattern -- see macstudio-backfill-spec.md
-// for the GPU story on that machine specifically.
-import * as faceapi from "@vladmandic/face-api";
+// confirmed against real production photos before switching. This fork's
+// default Node build (dist/face-api.node.js, what `import "@vladmandic/
+// face-api"` resolves to) unconditionally requires plain `@tensorflow/
+// tfjs-node` internally -- loading `@tensorflow/tfjs-node-gpu` in the same
+// process as that default build fatally crashes ("Duplicate registration
+// of device factory for type XLA_CPU"), confirmed by the local test suite.
+//
+// The fork also publishes a second, separate Node build --
+// dist/face-api.node-gpu.js -- whose only native require() is
+// `@tensorflow/tfjs-node-gpu`; it never touches plain tfjs-node, so it
+// never hits the dual-runtime crash above (confirmed by reading the
+// published bundle directly, not assumed). loadFaceApi() below picks
+// between the two via FACE_DETECTOR_BACKEND, as a *dynamic* import so the
+// unused backend's module is never even touched on a machine that
+// doesn't have it installed (e.g. tfjs-node-gpu is an optionalDependency,
+// absent on non-GPU machines). See macstudio-backfill-spec.md, "GPU
+// acceleration on aorus", for the full story and verification results.
 import { Canvas, Image, ImageData } from "canvas";
 import sharp from "sharp";
 import * as blockhash from "blockhash-core";
@@ -29,10 +33,33 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// @ts-expect-error face-api.js expects browser globals; canvas polyfills them
-faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
+type FaceApiModule = typeof import("@vladmandic/face-api");
 
-export const PIPELINE_VERSION = 1;
+let faceapiPromise: Promise<FaceApiModule> | null = null;
+
+function loadFaceApi(): Promise<FaceApiModule> {
+  if (!faceapiPromise) {
+    faceapiPromise = (async () => {
+      const backend = process.env.FACE_DETECTOR_BACKEND ?? "cpu";
+      const mod =
+        backend === "gpu"
+          ? ((await import("@vladmandic/face-api/dist/face-api.node-gpu.js")) as FaceApiModule)
+          : ((await import("@vladmandic/face-api")) as FaceApiModule);
+      // @ts-expect-error face-api.js expects browser globals; canvas polyfills them
+      mod.env.monkeyPatch({ Canvas, Image, ImageData });
+      return mod;
+    })();
+  }
+  return faceapiPromise;
+}
+
+// Bumped from 1 -> 2 for the already-shipped face-api.js -> @vladmandic/
+// face-api swap (different weight files -- a real trigger under the rule
+// below). The CPU/GPU backend choice (FACE_DETECTOR_BACKEND) is NOT a
+// pipeline_version trigger: both run the identical TinyFaceDetector
+// weights through the identical op graph, just on a different native
+// backend -- a compute detail, not a model change.
+export const PIPELINE_VERSION = 2;
 
 export const TAG_TAXONOMY = [
   "landscape",
@@ -59,8 +86,9 @@ const PHASH_BITS = 16; // -> 256-bit / 64-hex-char hash, per the P0 spike
 const VIDEO_EXTENSION_PATTERN = /\.(mp4|mov|webm)$/i;
 
 // The exact prompt the P0 spike measured (75-90% match against a 20-photo
-// ground truth, scoring-dependent) -- part of the pipeline_version = 1
-// definition. Changing this wording is a pipeline_version bump.
+// ground truth, scoring-dependent) -- part of the pipeline_version
+// provenance definition (originally recorded under version 1, unchanged
+// since). Changing this wording is a pipeline_version bump.
 const TAGGING_PROMPT = `Look ONLY at what is literally visible in this photo. Do not guess or assume a typical scene.
 
 Reply with ONLY a single-line JSON object, no markdown, no extra text:
@@ -80,10 +108,13 @@ const FACE_MODEL_DIR = join(
   "face-models",
 );
 let faceModelsLoaded = false;
-async function ensureFaceModelsLoaded(): Promise<void> {
-  if (faceModelsLoaded) return;
-  await faceapi.nets.tinyFaceDetector.loadFromDisk(FACE_MODEL_DIR);
-  faceModelsLoaded = true;
+async function ensureFaceModelsLoaded(): Promise<FaceApiModule> {
+  const faceapi = await loadFaceApi();
+  if (!faceModelsLoaded) {
+    await faceapi.nets.tinyFaceDetector.loadFromDisk(FACE_MODEL_DIR);
+    faceModelsLoaded = true;
+  }
+  return faceapi;
 }
 
 export interface DecodedImage {
@@ -118,7 +149,7 @@ export function computePhash(image: DecodedImage): string {
 }
 
 export async function detectFace(image: DecodedImage): Promise<boolean> {
-  await ensureFaceModelsLoaded();
+  const faceapi = await ensureFaceModelsLoaded();
   const canvas = new Canvas(image.width, image.height);
   const ctx = canvas.getContext("2d");
   const imageData = ctx.createImageData(image.width, image.height);
@@ -174,6 +205,21 @@ export function parseModelResponse(raw: string): CaptionAndTags | null {
   return { caption, tags };
 }
 
+// Thrown only for a genuine connectivity failure (fetch() itself rejecting:
+// connection refused, DNS failure, or our own abort-on-timeout) -- never for
+// a non-2xx HTTP response, which stays a per-photo failure. tagPhoto()
+// re-throws this instead of swallowing it, so a total Ollama outage aborts
+// the whole run rather than burning tag_attempts across every row it
+// touches -- see ai-tagging-plan.md, "Error handling".
+export class OllamaUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super(
+      `Ollama unreachable: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    this.name = "OllamaUnavailableError";
+  }
+}
+
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
@@ -183,6 +229,8 @@ async function fetchWithTimeout(
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    throw new OllamaUnavailableError(err);
   } finally {
     clearTimeout(timeout);
   }
@@ -211,21 +259,29 @@ async function ollamaGenerate(pngBytes: Buffer): Promise<string> {
 }
 
 /**
- * One immediate retry with a short backoff for a transient network/timeout
- * error -- not for a response that parsed but failed validation, which is
+ * One immediate retry with a short backoff, for either a transient
+ * network/timeout error OR a response that parses as invalid/empty JSON --
+ * one shared retry budget covering both failure modes, not two stacked
+ * retries. The retry attempt itself is unguarded: if it also fails (throws,
+ * or parses to null), that's the final result -- a second parse failure is
  * the caller's tag_attempts concern, not this function's.
  */
 export async function generateCaptionAndTags(
   pngBytes: Buffer,
 ): Promise<CaptionAndTags | null> {
-  let raw: string;
-  try {
-    raw = await ollamaGenerate(pngBytes);
-  } catch {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    raw = await ollamaGenerate(pngBytes);
+  async function attempt(): Promise<CaptionAndTags | null> {
+    const raw = await ollamaGenerate(pngBytes);
+    return parseModelResponse(raw);
   }
-  return parseModelResponse(raw);
+
+  try {
+    const result = await attempt();
+    if (result !== null) return result;
+  } catch {
+    // fall through to the single retry below
+  }
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  return attempt();
 }
 
 export async function embedCaption(caption: string): Promise<number[]> {
@@ -299,6 +355,10 @@ export async function tagPhoto(imageBytes: Buffer): Promise<TagPhotoResult> {
       pipelineVersion: PIPELINE_VERSION,
     };
   } catch (err) {
+    // A total Ollama outage is an environment problem, not a per-photo one
+    // -- propagate it so the caller aborts the run instead of recording a
+    // failed attempt against this (and every subsequent) row.
+    if (err instanceof OllamaUnavailableError) throw err;
     return {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
@@ -355,6 +415,20 @@ export async function applyTagResult(
 
   if (updateError) {
     console.error(`Update failed for ${photoId}: ${updateError.message}`);
+    // A genuine write failure, not "someone else already claimed it" --
+    // record it the same way any other failure is recorded, so tag_attempts
+    // increments and the row doesn't silently stay 'pending' forever,
+    // untracked, if this keeps failing.
+    const { error: rpcError } = await supabase.rpc("record_photo_tag_failure", {
+      p_photo_id: photoId,
+      p_error: updateError.message,
+      p_max_attempts: maxAttempts,
+    });
+    if (rpcError) {
+      console.error(
+        `Failed to record failure for ${photoId}: ${rpcError.message}`,
+      );
+    }
     return "failed";
   }
   if (!updated || updated.length === 0) {
