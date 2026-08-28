@@ -13,7 +13,7 @@ based on facts verified against the live setup (not assumed).
   from local disk. **So there is no file-transfer problem to solve** — whichever
   machine runs the script pulls images itself, over the network, same as today.
 - **Mac Studio can already reach the self-hosted Supabase.** Confirmed directly:
-  `ssh macstudio curl http://192.168.1.246:8000/rest/v1/` → `401` (reachable, just
+  `ssh macstudio curl http://192.168.1.246:8010/rest/v1/` → `401` (reachable, just
   no API key on that bare request — expected). Sub-millisecond LAN ping. Same
   subnet as `aorus4`, no VPN/routing needed.
 - **Ollama already lives on Mac Studio.** `.env`'s `OLLAMA_BASE_URL` is
@@ -59,7 +59,7 @@ pm trust` step needed).
 3. Copy `.env` to Mac Studio with `OLLAMA_BASE_URL` changed to
    `http://localhost:11434` (or removed — that's already the script's default).
    `VITE_SUPABASE_URL`/`SERVICE_ROLE_KEY` stay as-is, since Mac Studio already
-   reaches `192.168.1.246:8000` directly.
+   reaches `192.168.1.246:8010` directly.
 4. Run it: `ssh macstudio` → `cd pin-map && bun run scripts/backfill-photo-tags.ts`.
 
 No code changes to the DB-query, download, or write-back logic. No new transfer

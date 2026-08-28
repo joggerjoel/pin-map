@@ -26,7 +26,7 @@
 # again. Left conditional on three vars rather than unconditional so that
 # a deploy of just the main app keeps working without them:
 #
-#   fb_import_relay_supabase_url: "http://192.168.1.246:8000"
+#   fb_import_relay_supabase_url: "http://192.168.1.246:8010"
 #   fb_import_relay_supabase_anon_key: "..."     # same as VITE_SUPABASE_ANON_KEY
 #   fb_import_relay_mapbox_token: "pk...."        # a real Mapbox token — billable
 #
