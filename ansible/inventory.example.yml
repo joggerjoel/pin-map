@@ -39,6 +39,18 @@ pinmap_prod:
       -o ConnectTimeout=15
       -o StrictHostKeyChecking=accept-new
 
+    # Required — see deploy.yml's header for why these can't just come from
+    # a stray .env on the deploy machine. pinmap_web_mapbox_token must be a
+    # token restricted to your production domain in the Mapbox dashboard,
+    # not a bare unrestricted one.
+    pinmap_web_mapbox_token: "pk...."
+    pinmap_web_supabase_url: "https://your-project.supabase.co"
+    pinmap_web_supabase_anon_key: "..."
+    # Optional — only needed for the Imports/notify features.
+    # pinmap_web_fb_import_upload_url: "https://your-host:8096"
+    # pinmap_web_fb_import_relay_url: "https://your-host:8097"
+    # pinmap_web_notify_relay_url: "https://your-host:..."
+
 pinmap_review:
   hosts:
     prodserver: *host

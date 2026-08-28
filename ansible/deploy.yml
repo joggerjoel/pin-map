@@ -34,6 +34,29 @@
 # in this tracked file) to turn this section on. All three must be set —
 # any one missing skips the whole block, matching the service's own
 # requireEnv() philosophy of failing loudly rather than partially.
+#
+# --- frontend build secrets (required) ---
+#
+# The web app's own Vite build vars work the same way, but are NOT
+# optional: a bare rsync + `docker build` would otherwise fall back to
+# whatever stray `.env` happens to be sitting in the deploy operator's
+# working copy (their personal dev token, an unrestricted one obtained in
+# thirty seconds from Mapbox) — and that token, not the properly scoped and
+# URL-restricted one, is what would ship to every visitor. To close that
+# off, `.env` is excluded from the rsync below and from the Docker build
+# context (.dockerignore), and this playbook writes .env.production.local
+# on the remote host from these vars instead — Vite picks it up
+# automatically during `bun run build` (production mode). Set under
+# pinmap_prod's `vars:` in inventory.local.yml:
+#
+#   pinmap_web_mapbox_token: "pk...."         # the restricted pin-map-prod token
+#   pinmap_web_supabase_url: "https://..."
+#   pinmap_web_supabase_anon_key: "..."
+#
+# Optional (blank if unset — only the Imports/notify features need them):
+#   pinmap_web_fb_import_upload_url: "..."
+#   pinmap_web_fb_import_relay_url: "..."
+#   pinmap_web_notify_relay_url: "..."
 - name: Deploy pin-map to production
   hosts: pinmap_prod
   gather_facts: true
@@ -66,10 +89,42 @@
         cmd: >-
           rsync -az --delete
           --exclude node_modules --exclude dist --exclude .git --exclude '*.log'
+          --exclude .env
           -e "ssh {{ ansible_ssh_common_args | default('') }}"
           {{ local_project_dir }}/
           {{ ansible_user }}@{{ ansible_host }}:{{ remote_project_dir }}/
       changed_when: true
+
+    - name: Require the production frontend build secrets to be set
+      ansible.builtin.assert:
+        that:
+          - pinmap_web_mapbox_token is defined
+          - pinmap_web_supabase_url is defined
+          - pinmap_web_supabase_anon_key is defined
+        fail_msg: >-
+          pinmap_web_mapbox_token, pinmap_web_supabase_url, and
+          pinmap_web_supabase_anon_key must be set under pinmap_prod's vars
+          in inventory.local.yml — see this file's header. The build never
+          falls back to a stray .env on the host; failing loudly here beats
+          silently shipping whatever token was lying around.
+        quiet: true
+
+    - name: Write the production frontend build env
+      # Never the deploy operator's own .env (excluded above) — always
+      # exactly these vars, so the bundle always carries the restricted
+      # pin-map-prod token rather than whatever a developer's local .env
+      # happens to contain.
+      ansible.builtin.copy:
+        dest: "{{ remote_project_dir }}/.env.production.local"
+        mode: "0600"
+        content: |
+          VITE_MAPBOX_TOKEN={{ pinmap_web_mapbox_token }}
+          VITE_SUPABASE_URL={{ pinmap_web_supabase_url }}
+          VITE_SUPABASE_ANON_KEY={{ pinmap_web_supabase_anon_key }}
+          VITE_FB_IMPORT_UPLOAD_URL={{ pinmap_web_fb_import_upload_url | default('') }}
+          VITE_FB_IMPORT_RELAY_URL={{ pinmap_web_fb_import_relay_url | default('') }}
+          VITE_NOTIFY_RELAY_URL={{ pinmap_web_notify_relay_url | default('') }}
+      no_log: true
 
     - name: Build the Docker image
       ansible.builtin.command:

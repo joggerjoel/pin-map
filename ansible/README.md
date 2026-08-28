@@ -30,10 +30,14 @@ fails the run if any of its names has been edited into collision with
 production's, so a careless var edit can't turn a review deploy into a
 production one.
 
-The review container serves a **byte-identical bundle** to production: the
-Dockerfile runs `bun run build`, and vite's production mode loads
-`.env.production` for either target. Review shows you exactly what prod will
-serve, not a differently-configured approximation.
+The review container serves a **byte-identical bundle** to production: both
+playbooks write the same `pinmap_web_*` vars to `.env.production.local` on
+the remote host before running `bun run build`, so review shows you exactly
+what prod will serve, not a differently-configured approximation. Neither
+playbook ever falls back to a deploy operator's own `.env` — it's excluded
+from the sync specifically so a developer's personal (often unrestricted)
+Mapbox token can't end up in the production bundle. See `deploy.yml`'s
+header for the full list of required vars.
 
 ## Setup
 
@@ -43,7 +47,10 @@ cp inventory.example.yml inventory.local.yml   # then fill in your real host
 ```
 
 `inventory.local.yml` is gitignored — real IPs, jump hosts, and usernames
-never belong in the tracked (public) repo.
+never belong in the tracked (public) repo. Also fill in `pinmap_web_mapbox_token`,
+`pinmap_web_supabase_url`, and `pinmap_web_supabase_anon_key` under
+`pinmap_prod`'s `vars:` — both playbooks fail loudly if any is missing
+rather than silently building without them.
 
 ## Usage
 

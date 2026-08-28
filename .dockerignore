@@ -2,3 +2,9 @@ node_modules
 dist
 .git
 *.log
+
+# A developer's local .env (VITE_MAPBOX_TOKEN etc.) must never end up in a
+# built image — the deploy playbooks generate .env.production.local instead.
+# This is defense in depth: rsync already excludes .env before the build
+# context is assembled (see ansible/deploy.yml).
+.env

@@ -18,9 +18,12 @@
 # vars has been edited to collide with production.
 #
 # The bundle itself is IDENTICAL to production's: the Dockerfile runs
-# `bun run build`, and vite's production mode loads .env.production either
-# way. That's the point — a review deploy shows exactly what prod will serve,
-# not a differently-configured approximation.
+# `bun run build` against a .env.production.local generated from the same
+# pinmap_web_* vars deploy.yml uses (see its header) — inherited via the
+# shared aorus4 host, since both groups list it. Never a stray .env on the
+# host; that's excluded from the rsync, same as deploy.yml. That's the
+# point — a review deploy shows exactly what prod will serve, not a
+# differently-configured approximation.
 #
 #   Reachability:  cd ansible && ansible pinmap_review -m ping
 #   Deploy:        cd ansible && ansible-playbook deploy-review.yml
@@ -127,10 +130,39 @@
         cmd: >-
           rsync -az --delete
           --exclude node_modules --exclude dist --exclude .git --exclude '*.log'
+          --exclude .env
           -e "ssh {{ ansible_ssh_common_args | default('') }}"
           {{ local_project_dir }}/
           {{ ansible_user }}@{{ ansible_host }}:{{ remote_project_dir }}/
       changed_when: true
+
+    - name: Require the frontend build secrets to be set
+      # Same vars as deploy.yml (see its header) — inherited here via the
+      # shared aorus4 host, so a review build carries the same restricted
+      # pin-map-prod token rather than falling back to a stray .env.
+      ansible.builtin.assert:
+        that:
+          - pinmap_web_mapbox_token is defined
+          - pinmap_web_supabase_url is defined
+          - pinmap_web_supabase_anon_key is defined
+        fail_msg: >-
+          pinmap_web_mapbox_token, pinmap_web_supabase_url, and
+          pinmap_web_supabase_anon_key must be set under pinmap_prod's vars
+          in inventory.local.yml — see deploy.yml's header.
+        quiet: true
+
+    - name: Write the frontend build env
+      ansible.builtin.copy:
+        dest: "{{ remote_project_dir }}/.env.production.local"
+        mode: "0600"
+        content: |
+          VITE_MAPBOX_TOKEN={{ pinmap_web_mapbox_token }}
+          VITE_SUPABASE_URL={{ pinmap_web_supabase_url }}
+          VITE_SUPABASE_ANON_KEY={{ pinmap_web_supabase_anon_key }}
+          VITE_FB_IMPORT_UPLOAD_URL={{ pinmap_web_fb_import_upload_url | default('') }}
+          VITE_FB_IMPORT_RELAY_URL={{ pinmap_web_fb_import_relay_url | default('') }}
+          VITE_NOTIFY_RELAY_URL={{ pinmap_web_notify_relay_url | default('') }}
+      no_log: true
 
     - name: Build the review Docker image
       ansible.builtin.command:
