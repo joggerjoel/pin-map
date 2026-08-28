@@ -563,11 +563,28 @@ just code review:**
       does not reappear under the new import shape (it was only ever
       tested under the old, wrong import shape); spot-compare `has_face`
       against the CPU path on the same photos.
-- [ ] A deliberate Ollama-unreachable test (point `OLLAMA_BASE_URL` at an
-      unreachable address briefly): confirm the run aborts — non-zero
-      exit, lock released, no `tag_attempts` burned — instead of
-      continuing.
-- [ ] Only after the three above pass: start both aorus (`--index=0`, GPU)
+- [x] A deliberate Ollama-unreachable test (2026-08-28, run live against
+      production Supabase from a dev machine with Tailscale access to Mac
+      Studio's Ollama — not aorus/Mac Studio themselves): temporarily
+      flipped one already-`complete` row back to `pending`, ran
+      `OLLAMA_BASE_URL=http://127.0.0.1:1 bun run
+    scripts/backfill-photo-tags.ts --limit=1`. Real CPU face detection
+      ran successfully against the real downloaded photo (confirms the
+      `vitest`-only `tfjs-node` incompatibility below really is
+      test-runner-specific, not a production issue), then the Ollama call
+      failed and `OllamaUnavailableError` propagated as designed: exit
+      code 1, lock file released, `tag_attempts`/`tag_last_error`/
+      `tag_last_attempted_at` all untouched. Row restored to its original
+      `tag_status: complete` afterward.
+- [ ] **New finding (2026-08-28)**: every run on this dev machine prints
+      `objc[...]: Class GNotificationCenterDelegate is implemented in
+  both .../canvas/.../libgio-2.0.0.dylib and
+  .../@img/sharp-libvips-darwin-arm64/.../libvips-cpp....dylib` to
+      stderr — a native symbol collision between `canvas` and `sharp`'s
+      bundled libvips. Harmless so far (didn't affect the abort test
+      above), but check whether it also appears on aorus/Mac Studio and
+      whether it's still benign there before assuming it always is.
+- [ ] Only after the two above pass: start both aorus (`--index=0`, GPU)
       and Mac Studio (`--index=1`, CPU) unattended, watching the new
       "total remaining pending" log line to confirm the two shards jointly
       drain to zero.
