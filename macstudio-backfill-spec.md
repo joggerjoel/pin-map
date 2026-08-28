@@ -104,7 +104,7 @@ a function`, in `face-api.js`'s own bundled `ops/normalize.js`. This
   directly. That's why plain `@tensorflow/tfjs-node` stays a real
   dependency even though nothing in `tagPhoto.ts` imports it by name.
 
-## GPU acceleration on aorus — investigated, not shipped
+## GPU acceleration on aorus — shipped
 
 Separately from the Mac Studio plan (which was always CPU-only, since Apple
 Silicon has no CUDA), `aorus` (192.168.1.74) turned out to have a real NVIDIA
@@ -114,24 +114,39 @@ working _and fast_ there through `@tensorflow/tfjs-node-gpu@4.22.0` +
 (`device:GPU:0 ... NVIDIA GeForce RTX 3070`), real detections against
 production photos, sub-30ms per call after warmup.
 
-**Not shipped, because it's unsafe to combine with the fix above**: since
-`@vladmandic/face-api`'s Node build unconditionally loads plain
-`@tensorflow/tfjs-node` regardless of what else is imported, having
-`tfjs-node-gpu` _also_ loaded in the same process means two separate native
-TensorFlow runtime binaries initializing in one process. On this Mac laptop
-that combination hit a **fatal, unrecoverable crash**
-(`F ... Duplicate registration of device factory for type XLA_CPU`) the moment
-the real test suite exercised it — not a soft warning, a process-killing
-abort. The one-off manual test on `aorus` (Linux) happened not to hit this,
-but that's platform luck, not a validated safe pattern — Linux's dynamic
-loader may simply be more permissive about the same duplicate global-static
-registration that's fatal on macOS. **Do not add `@tensorflow/tfjs-node-gpu`
-as a dependency or import it in `tagPhoto.ts`** without first solving that
-conflict for real — e.g., patching `@vladmandic/face-api`'s bundle to stop
-forcing plain `tfjs-node`, or isolating the GPU path in its own process
-(a worker/subprocess boundary, not the same Node process as the rest of the
-pipeline). Revisit only if the CPU-native speedup turns out to be
-insufficient in practice.
+**The earlier conclusion here (below the fold, kept for the record) was
+wrong: this did not need bundle-patching or subprocess isolation.**
+`@vladmandic/face-api`'s default Node build (`dist/face-api.node.js`, what a
+plain `import "@vladmandic/face-api"` resolves to via `package.json`'s
+`"main"`) does unconditionally `require("@tensorflow/tfjs-node")`
+internally — but the same published package (confirmed directly by fetching
+and reading `@vladmandic/face-api@1.7.15` from npm, not assumed) also ships
+a **second, separate Node build**: `dist/face-api.node-gpu.js`, whose only
+native `require()` is `@tensorflow/tfjs-node-gpu`. It never touches plain
+`tfjs-node`, so it never hits the dual-runtime crash below. `package.json`
+has no `"exports"` map, so nothing blocks importing that file directly by
+its deep path.
+
+`scripts/lib/tagPhoto.ts`'s `loadFaceApi()` now picks between the two Node
+builds at runtime via a **dynamic** `import()`, gated by
+`FACE_DETECTOR_BACKEND` (env var; `"gpu"` on aorus, unset/`"cpu"` everywhere
+else) — a _static_ import of the GPU build would defeat the point, since
+it'd be resolved at module-load regardless of which branch actually runs.
+`@tensorflow/tfjs-node-gpu` is an `optionalDependency` in `package.json`
+(not a regular dependency — it has no `os`/`cpu` platform gate, so as a hard
+dependency its native-addon-downloading postinstall would run, and almost
+certainly fail, on every non-CUDA machine including Mac Studio).
+
+Original crash context, still accurate for the _default_ build specifically:
+loading `tfjs-node-gpu` in the same process as `@vladmandic/face-api`'s
+_default_ (plain-`tfjs-node`-requiring) build is two separate native
+TensorFlow runtime binaries initializing in one process — on this Mac
+laptop that combination hit a **fatal, unrecoverable crash**
+(`F ... Duplicate registration of device factory for type XLA_CPU`) the
+moment the real test suite exercised it. The `node-gpu` build sidesteps this
+entirely by never loading plain `tfjs-node` in the first place — it's not
+"platform luck" the way the original one-off Linux test was assumed to be,
+it's a structurally different code path.
 
 ## Preventing double-processing
 
@@ -149,6 +164,28 @@ separately:
   step has no atomic claim — two concurrent readers could pull overlapping rows
   and do redundant (not corrupting, but wasted) work on the same photos.
 
+**Superseded — two runners now run at once, on purpose.** The "operational,
+not code" single-runner rule below was the original fix for the Mac Studio
+move; it's since been superseded by real sharding, shipped in
+`scripts/backfill-photo-tags.ts` in the same commit that introduced this
+file (`--index`, paired with a hardcoded `SHARD_OF = 2` constant in source —
+not a `--of` flag or a `.env` value, specifically so the two machines can
+never disagree on the total the way a copied config value could). aorus
+(`--index=0`, GPU) and Mac Studio (`--index=1`, CPU) each own a disjoint,
+deterministic half of the pending queue (`isInShard`, hashed on each row's
+UUID) — this isn't a `FOR UPDATE SKIP LOCKED`-style DB coordination problem
+the way the original "two runners active at once" framing assumed; the
+partition is collision-free by construction once both machines agree on
+`SHARD_OF`, which they now always do because both run the same checked-out
+source. A `--limit=N` flag exists to test a shard against a handful of real
+rows before an unattended full run, and each sharded run logs the **total**
+remaining `pending` count (unfiltered by shard) every fetch, so a
+mis-partitioned run (impossible by construction now, but cheap insurance)
+would be visible immediately instead of silently unnoticed.
+
+Original text, kept for context on why the single-runner rule existed in
+the first place:
+
 **Chosen fix: operational, not code.** Since you're moving to Mac Studio (not
 running both at once — confirmed), the fix is a single rule: **the backfill only
 ever runs from Mac Studio going forward.** Don't kick it off from the laptop once
@@ -162,13 +199,29 @@ atomic claim — e.g. `UPDATE ... SET tag_status = 'processing' WHERE id IN
 (SELECT id FROM pinmap_place_photos WHERE tag_status = 'pending' LIMIT 50 FOR
 UPDATE SKIP LOCKED) RETURNING id` via an RPC (same pattern already used
 elsewhere in this codebase for `pinmap_photo_groups`'s ownership-check locking).
-Skipping this since it's not needed for a single designated runner.
+This turned out not to be the fix actually needed — the UUID-hash partition
+above solves the real problem (rows being processed more than once) without
+needing DB-level coordination at all.
 
 ## Status
 
-Resolved. The one real unknown (tfjs-node/face-api.js compatibility) turned out
-to be a genuine bug, not a false alarm — fixed via the `@vladmandic/face-api`
-swap above, verified against real production photos, full local test suite
-passing (1011 tests, 0 regressions), `tsc -b` clean. Remaining step is
-purely operational: actually run steps 1/3/4 above on Mac Studio itself —
-nothing left to verify in the code.
+The `@vladmandic/face-api` swap (CPU path) remains resolved as described above:
+verified against real production photos, full local test suite passing,
+`tsc -b` clean.
+
+The GPU path on aorus and the two-way `--index` sharding are now implemented
+(`FACE_DETECTOR_BACKEND=gpu`, `dist/face-api.node-gpu.js` deep import,
+`@tensorflow/tfjs-node-gpu` as an `optionalDependency`, hardcoded
+`SHARD_OF = 2`) but **not yet live-verified on real hardware** — `scripts/`
+isn't covered by `tsc -b` (only `src/` is; verified separately via a
+one-off `tsc --noEmit` invocation) and the automated test suite can't
+exercise the real GPU backend or real Ollama connectivity. Before an
+unattended production run, still owed, in order: `bun install` with the
+optional GPU dependency on Mac Studio first (worse failure mode if bun
+doesn't tolerate a failing optional postinstall), then aorus;
+`FACE_DETECTOR_BACKEND=gpu` end-to-end against a handful of real photos
+(`--limit=10`) to re-confirm the dual-runtime crash doesn't reappear under
+the new import shape and to spot-compare `has_face` against the CPU path;
+a deliberate Ollama-unreachable test to confirm a real outage aborts the
+run instead of burning `tag_attempts`. Only then start both shards
+unattended.

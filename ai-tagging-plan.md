@@ -49,6 +49,33 @@ moved off the original build machine to a better-resourced one (Mac
 Studio) reachable over Tailscale — see the "Ops update" note under
 "Vision tagging + caption" below.
 
+**Revision note (2026-08-27, GPU sharding + bug-fix pass):** an 8-lens
+council review of this doc set against the shipped code found real
+doc/code drift plus several correctness bugs, and the decision was made to
+run the next backfill sharded across two real machines — aorus (GPU) and
+Mac Studio (CPU) — rather than Mac Studio alone. Shipped in this pass:
+`pipeline_version` bumped to 2 (closing an overdue bump for the already-
+shipped face-api.js → `@vladmandic/face-api` swap); a real GPU backend for
+face detection on aorus via `@vladmandic/face-api`'s separate
+`dist/face-api.node-gpu.js` build (see "GPU acceleration on aorus" in
+macstudio-backfill-spec.md — the earlier "needs bundle-patching or
+subprocess isolation" conclusion there was wrong); `--index`/hardcoded
+`SHARD_OF` two-way sharding; a genuine Ollama-outage now aborts the run
+instead of burning `tag_attempts` (`OllamaUnavailableError`); the
+documented-but-not-implemented invalid-JSON retry now actually happens; a
+`--limit` flag for safe small-batch verification; a Storage-download
+timeout; a second-`SIGINT` fix; a `record_photo_tag_failure` write-failure
+gap closed; and a `search_path` hardening fix matching the pattern already
+used by `find_similar_photos`. See "Error handling", "Face detection",
+"Processing provenance", and "Backfill script" below for the specifics.
+Deliberately **not** addressed in this pass (real findings, not
+load-bearing for this specific rollout): the processing queue has no
+owner/tenant scoping (a separate, broader auth/RLS fix); `fileLock.ts`'s
+stale-reclaim race (only reachable by two processes on the _same_ machine,
+which this topology never does); several lower-severity doc-accuracy and
+provenance gaps (ground-truth dataset never committed, `:latest` Ollama tag
+drift never verified at runtime, etc.).
+
 ## Scope: pipeline only, no UI
 
 This plan covers **computing and storing** three signals for every _image_
@@ -64,20 +91,23 @@ backlog and produced output worth designing a UI around.
 Every piece below has a same-named section in
 [ai-tagging-todo.md](ai-tagging-todo.md):
 
-| Plan section                          | Todo section                              |
-| ------------------------------------- | ----------------------------------------- |
-| Risk spike (validate before building) | "P0 — Spike: validate the risky unknowns" |
-| Schema changes                        | "P0 — Schema"                             |
-| Column-level exposure                 | "P0 — Column-level exposure review"       |
-| Concurrency and ownership             | "P0 — Concurrency guard"                  |
-| Perceptual hash                       | "P1 — Perceptual hash"                    |
-| Vision tagging + caption              | "P1 — Vision tagging"                     |
-| Embedding                             | "P1 — Embedding"                          |
-| Face detection                        | "P1 — Face detection"                     |
-| Backfill script                       | "P1 — Backfill script"                    |
-| Automated tests                       | "P1 — Automated tests"                    |
-| Future-insert coverage                | "P2 — Future-insert coverage"             |
-| Edge cases                            | "P2 — Edge cases"                         |
+| Plan section                             | Todo section                                               |
+| ---------------------------------------- | ---------------------------------------------------------- |
+| Risk spike (validate before building)    | "P0 — Spike: validate the risky unknowns"                  |
+| Schema changes                           | "P0 — Schema"                                              |
+| Column-level exposure                    | "P0 — Column-level exposure review"                        |
+| Concurrency and ownership                | "P0 — Concurrency guard"                                   |
+| Processing status                        | "P0 — Schema"                                              |
+| Processing provenance (pipeline_version) | "P0 — GPU sharding + bug-fix pass"                         |
+| Perceptual hash                          | "P1 — Perceptual hash"                                     |
+| Vision tagging + caption                 | "P1 — Vision tagging"                                      |
+| Embedding                                | "P1 — Embedding"                                           |
+| Face detection                           | "P1 — Face detection", "P0 — GPU sharding + bug-fix pass"  |
+| Backfill script                          | "P1 — Backfill script", "P0 — GPU sharding + bug-fix pass" |
+| Error handling                           | "P0 — GPU sharding + bug-fix pass"                         |
+| Automated tests                          | "P1 — Automated tests"                                     |
+| Future-insert coverage                   | "P2 — Future-insert coverage"                              |
+| Edge cases                               | "P2 — Edge cases"                                          |
 
 If a future edit adds a piece to either doc without a matching row/section
 here, that's the same defect recurring — update this table alongside the
@@ -332,7 +362,19 @@ this does not need to become a retagging system:
 - `pipeline_version integer`, set on every successful write, alongside the
   other outputs (part of the "`complete` implies all outputs present"
   constraint above).
-- **What `pipeline_version = 1` means, confirmed by the P0 spike:**
+- **Revision note (2026-08-27): bumped to `pipeline_version = 2`.** The
+  face-api.js → `@vladmandic/face-api` swap (see "Face detection" below)
+  shipped with different weight files and was never versioned at the time —
+  a real trigger under this section's own rule, closed retroactively. The
+  19 rows already tagged in production before this bump predate the swap
+  entirely (they were tagged under the original face-api.js), so they're
+  unambiguously `pipeline_version = 1` regardless of when this bump landed.
+  **Adding a GPU backend for face detection (`FACE_DETECTOR_BACKEND=gpu` on
+  aorus) does NOT get its own version bump** — CPU and GPU execute the
+  identical `TinyFaceDetector` weights through the identical op graph, a
+  compute-backend detail rather than a model change, and `has_face` isn't
+  even surfaced in the UI yet (phase 2, not built).
+- **What `pipeline_version = 1` meant, confirmed by the P0 spike:**
   - Vision tagging: `llava:latest`, Ollama digest `8dd30f6b0cb1` (~4.7GB).
     Pulled as `:latest` since `llava` doesn't publish a distinct stable
     version tag on Ollama's library beyond size variants (`7b`/`13b`/`34b`,
@@ -352,10 +394,24 @@ this does not need to become a retagging system:
     screenshot/document/food tags on real outdoor photos) — verbatim, not a
     paraphrase; a future prompt edit is a `pipeline_version` bump.
   - `blockhash-core` bit-length: 16 (256-bit / 64-hex-char hash).
-  - If any of the above changes later, that's `pipeline_version = 2`, made
-    as a deliberate decision at that time (bump the constant, decide
-    whether to reset existing rows to `pending`), not built as machinery
-    now.
+- **What changed in `pipeline_version = 2`:** only face detection. Vision
+  tagging, embedding, prompt text, and phash bit-length are all unchanged
+  from `pipeline_version = 1` above.
+  - Face detection: `@vladmandic/face-api`'s `TinyFaceDetector`
+    (`@vladmandic/face-api@1.7.15`), replacing the original,
+    unmaintained `face-api.js` — see "Face detection" below for why (a
+    real crash, not a preference). Weight files also changed: this fork's
+    own `tiny_face_detector_model.bin` +
+    `tiny_face_detector_model-weights_manifest.json` (different filenames
+    than the original `-shard1`/`-weights_manifest.json` pair), committed
+    to `scripts/lib/face-models/`.
+  - CPU vs. GPU execution (`FACE_DETECTOR_BACKEND`) is explicitly **not**
+    part of this definition — see the revision note above.
+  - If a future change alters the vision model, embedding model, prompt,
+    phash bit-length, or the face-detection weights again, that's
+    `pipeline_version = 3`, made as a deliberate decision at that time
+    (bump the constant, decide whether to reset existing rows to
+    `pending`), not built as machinery now.
 
 ### Perceptual hash
 
@@ -547,22 +603,45 @@ embedding captures real semantic signal, not noise.
 ### Face detection
 
 Renamed from the first draft's `has_person` to **`has_face`**, because
-that's what it actually measures: `face-api.js` detects visible faces, not
-people — it misses a person facing away or otherwise faceless-in-frame, and
-can register a false positive on a face in a poster, screenshot, or TV in
-the photo. Documented meaning: `has_face = true` means "at least one
-face-like region was detected by face-api.js's TinyFaceDetector"; nothing
+that's what it actually measures: the face detector detects visible faces,
+not people — it misses a person facing away or otherwise faceless-in-frame,
+and can register a false positive on a face in a poster, screenshot, or TV
+in the photo. Documented meaning: `has_face = true` means "at least one
+face-like region was detected by the pinned TinyFaceDetector"; nothing
 stronger should ever be inferred from it downstream.
 
-**Model provisioning, versioned**: face-api.js's model weight files
-(manifest JSON + shard `.bin` files for `TinyFaceDetector` — the smallest
+**Revision note (2026-08-26/27): `face-api.js` replaced with
+`@vladmandic/face-api`, and a GPU backend added for aorus.** See "Face
+detection library swap" and "GPU acceleration on aorus" in
+`macstudio-backfill-spec.md` for the full story (a real crash found and
+fixed, not a preference) and `pipeline_version = 2`'s definition above for
+what changed. Summary: `scripts/lib/tagPhoto.ts`'s `loadFaceApi()` lazily
+picks between `@vladmandic/face-api`'s default Node build (plain CPU, via
+`@tensorflow/tfjs-node`) and its separate `dist/face-api.node-gpu.js`
+build (via `@tensorflow/tfjs-node-gpu`, an `optionalDependency`) based on
+the `FACE_DETECTOR_BACKEND` env var — `"gpu"` on aorus, unset (CPU)
+everywhere else. Same API surface either way
+(`faceapi.nets.tinyFaceDetector`, `detectAllFaces`,
+`TinyFaceDetectorOptions`), so `detectFace()` itself didn't need to change,
+only how the module gets loaded.
+
+**Model provisioning, versioned**: the face detector's model weight files
+(manifest JSON + a `.bin` shard for `TinyFaceDetector` — the smallest
 model, sufficient for a binary presence check, not the larger
 `SsdMobilenetv1`) are **not** fetched by `npm`/`bun install` — they're
-static files from face-api.js's own repository. They're committed directly
-into this repo (`scripts/lib/face-models/`), pinned to commit
-`3c3c83d03338c8de7e3d23999ae29f5634db210c` of
-`justadudewhohacks/face-api.js` (the last commit to touch that path),
-checksummed:
+static files committed directly into this repo
+(`scripts/lib/face-models/`).
+
+**Superseded (2026-08-26): these are now `@vladmandic/face-api`'s own
+weight files, not the original `justadudewhohacks/face-api.js` ones below.**
+File*names* changed too (`.bin` instead of `-shard1`) as part of the
+library swap described in "Face detection" above — re-verify and record
+fresh checksums for the files actually committed today before relying on
+the values below, which describe the pre-swap files only, kept for
+historical context:
+
+Original (pre-swap) pin, `justadudewhohacks/face-api.js` commit
+`3c3c83d03338c8de7e3d23999ae29f5634db210c`, checksummed:
 `tiny_face_detector_model-shard1` sha256
 `b7503ce7df31039b1c43316a9b865cab6a70dd748cc602d3fa28b551503c3871`;
 `tiny_face_detector_model-weights_manifest.json` sha256
@@ -652,8 +731,24 @@ max_attempts)` RPC (added to the schema migration during the build —
 - Handles `SIGINT` by logging a clean stop message and not starting a new
   row — no special partial-write cleanup needed, because every write is
   already a single atomic per-row operation; a row interrupted
-  mid-processing (before its update/RPC call) simply stays `pending`.
+  mid-processing (before its update/RPC call) simply stays `pending`. A
+  **second** `SIGINT` exits immediately (`process.exit(130)`) rather than
+  waiting for the current row — revision note (2026-08-27): previously a
+  second Ctrl+C was a silent no-op, contradicting its own code comment
+  ("let the default handler kill it"), because registering a `SIGINT`
+  listener suppresses Node's default terminate-on-signal behavior for
+  every subsequent signal, not just the first.
 - Logs progress after every row (`N processed (M complete, K failed)`).
+- **Revision note (2026-08-27): multi-machine sharding, `--limit`, and a
+  Storage-download timeout, all shipped.** `--index=N` (paired with a
+  hardcoded `SHARD_OF = 2` source constant, not a `--of` flag — see
+  macstudio-backfill-spec.md, "Preventing double-processing") splits the
+  pending queue with no overlap across aorus and Mac Studio.
+  `--limit=N` stops the run after N rows, for testing a shard against a
+  handful of real photos before an unattended full run.
+  `supabase.storage.from(BUCKET).download(...)` is now wrapped in the same
+  timeout pattern already used for Ollama calls — previously unbounded,
+  unlike every other network call in this pipeline.
 
 ### Automated tests
 
@@ -722,7 +817,7 @@ scripts/backfill-photo-tags.ts
           sharp: decode + EXIF-normalize + raw pixel buffer     -- the ONE decoder
           → blockhash-core: compute phash from pixel buffer          (no AI)
           → canvas ImageData from the same pixel buffer (putImageData, not loadImage)
-          → face-api.js, plain cpu backend: has_face
+          → @vladmandic/face-api, cpu or gpu backend (FACE_DETECTOR_BACKEND): has_face
           → sharp: re-encode the same pixel buffer as PNG (for Ollama, which also can't read WebP)
           → Ollama /api/generate (llava, tightened prompt): caption + tags   (1 retry on transient error)
           → sanitize tags: drop non-taxonomy words, drop 'other' if combined with real tags
@@ -738,10 +833,25 @@ scripts/backfill-photo-tags.ts
 
 - **Ollama unreachable / model not pulled**: fails the whole run
   immediately with a clear message — an environment problem, not a
-  per-photo one.
+  per-photo one. **Revision note (2026-08-27): this is now actually true,
+  not just documented intent.** `fetchWithTimeout()` (shared by
+  `ollamaGenerate`/`embedCaption`) throws a distinguishable
+  `OllamaUnavailableError` on a genuine connectivity failure (connection
+  refused, DNS failure, our own abort-on-timeout — not a non-2xx HTTP
+  response, which stays a per-photo failure); `tagPhoto()`'s catch
+  re-throws it instead of swallowing it into `{ok: false}`, and
+  `backfill-photo-tags.ts`'s existing `main().catch(...) → process.exit(1)`
+  aborts the run. Previously a total outage was caught by `tagPhoto()`'s
+  blanket catch and recorded as an ordinary per-photo failure, burning
+  `tag_attempts` across every row it touched instead of aborting.
 - **A single photo's Ollama call times out or returns unparseable/invalid
   JSON**: one immediate retry with backoff; if that also fails, counted as
-  a failed attempt (see "Processing status").
+  a failed attempt (see "Processing status"). **Revision note
+  (2026-08-27):** previously only a network/timeout throw got this retry —
+  a response that parsed as invalid/empty JSON was never retried, despite
+  this section's own documented contract. Fixed: `generateCaptionAndTags`
+  now shares one retry budget across both failure modes (network error OR
+  invalid JSON), not two stacked retries.
 - **Image bytes fail to download, decode, or exceed the size cap**: same
   treatment.
 - **face-api.js finds zero faces**: a real, valid result (`has_face =

@@ -487,6 +487,106 @@ ongoing-import path via `import-mitm-photos.ts`):
       (video-skip case) and by code inspection (assigned-photo case — no
       code path exists that could behave differently).
 
+## P0 — GPU sharding + bug-fix pass (2026-08-27)
+
+Follows an 8-lens council review of this doc set against the shipped code,
+which found real doc/code drift plus several correctness bugs, ahead of
+running the backfill sharded across aorus (GPU) and Mac Studio (CPU)
+instead of Mac Studio alone.
+
+**Note: the "single designated runner" text under macstudio-backfill-spec.md
+"Preventing double-processing" was already stale before this pass** — the
+`--index`/`--of` sharding code was shipped in the same commit as that file's
+"operational, not code... YAGNI" framing, directly contradicting it. Now
+superseded properly (see below), but flagging so this doesn't get
+rediscovered as a fresh contradiction later.
+
+- [x] `pipeline_version` bumped 1 → 2, closing the overdue bump for the
+      already-shipped face-api.js → `@vladmandic/face-api` swap (different
+      weight files, a real trigger under the plan's own rule that was never
+      applied at the time).
+- [x] GPU face-detection backend for aorus: `scripts/lib/tagPhoto.ts`'s
+      `loadFaceApi()` dynamically imports `@vladmandic/face-api`'s separate
+      `dist/face-api.node-gpu.js` build (→ `@tensorflow/tfjs-node-gpu` only,
+      never plain `tfjs-node`) when `FACE_DETECTOR_BACKEND=gpu`, otherwise
+      the default CPU build. `@tensorflow/tfjs-node-gpu` added as an
+      `optionalDependency` (not a hard dependency — no `os`/`cpu` gate,
+      would fail `bun install` on non-CUDA machines otherwise).
+- [x] Two-way sharding: `--index=N` CLI arg, `SHARD_OF = 2` hardcoded
+      source constant (not `--of`/`.env` — both machines run the same
+      checked-out source, so the total can't drift the way a copied config
+      value could). `LOCK_PATH` made shard-aware. Each sharded run logs the
+      total remaining `pending` count (unfiltered by shard) every fetch.
+- [x] `--limit=N` flag: stop after N rows, for testing a shard against a
+      handful of real photos before an unattended full run.
+- [x] `OllamaUnavailableError`: a genuine Ollama connectivity failure now
+      propagates out of `tagPhoto()` and aborts the run
+      (`main().catch(...) → process.exit(1)`, already existed) instead of
+      being recorded as a per-photo failure that burns `tag_attempts`
+      across every row.
+- [x] `generateCaptionAndTags` now retries once on invalid/unparseable JSON
+      too, not just on a network/timeout throw — previously contradicted
+      the plan's own documented "Error handling" contract. One shared
+      retry budget covers both failure modes.
+- [x] `supabase.storage.from(BUCKET).download(...)` wrapped in the same
+      timeout pattern already used for Ollama calls — previously the only
+      unbounded network call in the pipeline.
+- [x] Second `SIGINT` now exits immediately (`process.exit(130)`) instead
+      of silently no-op'ing.
+- [x] `applyTagResult`'s `updateError` branch (a genuine write failure, not
+      "already claimed by another writer") now calls
+      `record_photo_tag_failure` too — previously left `tag_attempts`
+      un-incremented and the row silently `pending` forever, untracked.
+- [x] `record_photo_tag_failure`'s `search_path` hardened to
+      `public, pg_temp` (new file
+      `supabase/schema_place_photos_tag_failure_search_path_fix.sql`),
+      matching the pattern `find_similar_photos` already documents and
+      uses.
+- [x] Tests: `scripts/lib/tagPhoto.test.ts` — `OllamaUnavailableError`
+      propagation out of `generateCaptionAndTags`, the shared retry-budget
+      behavior, `applyTagResult`'s `updateError` branch (fake
+      `SupabaseClient`). `scripts/backfill-photo-tags.test.ts` (new file) —
+      `parseRunArgs`, and an `isInShard` completeness property (every id
+      belongs to exactly one of shard 0/1, no gap, no overlap).
+- [x] `bun run test` (full suite, 1026 tests) and a one-off `tsc --noEmit`
+      over `scripts/` (not covered by `tsc -b`, which only includes `src/`)
+      both clean.
+
+**Not covered by the automated suite — genuinely needs live hardware, not
+just code review:**
+
+- [ ] `bun install` with the new `optionalDependency` GPU package,
+      Mac Studio first (worse failure mode if bun doesn't tolerate a
+      failing optional postinstall gracefully), then aorus.
+- [ ] `FACE_DETECTOR_BACKEND=gpu` end-to-end against a handful of real
+      photos (`--limit=10`) on aorus — re-confirm the dual-runtime crash
+      does not reappear under the new import shape (it was only ever
+      tested under the old, wrong import shape); spot-compare `has_face`
+      against the CPU path on the same photos.
+- [ ] A deliberate Ollama-unreachable test (point `OLLAMA_BASE_URL` at an
+      unreachable address briefly): confirm the run aborts — non-zero
+      exit, lock released, no `tag_attempts` burned — instead of
+      continuing.
+- [ ] Only after the three above pass: start both aorus (`--index=0`, GPU)
+      and Mac Studio (`--index=1`, CPU) unattended, watching the new
+      "total remaining pending" log line to confirm the two shards jointly
+      drain to zero.
+- [ ] **New finding, not previously in this doc**: running the real
+      `@vladmandic/face-api` CPU pipeline (`detectFace`/`tagPhoto`) inside
+      `vitest` currently crashes
+      (`TypeError: (0 , util_1.isNullOrUndefined) is not a function` deep
+      inside `@tensorflow/tfjs-node`'s kernel backend) — discovered while
+      writing this pass's tests, unrelated to any of the changes above. No
+      existing test ever exercised `detectFace`/`tagPhoto` before (only the
+      pure functions: `sanitizeTags`, `parseModelResponse`,
+      `inferMediaType`, `computePhash`, `decodeImage`), so this was never
+      caught. Not fixed here — flagged as a real, separate gap: the
+      pipeline's actual runtime (`bun run scripts/backfill-photo-tags.ts`)
+      and the test runner (`vitest`, under Node) apparently disagree about
+      something in the tfjs-node native binding's environment. Worth a
+      dedicated investigation before trusting this pipeline is meaningfully
+      covered by `bun run test`.
+
 ## P3 — Follow-ups (explicitly not part of this plan)
 
 - [ ] Similarity index (`ivfflat`/`hnsw`) on the `embedding` column — added
@@ -497,7 +597,7 @@ ongoing-import path via `import-mitm-photos.ts`):
       mentioned in the plan's exposure section. Gets its own plan once this
       pipeline's real output has been seen.
 - [ ] Video frame-extraction so videos can be tagged too.
-- [ ] `pipeline_version = 2`+ and whatever retagging/reset strategy is
+- [ ] `pipeline_version = 3`+ and whatever retagging/reset strategy is
       decided when a model/prompt/taxonomy change actually happens — not
       built speculatively now.
 - [ ] Scheduling the backfill script to run automatically (cron or
@@ -510,3 +610,42 @@ ongoing-import path via `import-mitm-photos.ts`):
       acceptable, or if a serverless vision tier becomes available — would
       remove the local-Ollama dependency and likely improve tag accuracy
       past `llava`'s measured 75-90%.
+- [ ] **Critical, from the 2026-08-27 council review — the processing
+      queue has no owner/tenant scoping.** Row selection
+      (`tag_status = 'pending'`) never filters on `user_id`; combined with
+      open self-signup and the per-user RLS insert policy, any account can
+      queue its own rows for free compute on the shared pipeline (a live
+      paid-spend vector once/if Together.ai replaces local Ollama). A
+      real, separate fix affecting RLS/auth broadly — deserves its own
+      plan, not folded into a pipeline change.
+- [ ] `fileLock.ts`'s stale-lock reclaim (read PID → liveness check →
+      unlink → recreate) is not atomic — a real TOCTOU race, but only
+      reachable by two concurrent `acquireLock` calls on the _same_
+      machine, which the aorus/Mac-Studio one-process-per-machine topology
+      never does. Fix if `fileLock.ts` is touched again for another reason.
+- [ ] `has_face`'s downstream consumer was never named (unlike `tags`,
+      `phash`, `embedding`, each of which has a stated phase-2 use) — name
+      one explicitly, or mark the column speculative.
+- [ ] The 20-photo hand-labeled ground-truth sample behind the "75-90%
+      match" `llava` accuracy claim was never committed anywhere (repo-wide
+      search finds only prose references) — the claim can't be
+      independently reproduced or regression-tested against a future
+      `pipeline_version` bump.
+- [ ] `blockhash-core` never got a license/maintenance review despite being
+      permanently pinned into `pipeline_version`'s contract.
+- [ ] Backlog-count figures drift slightly across this doc set
+      (~8,037/7,995/8,039/~8,000 depending on section) — low-severity,
+      but worth a single consistent number.
+- [ ] Ollama's `:latest` tag resolution is never re-verified against the
+      recorded digest at runtime — if `:latest` moves, nothing detects it
+      before a run silently tags rows with a different model than
+      `pipeline_version`'s definition claims.
+- [ ] The backfill's per-row loop has no I/O prefetch overlap (Storage
+      download fully blocks before the Ollama calls start) despite the
+      plan itself flagging multi-hour full-backlog runtime as a real cost
+      — a modest throughput win, not a correctness issue.
+- [ ] `MAX_IMAGE_BYTES` is checked after the full file is already
+      downloaded into memory, not before — doesn't prevent the memory
+      spike it's documented to prevent. The more impactful mitigation is
+      the tenant-scoping fix above (bounding who can queue oversized files
+      at all), not a per-photo Storage metadata round-trip.
