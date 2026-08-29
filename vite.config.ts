@@ -17,6 +17,9 @@ export default defineConfig({
       "**/dist/**",
       "fb-import-relay/**",
       "notify-relay/**",
+      // bakeoff/ holds process-experiment artifacts, including held-out
+      // acceptance tests meant to run only inside the experiment worktrees.
+      "bakeoff/**",
     ],
     env: {
       VITE_MAPBOX_TOKEN: "",
